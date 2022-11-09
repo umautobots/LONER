@@ -1,0 +1,8 @@
+*pycache*
+*.pyc
+*.log
+*.o
+notes.txt
+
+docs/html
+docs/latex

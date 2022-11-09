@@ -1,0 +1,18 @@
+{
+  "image": "cloner_slam:latest",
+  "extensions": [
+    "ms-python.python",
+    "ms-python.vscode-pylance",
+    "donjayamanne.python-environment-manager"
+  ],
+  "containerEnv": {"DISPLAY":"${env:DISPLAY}"},
+  "runArgs": [
+              "--privileged",
+              "--gpus=all",
+              "-e NVIDIA_DRIVER_CAPABILITIES=video,compute,utility",
+              "--net=host",
+              "--runtime=nvidia",
+              "-e SDL_VIDEODRIVER=x11"
+            ],
+  "postStartCommand": "sudo ldconfig"
+}

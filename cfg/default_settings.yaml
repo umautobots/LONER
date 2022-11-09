@@ -1,0 +1,10 @@
+tracker:
+  frame_synthesis:
+    strategy: NULL
+  sky_removal: NULL
+mapper:
+  keyframe_manager:
+    key_frame_strategy: NULL
+    window_selection_strategy: NULL
+    sample_allocation_strategy: NULL
+  optimizer: NULL
