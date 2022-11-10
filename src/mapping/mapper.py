@@ -27,4 +27,6 @@ class Mapper:
 
     ## Spin by reading frames from the @m frame_queue as inputs.
     def Run(self) -> None:
-        pass
+        while True:
+            if not self._frame_queue.empty():
+                new_frame = self._frame_queue.get()

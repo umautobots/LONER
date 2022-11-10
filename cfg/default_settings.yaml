@@ -1,7 +1,7 @@
 tracker:
   frame_synthesis:
     strategy: NULL
-  sky_removal: NULL
+    sky_removal: NULL
 mapper:
   keyframe_manager:
     key_frame_strategy: NULL

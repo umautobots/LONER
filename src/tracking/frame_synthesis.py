@@ -1,9 +1,10 @@
 from typing import Union
 
-import torch
 from common.frame import Frame
+from common.image import Image
 from common.lidar_scan import LidarScan
 from common.settings import Settings
+
 from tracking.sky_removal import SkyRemoval
 
 
@@ -21,19 +22,25 @@ class FrameSynthesis:
         self._lidar_queue = [] # To be populated with LidarScans
         self._image_queue = [] # To be populated with Tensors of RGB data
 
+        self._active_frames = []
+
     ## Enqueues lidar data from @p lidar_scan.
     def ProcessLidar(self, lidar_scan: LidarScan) -> None:
-        pass
+        new_frame = Frame(None, None, lidar_scan, None)
+        self._active_frames.append(new_frame)
 
     ## Enqueues image from @p image. 
-    def ProcessImage(self, image: torch.Tensor) -> None:
-        pass
+    def ProcessImage(self, image: Image) -> None:
+        print(f"Processing Image: {image}")
 
-    ## Return a newly synthesized Frame. If unavailable, returns None.
-    def GetFrame(self) -> Union[Frame, None]:
-        pass
+    def HasFrame(self) -> bool:
+        return len(self._active_frames) != 0
 
-    ## A blocking version of GetFrame that blocks until a Frame can be returned.
-    def WaitForNextFrame(self) -> Frame:
-        pass
-  
+    ## Return and remove a newly synthesized Frame. If unavailable, returns None.
+    def PopFrame(self) -> Union[Frame, None]:
+
+        # note: this is done with queues to avoid potentially expensive copies
+        # which would be needed to avoid active_frame getting overwritten.
+        if len(self._active_frames) == 0:
+            return None
+        return self._active_frames.pop(0)
