@@ -1,7 +1,12 @@
+calibration:
+  lidar_to_camera:
+    xyz: [0,0,0]
+    orientation: [0,0,0,1]
 tracker:
   frame_synthesis:
     strategy: NULL
     sky_removal: NULL
+    frame_decimation_rate_hz: 10
 mapper:
   keyframe_manager:
     key_frame_strategy: NULL

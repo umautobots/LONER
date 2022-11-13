@@ -1,10 +1,11 @@
 import torch.multiprocessing as mp
 
+from common.signals import Slot, Signal
 from common.frame import Frame
 from common.settings import Settings
+from common.utils import StopSignal
 from mapping.keyframe_manager import KeyFrameManager
 from mapping.optimizer import Optimizer
-
 
 class Mapper:
     """ Mapper is the top-level Mapping module which manages and optimizes the 
@@ -16,17 +17,31 @@ class Mapper:
 
     ## Constructor
     # @param settings: The settings for the mapping and all contained classes
-    # @param frame_queue: A multiprocessing queue of frames owned by the top-level
-    #      ClonerSLAM module which is written to by the Tracker and read by Mapper.
-    def __init__(self, settings: Settings, frame_queue: mp.Queue) -> None:
-        self._frame_queue = frame_queue
+    # @param frame_signal: A Signal which the tracker emits to with completed Frame objects
+    def __init__(self, settings: Settings, frame_signal: Signal) -> None:
+        self._frame_slot = frame_signal.Register()
         self._settings = settings
 
         self._keyframe_manager = KeyFrameManager(settings.keyframe_manager)
         self._optimizer = Optimizer(settings.optimizer)
+        
+        self._term_signal = mp.Value('i', 0)
+        self._processed_stop_signal = mp.Value('i', 0)
 
     ## Spin by reading frames from the @m frame_queue as inputs.
     def Run(self) -> None:
         while True:
-            if not self._frame_queue.empty():
-                new_frame = self._frame_queue.get()
+            if self._frame_slot.HasValue():
+                new_frame = self._frame_slot.GetValue()
+
+                if isinstance(new_frame, StopSignal):
+                    break
+                print("Mapping frame", new_frame.start_image.timestamp)
+
+        self._processed_stop_signal.value = True
+        print("Mapping Done. Waiting to terminate.")
+        # Wait until an external terminate signal has been sent.
+        # This is used to prevent race conditions at shutdown
+        while not self._term_signal.value:
+            continue
+        print("Exiting mapping process.")
