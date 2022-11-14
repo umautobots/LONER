@@ -80,22 +80,34 @@ def tensor_to_transform(transformation_tensors):
     RT = torch.cat([rotation_matrices, Ts[:,:,None]], 2)
     if N == 1:
         RT = RT[0]
+    RT = torch.vstack((RT, torch.Tensor([0,0,0,1])))
     return RT
 
 class Pose:
-    def __init__(self, transformation_matrix: torch.Tensor,
+    def __init__(self, transformation_matrix: torch.Tensor = torch.eye(4),
+                       pose_tensor: torch.Tensor = None,
                        fixed: bool=False):
-        self._pose_tensor = transform_to_tensor(transformation_matrix)
+
+        if pose_tensor is not None:
+            self._pose_tensor = pose_tensor
+        else:
+            self._pose_tensor = transform_to_tensor(transformation_matrix)
         self._pose_tensor.requires_grad_(not fixed)
 
     def FromSettings(pose_dict:dict, fixed: bool=False) -> "Pose":
         xyz = torch.Tensor(pose_dict['xyz'])
         quat = torch.Tensor(pose_dict['orientation'])
 
-        # TODO: This is a very rounabout, and expensive.
         tensor = torch.cat((xyz, quat))
-        tf = tensor_to_transform(tensor)
-        return Pose(tf, fixed)
+        return Pose(pose_tensor=tensor, fixed=fixed)
+
+    def Clone(self, fixed=None):
+        if fixed is None:
+            fixed = self.fixed
+        return Pose(pose_tensor=self._pose_tensor.clone(), fixed=fixed)
+
+    def __mul__(self, other) -> torch.Tensor:
+        return self.GetTransformationMatrix() @ other.GetTransformationMatrix()
 
     def SetFixed(self, fixed: bool = True) -> None:
         self._pose_tensor.requires_grad_(not fixed)

@@ -80,6 +80,8 @@ class ClonerSLAM:
             sleep(0.1)
         print("Processed tracking stop")
         
+        # Once we're done tracking frames (no new ones will be emitted),
+        # we can kill the mapper. 
         self._frame_signal.Emit(StopSignal())
         while not self._mapper._processed_stop_signal.value:
             sleep(0.1)

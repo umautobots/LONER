@@ -36,8 +36,7 @@ class Mapper:
 
                 if isinstance(new_frame, StopSignal):
                     break
-                print("Mapping frame", new_frame.start_image.timestamp)
-
+                
         self._processed_stop_signal.value = True
         print("Mapping Done. Waiting to terminate.")
         # Wait until an external terminate signal has been sent.

@@ -51,6 +51,7 @@ RUN apt-get -y update \
       python3-wstool \
       build-essential \
       python3-catkin-tools \
+      ros-noetic-ros-numpy \
       ros-noetic-derived-object-msgs \
       ros-noetic-ackermann-msgs \
       ros-noetic-hector-trajectory-server \
@@ -69,6 +70,11 @@ COPY requirements.txt /tmp/requirements.txt
 RUN python3 -m pip install -r /tmp/requirements.txt \
      && pip3 install opencv-python pykitti \
      && pip3 install --user git+https://github.com/DanielPollithy/pypcd.git \
+     && pip3 install rospkg \
+     && pip3 install pycryptodomex \
+     && pip3 install gnupg \
+     && pip3 install opencv-python==4.5.5.64 \
+     && pip3 install open3d \
      && rm /tmp/requirements.txt
 
 # Install tiny-cuda-nn
