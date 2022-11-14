@@ -7,7 +7,7 @@ import torch.multiprocessing as mp
 
 
 class Slot:
-    def __init__(self):
+    def __init__(self, callback=None):
         self._queue = mp.Queue()
 
     def HasValue(self) -> bool:

@@ -1,11 +1,12 @@
 import torch.multiprocessing as mp
 
-from common.signals import Slot, Signal
 from common.frame import Frame
 from common.settings import Settings
+from common.signals import Signal, Slot
 from common.utils import StopSignal
 from mapping.keyframe_manager import KeyFrameManager
 from mapping.optimizer import Optimizer
+
 
 class Mapper:
     """ Mapper is the top-level Mapping module which manages and optimizes the 

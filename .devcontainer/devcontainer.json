@@ -5,6 +5,11 @@
     "ms-python.vscode-pylance",
     "donjayamanne.python-environment-manager"
   ],
+  "mounts":[
+    "source=/home/${env:USERNAME}/Documents/ClonerSlamData/,target=/home/${env:USERNAME}/data,type=bind"
+  ],
+  "workspaceMount": "source=${localWorkspaceFolder},target=/home/${env:USERNAME}/ClonerSLAM,type=bind",
+  "workspaceFolder": "/home/${env:USERNAME}/ClonerSLAM",
   "containerEnv": {"DISPLAY":"${env:DISPLAY}"},
   "runArgs": [
               "--privileged",
@@ -12,7 +17,8 @@
               "-e NVIDIA_DRIVER_CAPABILITIES=video,compute,utility",
               "--net=host",
               "--runtime=nvidia",
-              "-e SDL_VIDEODRIVER=x11"
+              "-e SDL_VIDEODRIVER=x11",
+              "--shm-size=16G"
             ],
   "postStartCommand": "sudo ldconfig"
 }

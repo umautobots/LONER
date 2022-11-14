@@ -25,15 +25,19 @@ class FrameSynthesis:
 
         self._active_frame = Frame()
 
+        # Frames that have both images, but might still need more lidar points
         self._in_progress_frames = []
 
         # Frames that are fully built and ready to be processed
         self._completed_frames = []
 
+        # used for decimating images
         self._prev_accepted_timestamp = float('-inf')
 
+        # Minimum dt between frames
         self._frame_delta_t_sec = 1/self._settings.frame_decimation_rate_hz
 
+        # This is used to queue up all the lidar points before they're assigned to frames
         self._lidar_queue = LidarScan()
 
     ## Reads data from the @p lidar_scan and adds the points to the appropriate frame(s)
@@ -58,25 +62,31 @@ class FrameSynthesis:
             else:
                 raise RuntimeError("This should be unreachable")
 
+    ## Assigns lidar points from the queue to frames
     def DequeueLidarPoints(self):
         completed_frames = 0
         for frame in self._in_progress_frames:
             start_time = frame.start_image.timestamp - self._frame_delta_t_sec/2
             end_time = frame.end_image.timestamp + self._frame_delta_t_sec/2
             
+            # If there aren't lidar points to process, skip
             if len(self._lidar_queue) == 0:
                 return
 
-            
+            # If the start time of the frame is after the last lidar point, then the
+            # lidar queue is useless. Clear it out.
             if start_time > self._lidar_queue.GetEndTime():
                 print("Warning: Got an image that starts after all queued lidar points. Dropping lidar points")
                 self._lidar_queue.Clear()
                 return
 
+            # If the end time of the frame comes before all of the lidar points,
+            # then the frame is assumed done. Mark it complete and move on.
             if end_time < self._lidar_queue.GetStartTime():
                 completed_frames += 1
                 continue
-
+            
+            # If there are some points we need to skip
             if self._lidar_queue.GetStartTime() < start_time:
                 print("Warning: Got Lidar points for an already completed frame. Skipping")
                 first_valid_idx = torch.argmax((self._lidar_queue.timestamps >= start_time).float())
@@ -89,6 +99,7 @@ class FrameSynthesis:
             else:
                 last_valid_idx = len(self._lidar_queue)
 
+            # Get the points from the queue that need to be moved to the current frame
             new_ray_directions = self._lidar_queue.ray_directions[first_valid_idx:last_valid_idx]
             new_distances = self._lidar_queue.distances[first_valid_idx:last_valid_idx]
             new_timestamps = self._lidar_queue.timestamps[first_valid_idx:last_valid_idx]
@@ -104,11 +115,16 @@ class FrameSynthesis:
 
             self._lidar_queue.RemovePoints(last_valid_idx)
 
+            # If any points remain in the queue, then the frame must be done since the remaining points
+            # imply the existance of points that come after the frame.
             if len(self._lidar_queue) > 0:
                 completed_frames += 1
         
+        # For all the frames that are now complete, bundle them up and send off for tracking
         for _ in range(completed_frames):
             frame = self._in_progress_frames.pop(0)
+            frame.SetStartSkyMask(self._sky_remover.GetSkyMask(frame.start_image))
+            frame.SetEndSkyMask(self._sky_remover.GetSkyMask(frame.end_image))
             self._completed_frames.append(frame)
 
     def HasFrame(self) -> bool:

@@ -12,10 +12,10 @@ class KeyFrame:
         self._frame = frame
 
     def GetStartCameraPose(self) -> None:
-        return self._frame.GetStartCameraPose()
+        return self._frame.GetStartCameraTransform()
 
     def GetEndCameraPose(self) -> None:
-        return self._frame.GetEndCameraPose()
+        return self._frame.GetEndCameraTransform()
 
     def GetStartLidarPose(self) -> None:
         return self._frame.GetStartLidarPose()

@@ -8,7 +8,10 @@ tracker:
     sky_removal: NULL
     frame_decimation_rate_hz: 10
   icp:
-    threshold: 0.02
+    threshold: 1.0
+    max_iterations: 10
+    relative_fitness: 1.e-5
+    relative_rmse: 1.e-5
 mapper:
   keyframe_manager:
     key_frame_strategy: NULL

@@ -59,14 +59,12 @@ class Frame:
             raise NotImplementedError("Not yet implemented!")
         else:
             end_points_local = self.lidar_points.ray_directions * self.lidar_points.distances
-            print("Local Shape", end_points_local.shape)
             end_points_homog = torch.vstack((end_points_local, torch.ones_like(end_points_local[0])))
 
             if self.lidar_points.ray_origin_offsets.dim() == 3:
                 raise NotImplementedError("Haven't added support for unique ray origins")
             
             end_points_global = (self.lidar_points.ray_origin_offsets @ end_points_homog)[:3, :]
-            print("End Shape:", end_points_global.shape)
 
         pcd.points = o3d.utility.Vector3dVector(end_points_global.cpu().numpy().transpose())
 
@@ -79,19 +77,19 @@ class Frame:
         self.end_sky_mask = mask
 
     ## Returns the Pose of the camera at the start of the frame as a transformation matrix
-    def GetStartCameraPose(self) -> torch.Tensor:
+    def GetStartCameraTransform(self) -> torch.Tensor:
         return self._lidar_start_pose * self._lidar_to_camera
 
     ## Returns the Pose of the camera at the end of the frame as a transformation matrix
-    def GetEndCameraPose(self) -> None:
+    def GetEndCameraTransform(self) -> torch.Tensor:
         return self._lidar_end_pose * self._lidar_to_camera
 
     ## Returns the Pose of the lidar at the start of the frame as a transformation matrix
-    def GetStartLidarPose(self) -> None:
+    def GetStartLidarPose(self) -> Pose:
         return self._lidar_start_pose
 
     ## Returns the Pose of the lidar at the end of the frame as a transformation matrix
-    def GetEndLidarPose(self) -> None:
+    def GetEndLidarPose(self) -> Pose:
         return self._lidar_end_pose
 
 

@@ -1,5 +1,6 @@
 import torch
 import torch.multiprocessing as mp
+import os
 import numpy as np
 from common.frame import Frame
 from common.settings import Settings
@@ -7,6 +8,7 @@ from common.utils import StopSignal
 from tracking.frame_synthesis import FrameSynthesis
 from common.signals import Slot, Signal
 from common.pose_utils import Pose
+import pytorch3d
 import open3d as o3d
 import copy
 from scipy.spatial.transform import Rotation as R
@@ -14,20 +16,16 @@ from scipy.spatial.transform import Slerp
 
 
 # Yanked from http://www.open3d.org/docs/release/python_example/pipelines/index.html#icp-registration-py
-def draw_registration_result(source, target, transformation):
+def transform_cloud(source, transformation):
 
     source_temp = o3d.cuda.pybind.geometry.PointCloud()
-    target_temp = o3d.cuda.pybind.geometry.PointCloud()
 
     source_temp.points = copy.deepcopy(source.points)
-    target_temp.points = copy.deepcopy(target.points)
 
     source_temp.paint_uniform_color([1, 0.706, 0])
-    target_temp.paint_uniform_color([0, 0.651, 0.929])
     source_temp.transform(transformation)
-    print("DRAW")
-    # o3d.visualization.draw([source_temp, target_temp])
-
+    
+    return source_temp
 
 class Tracker:
     """ Tracker: Top-level Tracking module
@@ -66,6 +64,8 @@ class Tracker:
         self._reference_pose = Pose(fixed=True)
         self._reference_time = None
 
+        self._frame_count = 0
+
     ## Run spins and processes incoming data while putting resulting frames into the queue
     def Run(self) -> None:
         while True:            
@@ -86,8 +86,10 @@ class Tracker:
                 self._frame_synthesizer.ProcessLidar(new_lidar)
 
             while self._frame_synthesizer.HasFrame():
+                print("Tracking Frame")
                 frame = self._frame_synthesizer.PopFrame()
                 tracked = self.TrackFrame(frame)
+                print("end pose:", frame._lidar_end_pose)
                 if not tracked:
                     print("Warning: Failed to track frame. Skipping.")
                     continue
@@ -109,6 +111,7 @@ class Tracker:
         # First Iteration: No reference pose, we fix this as the origin of the coordinate system.
         if self._reference_point_cloud is None:
             frame._lidar_start_pose = self._reference_pose.Clone(fixed=True)
+            frame._lidar_end_pose = self._reference_pose.Clone(fixed=True)
             self._reference_point_cloud = frame.BuildPointCloud()
             self._reference_time = (frame.start_image.timestamp + frame.end_image.timestamp) / 2
             return True
@@ -119,13 +122,20 @@ class Tracker:
         frame_point_cloud = frame.BuildPointCloud()
 
         initial_guess = self._reference_pose.GetTransformationMatrix().cpu().numpy()
+                
+        print("Source Size:", len(self._reference_point_cloud.points), "Target Size:", len(frame_point_cloud.points))
         
+        # TODO: See the estimate normals section of http://www.open3d.org/docs/release/python_api/open3d.t.geometry.PointCloud.html#
+        # They recommend doing it a different way by setting a radius, but I don't know what radius to use
+        self._reference_point_cloud.estimate_normals()
+        frame_point_cloud.estimate_normals()
         
-        # draw_registration_result(self._reference_point_cloud, frame_point_cloud, initial_guess)
-        # TODO: Switch to point-to-plane
+        convergence_criteria = o3d.cuda.pybind.pipelines.registration.ICPConvergenceCriteria(
+            self._settings.icp.relative_fitness, self._settings.icp.relative_rmse, self._settings.icp.max_iterations)
+
         registration = o3d.pipelines.registration.registration_icp(
             self._reference_point_cloud, frame_point_cloud, self._settings.icp.threshold, initial_guess,
-            o3d.pipelines.registration.TransformationEstimationPointToPoint())
+            o3d.pipelines.registration.TransformationEstimationPointToPoint(), criteria=convergence_criteria)
 
         registration_result = torch.from_numpy(registration.transformation.copy()).float().to(device)
 
@@ -157,8 +167,20 @@ class Tracker:
         end_transformation_mat = np.hstack((rot_end.as_matrix(), trans_vec_end.reshape(3,1)))
         end_transformation_mat = np.vstack((end_transformation_mat, [0,0,0,1]))
         frame._lidar_end_pose = Pose(torch.from_numpy(end_transformation_mat).float().to(device))
+        print("Set End Pose To:", frame._lidar_end_pose)
+
+        logdir = f"../outputs/frame_{self._frame_count}"
+        os.mkdir(f"../outputs/frame_{self._frame_count}")
+        o3d.io.write_point_cloud(f"{logdir}/reference_point_cloud.pcd", self._reference_point_cloud)
+        o3d.io.write_point_cloud(f"{logdir}/frame_point_cloud.pcd", frame_point_cloud)
+        o3d.io.write_point_cloud(f"{logdir}/transfromed_reference_cloud.pcd", transform_cloud(self._reference_point_cloud, registration_result))
+        
 
         self._reference_pose = Pose(tracked_position, fixed=True)
-        print(self._reference_pose.GetTransformationMatrix())
-        # draw_registration_result(self._reference_point_cloud, frame_point_cloud, registration_result)
+        self._reference_point_cloud = frame_point_cloud
+
+        # print(f"Frame {self._frame_count} registration_result:", registration_result)
+        
+        
+        self._frame_count += 1
         return True

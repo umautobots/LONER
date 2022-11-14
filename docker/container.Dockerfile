@@ -81,6 +81,32 @@ RUN python3 -m pip install -r /tmp/requirements.txt \
 RUN ldconfig && pip3 install git+https://github.com/NVlabs/tiny-cuda-nn/#subdirectory=bindings/torch || \
     (echo "Note: Unable find Cuda. See the README Build Section for details on fixing" && false)
     
+
+# Install PCL and python bindings
+# WORKDIR /tmp
+# RUN wget https://gitlab.kitware.com/vtk/vtk/-/archive/v8.1.2/vtk-v8.1.2.tar.gz \
+#     && tar -xvf VTK-9.2.2.tar.gz \
+#     && cd vtk-v8.1.2 \
+#     && mkdir build \
+#     && cd build \
+#     && cmake -DPYTHON_INCLUDE_DIR=$(python -c "from distutils.sysconfig import get_python_inc; print(get_python_inc())") \
+#              -DPYTHON_LIBRARY=$(python -c "import distutils.sysconfig as sysconfig; print(sysconfig.get_config_var('LIBDIR'))") \
+#              -DVTK_WRAP_PYTHON=ON .. \
+#     && make -j$(nproc) install \
+#     && cd /tmp \
+#     && rm -rf VTK*
+
+
+# RUN wget https://github.com/PointCloudLibrary/pcl/archive/refs/tags/pcl-1.9.0.tar.gz \
+#     && tar -xvf pcl-1.9.0.tar.gz \
+#     && cd pcl-pcl-1.9.0 \
+#     && mkdir build \
+#     && cd build \
+#     && cmake .. \
+#     && make -j$(nproc) install \
+#     && cd /tmp \
+#     && rm -rf pcl*
+
 RUN useradd -m -l -u ${USER_ID} -s /bin/bash ${USER_NAME} \
     && usermod -aG video ${USER_NAME}
 

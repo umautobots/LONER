@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import rospy
 import rosbag
 from sensor_msgs.msg import Image, PointCloud2
 import os
@@ -19,6 +20,7 @@ sys.path.append(PROJECT_ROOT + "/src")
 
 from src.cloner_slam import ClonerSLAM
 from src.common.sensors import Image, LidarScan
+from src.visualization.draw_frames import FrameDrawer
 
 ROSBAG_PATH = os.path.expanduser("~/data/cloner_carla_dataset.bag")
 LIDAR_TOPIC = "/carla/ego_vehicle/lidar/center"
@@ -42,6 +44,8 @@ def BuildImageFromMsg(image_msg, timestamp) -> Image:
     return Image(pytorch_img, timestamp.to_sec())
 
 if __name__ == "__main__":
+    rospy.init_node('Cloner-SLAM')
+
     start_time = None
 
     print("Opening Rosbag")
@@ -49,6 +53,9 @@ if __name__ == "__main__":
     print("Rosbag Open")
 
     cloner_slam = ClonerSLAM("../cfg/default_settings.yaml")
+
+    drawer = FrameDrawer(cloner_slam._frame_signal)
+
     cloner_slam.Start()
 
     init = False
@@ -73,6 +80,10 @@ if __name__ == "__main__":
 
         # if t.to_sec() - start_time > 5:
         #     break
+        # print("sleeping", t.to_sec() - prev_time)
+        
+        drawer.Update()
+
         time.sleep(t.to_sec() - prev_time)
         prev_time = t.to_sec()
         
