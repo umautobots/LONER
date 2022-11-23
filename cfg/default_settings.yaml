@@ -1,3 +1,4 @@
+device: 0
 calibration:
   lidar_to_camera:
     xyz: [0,0,0]
@@ -8,10 +9,14 @@ tracker:
     sky_removal: NULL
     frame_decimation_rate_hz: 10
   icp:
-    threshold: 1.0
-    max_iterations: 10
-    relative_fitness: 1.e-5
-    relative_rmse: 1.e-5
+    threshold: 2.2
+    max_iterations: 18
+    relative_fitness: 1.e-10
+    relative_rmse: 1.e-10
+    downsample:
+      type: UNIFORM
+      target_uniform_point_count: 10000
+      voxel_downsample_size: 0.1
 mapper:
   keyframe_manager:
     key_frame_strategy: NULL

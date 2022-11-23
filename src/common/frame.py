@@ -4,6 +4,9 @@ from common.sensors import Image, LidarScan
 from common.pose_utils import Pose
 import open3d as o3d
 
+import cProfile
+from profilehooks import profile
+
 class Frame:
     """ Frame Class representing the atomic unit of optimization in ClonerSLAM
     
@@ -40,6 +43,8 @@ class Frame:
         # TODO
         self._lidar_start_pose = None
         self._lidar_end_pose = None
+        self._gt_lidar_start_pose = None
+        self._gt_lidar_end_pose = None
 
     def __str__(self):
         start_im_str = "None" if self.start_image is None else self.start_image.timestamp
@@ -50,15 +55,32 @@ class Frame:
         return self.__str__()
 
     ## Builds a point cloud from the lidar scan.
+    # @p time_per_scan: The maximum time to allow in a scan. This prevents aliasing without motion compensation.
     # @p compensate_motion: If True, interpolate/extrapolate the lidar poses. If false, don't.
+    # @p target_points: If not None, downsample uniformly to approximately this many points.
     # @returns 
-    def BuildPointCloud(self, compensate_motion: bool = False) -> o3d.cuda.pybind.geometry.PointCloud:
+    def BuildPointCloud(self, time_per_scan: float = None, 
+                        compensate_motion: bool = False, 
+                        target_points: int = None) -> o3d.cuda.pybind.geometry.PointCloud:
         pcd = o3d.cuda.pybind.geometry.PointCloud()
+
+        # Only take 1 scan
+        if time_per_scan is not None:
+            final_index = torch.argmax((self.lidar_points.timestamps -\
+                                        self.lidar_points.timestamps[0] >= time_per_scan).float())
+        else:
+            final_index = len(self.lidar_points.timestamps)
+
+        if target_points is None:
+            step_size = 1
+        else:
+            step_size = torch.div(final_index, target_points,rounding_mode='floor')
 
         if compensate_motion:
             raise NotImplementedError("Not yet implemented!")
         else:
-            end_points_local = self.lidar_points.ray_directions * self.lidar_points.distances
+            end_points_local = self.lidar_points.ray_directions[...,:final_index:step_size] * \
+                               self.lidar_points.distances[:final_index:step_size]
             end_points_homog = torch.vstack((end_points_local, torch.ones_like(end_points_local[0])))
 
             if self.lidar_points.ray_origin_offsets.dim() == 3:
@@ -67,7 +89,6 @@ class Frame:
             end_points_global = (self.lidar_points.ray_origin_offsets @ end_points_homog)[:3, :]
 
         pcd.points = o3d.utility.Vector3dVector(end_points_global.cpu().numpy().transpose())
-
         return pcd
 
     def SetStartSkyMask(self, mask: Image) -> None:

@@ -14,8 +14,12 @@ def transform_to_tensor(transformation_matrix, device=None):
     gpu_id = -1
     if isinstance(transformation_matrix, torch.Tensor):
         if transformation_matrix.get_device() != -1:
-            transformation_matrix = transformation_matrix.detatch().cpu()
+            if transformation_matrix.requires_grad:
+                transformation_matrix = transformation_matrix.detach()
+            transformation_matrix = transformation_matrix.detach().cpu()
             gpu_id = transformation_matrix.get_device()
+        elif transformation_matrix.requires_grad:
+            transformation_matrix = transformation_matrix.detach()
         transformation_matrix = transformation_matrix.numpy()
     elif not isinstance(transformation_matrix, (np.array, np.ndarray)):
         raise ValueError((f"Invalid argument of type {type(transformation_matrix).__name__}"
@@ -106,8 +110,11 @@ class Pose:
             fixed = self.fixed
         return Pose(pose_tensor=self._pose_tensor.clone(), fixed=fixed)
 
-    def __mul__(self, other) -> torch.Tensor:
-        return self.GetTransformationMatrix() @ other.GetTransformationMatrix()
+    def __mul__(self, other) -> "Pose":
+        return Pose(self.GetTransformationMatrix() @ other.GetTransformationMatrix())
+
+    def Inv(self) -> "Pose":
+        return Pose(torch.linalg.inv(self.GetTransformationMatrix()))
 
     def SetFixed(self, fixed: bool = True) -> None:
         self._pose_tensor.requires_grad_(not fixed)

@@ -25,6 +25,15 @@ class Signal:
     def __init__(self):
         self._slots = []
 
+    def Flush(self):
+        warned = False
+        for s in self._slots:
+            while not s._queue.empty():
+                if not warned:
+                    print("Warning: Leftover Items in Queue. This may or may not be an issue.")
+                    warned = True
+                s._queue.get()
+
     def Register(self) -> Slot:
         self._slots.append(Slot())
         return self._slots[-1]
@@ -32,9 +41,3 @@ class Signal:
     def Emit(self, value):
         for s in self._slots:
             s.insert(value)
-
-    def Empty(self):
-        for s in self._slots:
-            if s.HasValue():
-                return False
-        return True

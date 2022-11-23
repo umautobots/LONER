@@ -6,6 +6,7 @@ import torch
 import torch.multiprocessing as mp
 import yaml
 
+from common.pose_utils import Pose
 from common.signals import Slot, Signal
 from common.sensors import Image, LidarScan
 from common.settings import Settings
@@ -31,12 +32,11 @@ class ClonerSLAM:
         if isinstance(settings, str):
             with open(settings, 'r') as settings_file:
                 self._settings = Settings(yaml.load(settings_file, Loader=yaml.FullLoader))
-        elif isinstance(settings, Settings):
+        elif type(settings).__name__ == "Settings": # Avoiding strange attrdict behavior
             self._settings = settings
         else:
             raise RuntimeError(f"Can't load settings of type {type(settings).__name__}")
 
-        print("Project Settings:", self._settings)
         mp.set_start_method('spawn')
 
         # The top-level module inserts RGB frames/Lidar, and the tracker reads them
@@ -56,12 +56,16 @@ class ClonerSLAM:
         self._tracking_process = None
         self._mapping_process = None
 
+        self._device = self._settings.device
+
 
     def Start(self, synchronous: bool = True) -> None:
-
+        print("Starting Cloner SLAM")
         # Start the children
         self._tracking_process = mp.Process(target=self._tracker.Run)
         self._mapping_process = mp.Process(target=self._mapper.Run)
+        self._tracking_process.daemon = True
+        self._mapping_process.daemon = True
         self._tracking_process.start()
         self._mapping_process.start()
 
@@ -70,13 +74,15 @@ class ClonerSLAM:
             self._mapping_process.join()
         
     ## Stop the processes running the mapping and tracking
-    def Stop(self):
+    def Stop(self, waiting_action = None, finish_action = None):
         print("Stopping ClonerSLAM Sub-Processes")
 
         self._lidar_signal.Emit(StopSignal())
         self._rgb_signal.Emit(StopSignal())
 
         while not self._tracker._processed_stop_signal.value:
+            if waiting_action is not None:
+                waiting_action()
             sleep(0.1)
         print("Processed tracking stop")
         
@@ -84,8 +90,14 @@ class ClonerSLAM:
         # we can kill the mapper. 
         self._frame_signal.Emit(StopSignal())
         while not self._mapper._processed_stop_signal.value:
+            if waiting_action is not None:
+                waiting_action()
             sleep(0.1)
         print("Processed mapping stop")
+
+
+        if finish_action is not None:
+            finish_action()
 
         self._tracker._term_signal.value = True
         self._mapper._term_signal.value = True
@@ -93,8 +105,16 @@ class ClonerSLAM:
         self._tracking_process.join()
         self._mapping_process.join()
 
+        print("SubProcesses Exited")
+
     def ProcessLidar(self, lidar_scan: LidarScan) -> None:
         self._lidar_signal.Emit(lidar_scan)
 
-    def ProcessRGB(self, image: Image) -> None:
-        self._rgb_signal.Emit(image)
+    def ProcessRGB(self, image: Image, gt_pose: Pose = None) -> None:
+        self._rgb_signal.Emit((image, gt_pose))
+
+    def Cleanup(self):
+        print("Cleaning Up ClonerSlam")
+        self._frame_signal.Flush()
+        self._rgb_signal.Flush()
+        self._lidar_signal.Flush()

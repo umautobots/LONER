@@ -14,9 +14,6 @@ class Image:
         self.image = image
         self.timestamp = timestamp
 
-        import torch
-
-
 class LidarScan:
     """ LidarScan class for handling lidar data
     
@@ -55,9 +52,9 @@ class LidarScan:
         return self.timestamps[-1]
 
     def Clear(self):
-        self.ray_directions = torch.Tensor(),
-        self.distances = torch.Tensor(),
-        self.ray_origin_offsets = torch.eye(4),
+        self.ray_directions = torch.Tensor()
+        self.distances = torch.Tensor()
+        self.ray_origin_offsets = torch.eye(4)
         self.timestamps = torch.Tensor()
 
     def RemovePoints(self, num_points):
@@ -74,6 +71,12 @@ class LidarScan:
                        other.distances,
                        other.ray_origin_offsets,
                        other.timestamps)
+
+    def To(self, device):
+        self.ray_directions = self.ray_directions.to(device)
+        self.distances = self.distances.to(device)
+        self.ray_origin_offsets = self.ray_origin_offsets.to(device)
+        self.timestamps = self.timestamps.to(device)
 
     def AddPoints(self,
                   ray_directions: torch.Tensor,

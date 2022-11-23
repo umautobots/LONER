@@ -22,7 +22,8 @@ class FrameSynthesis:
         self._sky_remover = SkyRemoval(settings.sky_removal)
 
         self._t_lidar_to_camera = T_lidar_to_camera
-
+        self._t_camera_to_lidar = self._t_lidar_to_camera.Inv()
+        
         self._active_frame = Frame()
 
         # Frames that have both images, but might still need more lidar points
@@ -46,16 +47,21 @@ class FrameSynthesis:
         self._lidar_queue.Merge(lidar_scan)
         self.DequeueLidarPoints()
 
+
     ## Enqueues image from @p image.
     # @precond incoming images are in monotonically increasing order (in timestamp)
-    def ProcessImage(self, image: Image) -> None:
+    def ProcessImage(self, image: Image, gt_pose: Pose = None) -> None:
         if image.timestamp - self._prev_accepted_timestamp >= self._frame_delta_t_sec:
             self._prev_accepted_timestamp = image.timestamp
 
-            if self._active_frame.start_image is None:
+            if self._active_frame.start_image is None:  
                 self._active_frame.start_image = image
+                if gt_pose is not None:
+                    self._active_frame._gt_lidar_start_pose = (gt_pose * self._t_camera_to_lidar)
             elif self._active_frame.end_image is None:
                 self._active_frame.end_image = image
+                if gt_pose is not None:
+                    self._active_frame._gt_lidar_end_pose = (gt_pose * self._t_camera_to_lidar)
                 self._in_progress_frames.append(copy.deepcopy(self._active_frame))
                 self._active_frame = Frame()
                 self.DequeueLidarPoints()
@@ -112,7 +118,6 @@ class FrameSynthesis:
 
             frame.lidar_points.AddPoints(new_ray_directions, new_distances, new_ray_origins, new_timestamps)
             
-
             self._lidar_queue.RemovePoints(last_valid_idx)
 
             # If any points remain in the queue, then the frame must be done since the remaining points
@@ -137,4 +142,6 @@ class FrameSynthesis:
         # which would be needed to avoid active_frame getting overwritten.
         if len(self._completed_frames) == 0:
             return None
-        return self._completed_frames.pop(0)
+
+        new_frame = self._completed_frames.pop(0)        
+        return new_frame

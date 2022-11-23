@@ -1,6 +1,6 @@
 import torch
 import torch.multiprocessing as mp
-import os
+import time
 import numpy as np
 from common.frame import Frame
 from common.settings import Settings
@@ -8,7 +8,6 @@ from common.utils import StopSignal
 from tracking.frame_synthesis import FrameSynthesis
 from common.signals import Slot, Signal
 from common.pose_utils import Pose
-import pytorch3d
 import open3d as o3d
 import copy
 from scipy.spatial.transform import Rotation as R
@@ -50,9 +49,8 @@ class Tracker:
         self._frame_signal = frame_signal
         self._settings = settings.tracker
         
-        self._t_lidar_to_cam = Pose.FromSettings(settings.calibration.lidar_to_camera)
-
-        self._frame_synthesizer = FrameSynthesis(self._settings.frame_synthesis, self._t_lidar_to_cam)
+        self._t_lidar_to_camera = Pose.FromSettings(settings.calibration.lidar_to_camera)
+        self._frame_synthesizer = FrameSynthesis(self._settings.frame_synthesis, self._t_lidar_to_camera)
 
         # Used to indicate to an external process that I've processed the stop signal
         self._processed_stop_signal = mp.Value('i', 0)
@@ -64,18 +62,21 @@ class Tracker:
         self._reference_pose = Pose(fixed=True)
         self._reference_time = None
 
-        self._frame_count = 0
+        self._frame_count = 0        
 
     ## Run spins and processes incoming data while putting resulting frames into the queue
     def Run(self) -> None:
+        times = []
         while True:            
             if self._rgb_slot.HasValue():
-                new_rgb = self._rgb_slot.GetValue()
+                val = self._rgb_slot.GetValue()
 
-                if isinstance(new_rgb, StopSignal):
+                if isinstance(val, StopSignal):
                     break
 
-                self._frame_synthesizer.ProcessImage(new_rgb)
+                new_rgb, new_gt_pose = val
+
+                self._frame_synthesizer.ProcessImage(new_rgb, new_gt_pose)
 
             if self._lidar_slot.HasValue():
                 new_lidar = self._lidar_slot.GetValue()
@@ -86,10 +87,13 @@ class Tracker:
                 self._frame_synthesizer.ProcessLidar(new_lidar)
 
             while self._frame_synthesizer.HasFrame():
-                print("Tracking Frame")
                 frame = self._frame_synthesizer.PopFrame()
+                start = time.time_ns()
                 tracked = self.TrackFrame(frame)
-                print("end pose:", frame._lidar_end_pose)
+                end = time.time_ns()
+
+                times.append(end-start)
+
                 if not tracked:
                     print("Warning: Failed to track frame. Skipping.")
                     continue
@@ -97,6 +101,7 @@ class Tracker:
         
         self._processed_stop_signal.value = True
 
+        print(f"Tracked {len(times)} frames. Average of {np.mean(times)*1e-9} seconds.")
         print("Tracking Done. Waiting to terminate.")
         # Wait until an external terminate signal has been sent.
         # This is used to prevent race conditions at shutdown
@@ -108,23 +113,37 @@ class Tracker:
     # @returns True if tracking was successful.
     def TrackFrame(self, frame: Frame) -> bool:
         
+
+        downsample_type = self._settings.icp.downsample.type
+
+        if downsample_type is None:
+            frame_point_cloud = frame.BuildPointCloud(0.09)
+        elif downsample_type == "VOXEL":
+            frame_point_cloud = frame.BuildPointCloud(0.09)
+            voxel_size = self._settings.icp.downsample.voxel_downsample_size
+            frame_point_cloud = frame_point_cloud.voxel_down_sample(voxel_size=voxel_size)
+        elif downsample_type == "UNIFORM":
+            target_points = self._settings.icp.downsample.target_uniform_point_count
+
+            frame_point_cloud = frame.BuildPointCloud(0.09, target_points=target_points)
+        else:
+            raise Exception(f"Unrecognized downsample type {downsample_type}")
+
         # First Iteration: No reference pose, we fix this as the origin of the coordinate system.
         if self._reference_point_cloud is None:
             frame._lidar_start_pose = self._reference_pose.Clone(fixed=True)
             frame._lidar_end_pose = self._reference_pose.Clone(fixed=True)
-            self._reference_point_cloud = frame.BuildPointCloud()
+            self._reference_point_cloud = frame_point_cloud
             self._reference_time = (frame.start_image.timestamp + frame.end_image.timestamp) / 2
+            self._velocity = torch.Tensor([0,0,0])
+            self._angular_velocity = torch.Tensor([0,0,0])
             return True
 
         device = self._reference_pose.GetTransformationMatrix().device
 
         # Future Iterations: Actually do ICP
-        frame_point_cloud = frame.BuildPointCloud()
-
-        initial_guess = self._reference_pose.GetTransformationMatrix().cpu().numpy()
-                
-        print("Source Size:", len(self._reference_point_cloud.points), "Target Size:", len(frame_point_cloud.points))
-        
+        initial_guess = np.eye(4)
+                        
         # TODO: See the estimate normals section of http://www.open3d.org/docs/release/python_api/open3d.t.geometry.PointCloud.html#
         # They recommend doing it a different way by setting a radius, but I don't know what radius to use
         self._reference_point_cloud.estimate_normals()
@@ -134,48 +153,47 @@ class Tracker:
             self._settings.icp.relative_fitness, self._settings.icp.relative_rmse, self._settings.icp.max_iterations)
 
         registration = o3d.pipelines.registration.registration_icp(
-            self._reference_point_cloud, frame_point_cloud, self._settings.icp.threshold, initial_guess,
-            o3d.pipelines.registration.TransformationEstimationPointToPoint(), criteria=convergence_criteria)
+            frame_point_cloud, self._reference_point_cloud, self._settings.icp.threshold, initial_guess,
+            o3d.pipelines.registration.TransformationEstimationPointToPlane(), criteria=convergence_criteria)
 
         registration_result = torch.from_numpy(registration.transformation.copy()).float().to(device)
 
-        tracked_position = self._reference_pose.GetTransformationMatrix() @ registration_result
+        reference_pose_mat = self._reference_pose.GetTransformationMatrix().detach()
+
+        tracked_position = reference_pose_mat @ registration_result
 
         # Do interpolation/extrapolation to get the start/end lidar poses
         # TODO: Is there a better way to do this extrapolation? 
         rot = R.from_matrix(registration_result[:3, :3])
         rot_vec = rot.as_rotvec()
-        rot_amount = np.linalg.norm(rot_vec)
-        rot_axis = rot_vec / rot_amount
-        trans_vec = tracked_position[:3, 3]
+        trans_vec = registration_result[:3, 3]
 
         new_reference_time = (frame.start_image.timestamp + frame.end_image.timestamp) / 2
-        reference_pose_mat = self._reference_pose.GetTransformationMatrix()
 
         start_time_interp_factor = (frame.start_image.timestamp - self._reference_time)/(new_reference_time - self._reference_time)
-        rot_vec_start = rot_axis * start_time_interp_factor * rot_amount
-        rot_start = R.from_rotvec(rot_vec_start)
-        trans_vec_start = reference_pose_mat[:3, 3] + start_time_interp_factor * trans_vec
-        start_transformation_mat = np.hstack((rot_start.as_matrix(), trans_vec_start.reshape(3,1)))
-        start_transformation_mat = np.vstack((start_transformation_mat, [0,0,0,1]))
-        frame._lidar_start_pose = Pose(torch.from_numpy(start_transformation_mat).float().to(device))
+        rot_vec_start = rot_vec * start_time_interp_factor
+        rot_start = torch.from_numpy(R.from_rotvec(rot_vec_start).as_matrix())
+        trans_vec_start = start_time_interp_factor * trans_vec
+        start_transformation_mat = torch.hstack((rot_start, trans_vec_start.reshape(3,1)))
+        start_transformation_mat = torch.vstack((start_transformation_mat, torch.Tensor([0,0,0,1]))).float()
+        frame._lidar_start_pose = Pose((reference_pose_mat @ start_transformation_mat).float().to(device))
 
         end_time_interp_factor = (frame.end_image.timestamp - self._reference_time)/(new_reference_time - self._reference_time)
-        rot_vec_end = rot_axis * end_time_interp_factor * rot_amount
-        rot_end = R.from_rotvec(rot_vec_end)
-        trans_vec_end = reference_pose_mat[:3, 3] + end_time_interp_factor * trans_vec
-        end_transformation_mat = np.hstack((rot_end.as_matrix(), trans_vec_end.reshape(3,1)))
-        end_transformation_mat = np.vstack((end_transformation_mat, [0,0,0,1]))
-        frame._lidar_end_pose = Pose(torch.from_numpy(end_transformation_mat).float().to(device))
-        print("Set End Pose To:", frame._lidar_end_pose)
+        rot_vec_end = rot_vec * end_time_interp_factor
+        rot_end = torch.from_numpy(R.from_rotvec(rot_vec_end).as_matrix())
+        trans_vec_end = end_time_interp_factor * trans_vec
+        end_transformation_mat = torch.hstack((rot_end, trans_vec_end.reshape(3,1)))
+        end_transformation_mat = torch.vstack((end_transformation_mat, torch.Tensor([0,0,0,1]))).float()
+        frame._lidar_end_pose = Pose((reference_pose_mat @ end_transformation_mat).float().to(device))
 
-        logdir = f"../outputs/frame_{self._frame_count}"
-        os.mkdir(f"../outputs/frame_{self._frame_count}")
-        o3d.io.write_point_cloud(f"{logdir}/reference_point_cloud.pcd", self._reference_point_cloud)
-        o3d.io.write_point_cloud(f"{logdir}/frame_point_cloud.pcd", frame_point_cloud)
-        o3d.io.write_point_cloud(f"{logdir}/transfromed_reference_cloud.pcd", transform_cloud(self._reference_point_cloud, registration_result))
+        # logdir = f"../outputs/frame_{self._frame_count}"
+        # os.mkdir(f"../outputs/frame_{self._frame_count}")
+        # o3d.io.write_point_cloud(f"{logdir}/reference_point_cloud.pcd", self._reference_point_cloud)
+        # o3d.io.write_point_cloud(f"{logdir}/frame_point_cloud.pcd", frame_point_cloud)
+        # o3d.io.write_point_cloud(f"{logdir}/transformed_frame_cloud.pcd", transform_cloud(frame_point_cloud, registration_result))
         
 
+        self._reference_time = new_reference_time
         self._reference_pose = Pose(tracked_position, fixed=True)
         self._reference_point_cloud = frame_point_cloud
 
