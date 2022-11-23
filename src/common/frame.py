@@ -91,26 +91,26 @@ class Frame:
         pcd.points = o3d.utility.Vector3dVector(end_points_global.cpu().numpy().transpose())
         return pcd
 
-    def SetStartSkyMask(self, mask: Image) -> None:
+    def set_start_sky_mask(self, mask: Image) -> None:
         self.start_sky_mask = mask
 
-    def SetEndSkyMask(self, mask: Image) -> None:
+    def set_end_sky_mask(self, mask: Image) -> None:
         self.end_sky_mask = mask
 
     ## Returns the Pose of the camera at the start of the frame as a transformation matrix
-    def GetStartCameraTransform(self) -> torch.Tensor:
+    def get_start_camera_transform(self) -> torch.Tensor:
         return self._lidar_start_pose * self._lidar_to_camera
 
     ## Returns the Pose of the camera at the end of the frame as a transformation matrix
-    def GetEndCameraTransform(self) -> torch.Tensor:
+    def get_end_camera_transform(self) -> torch.Tensor:
         return self._lidar_end_pose * self._lidar_to_camera
 
     ## Returns the Pose of the lidar at the start of the frame as a transformation matrix
-    def GetStartLidarPose(self) -> Pose:
+    def get_start_lidar_pose(self) -> Pose:
         return self._lidar_start_pose
 
     ## Returns the Pose of the lidar at the end of the frame as a transformation matrix
-    def GetEndLidarPose(self) -> Pose:
+    def get_end_lidar_pose(self) -> Pose:
         return self._lidar_end_pose
 
 

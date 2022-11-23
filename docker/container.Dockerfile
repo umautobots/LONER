@@ -119,7 +119,7 @@ WORKDIR /home/${USER_NAME}
 
 RUN sudo rosdep init && rosdep update
 
-# Finish ROS setup
+# finish ROS setup
 RUN echo "source /opt/ros/noetic/setup.bash" >> ~/.bashrc
 
 # This overrides the default CarlaSim entrypoint, which we want. Theirs starts the simulator.

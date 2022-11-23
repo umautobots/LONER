@@ -45,19 +45,19 @@ class LidarScan:
     def __len__(self) -> int:
         return self.timestamps.shape[0]
 
-    def GetStartTime(self):
+    def get_start_time(self):
         return self.timestamps[0]
 
-    def GetEndTime(self):
+    def get_end_time(self):
         return self.timestamps[-1]
 
-    def Clear(self):
+    def clear(self):
         self.ray_directions = torch.Tensor()
         self.distances = torch.Tensor()
         self.ray_origin_offsets = torch.eye(4)
         self.timestamps = torch.Tensor()
 
-    def RemovePoints(self, num_points):
+    def remove_points(self, num_points):
         self.ray_directions = self.ray_directions[...,num_points:]
         self.distances = self.distances[num_points:]
         self.timestamps = self.timestamps[num_points:]
@@ -66,19 +66,19 @@ class LidarScan:
         if not single_origin:
             self.ray_origin_offsets = self.ray_origin_offsets[..., num_points:]
 
-    def Merge(self, other: "LidarScan"):
-        self.AddPoints(other.ray_directions,
+    def merge(self, other: "LidarScan"):
+        self.add_points(other.ray_directions,
                        other.distances,
                        other.ray_origin_offsets,
                        other.timestamps)
 
-    def To(self, device):
+    def to(self, device):
         self.ray_directions = self.ray_directions.to(device)
         self.distances = self.distances.to(device)
         self.ray_origin_offsets = self.ray_origin_offsets.to(device)
         self.timestamps = self.timestamps.to(device)
 
-    def AddPoints(self,
+    def add_points(self,
                   ray_directions: torch.Tensor,
                   distances: torch.Tensor,
                   ray_origin_offsets: torch.Tensor,

@@ -98,29 +98,29 @@ class Pose:
             self._pose_tensor = transform_to_tensor(transformation_matrix)
         self._pose_tensor.requires_grad_(not fixed)
 
-    def FromSettings(pose_dict:dict, fixed: bool=False) -> "Pose":
+    def from_settings(pose_dict:dict, fixed: bool=False) -> "Pose":
         xyz = torch.Tensor(pose_dict['xyz'])
         quat = torch.Tensor(pose_dict['orientation'])
 
         tensor = torch.cat((xyz, quat))
         return Pose(pose_tensor=tensor, fixed=fixed)
 
-    def Clone(self, fixed=None):
+    def clone(self, fixed=None):
         if fixed is None:
             fixed = self.fixed
         return Pose(pose_tensor=self._pose_tensor.clone(), fixed=fixed)
 
     def __mul__(self, other) -> "Pose":
-        return Pose(self.GetTransformationMatrix() @ other.GetTransformationMatrix())
+        return Pose(self.get_transformation_matrix() @ other.get_transformation_matrix())
 
-    def Inv(self) -> "Pose":
-        return Pose(torch.linalg.inv(self.GetTransformationMatrix()))
+    def inv(self) -> "Pose":
+        return Pose(torch.linalg.inv(self.get_transformation_matrix()))
 
-    def SetFixed(self, fixed: bool = True) -> None:
+    def set_fixed(self, fixed: bool = True) -> None:
         self._pose_tensor.requires_grad_(not fixed)
 
-    def GetTransformationMatrix(self):
+    def get_transformation_matrix(self):
         return tensor_to_transform(self._pose_tensor)
 
-    def GetPoseTensor(self):
+    def get_pose_tensor(self):
         return self._pose_tensor

@@ -150,10 +150,10 @@ if __name__ == "__main__":
             cloner_slam.ProcessRGB(image, camera_pose)
         elif topic == LIDAR_TOPIC:
             lidar_scan = BuildScanFromMsg(msg, t)
-            cloner_slam.ProcessLidar(lidar_scan)
+            cloner_slam.process_lidar(lidar_scan)
         else:
             raise Exception("Should be unreachable")
 
-    cloner_slam.Stop(drawer.Update, drawer.Finish)
+    cloner_slam.Stop(drawer.update, drawer.finish)
     cloner_slam.Cleanup()
     del drawer

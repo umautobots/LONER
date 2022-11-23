@@ -11,16 +11,14 @@ class KeyFrame:
     def __init__(self, frame: Frame) -> None:
         self._frame = frame
 
-    def GetStartCameraPose(self) -> None:
-        return self._frame.GetStartCameraTransform()
+    def get_start_camera_pose(self) -> None:
+        return self._frame.get_start_camera_transform()
 
-    def GetEndCameraPose(self) -> None:
-        return self._frame.GetEndCameraTransform()
+    def get_end_camera_pose(self) -> None:
+        return self._frame.get_end_camera_transform()
 
-    def GetStartLidarPose(self) -> None:
-        return self._frame.GetStartLidarPose()
+    def get_start_lidar_pose(self) -> None:
+        return self._frame.get_start_lidar_pose()
 
-    def GetEndLidarPose(self) -> None:
-        return self._frame.GetEndLidarPose()
-
-
+    def get_end_lidar_pose(self) -> None:
+        return self._frame.get_end_lidar_pose()

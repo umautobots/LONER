@@ -62,8 +62,8 @@ class ClonerSLAM:
     def Start(self, synchronous: bool = True) -> None:
         print("Starting Cloner SLAM")
         # Start the children
-        self._tracking_process = mp.Process(target=self._tracker.Run)
-        self._mapping_process = mp.Process(target=self._mapper.Run)
+        self._tracking_process = mp.Process(target=self._tracker.run)
+        self._mapping_process = mp.Process(target=self._mapper.run)
         self._tracking_process.daemon = True
         self._mapping_process.daemon = True
         self._tracking_process.start()
@@ -77,8 +77,8 @@ class ClonerSLAM:
     def Stop(self, waiting_action = None, finish_action = None):
         print("Stopping ClonerSLAM Sub-Processes")
 
-        self._lidar_signal.Emit(StopSignal())
-        self._rgb_signal.Emit(StopSignal())
+        self._lidar_signal.emit(StopSignal())
+        self._rgb_signal.emit(StopSignal())
 
         while not self._tracker._processed_stop_signal.value:
             if waiting_action is not None:
@@ -88,7 +88,7 @@ class ClonerSLAM:
         
         # Once we're done tracking frames (no new ones will be emitted),
         # we can kill the mapper. 
-        self._frame_signal.Emit(StopSignal())
+        self._frame_signal.emit(StopSignal())
         while not self._mapper._processed_stop_signal.value:
             if waiting_action is not None:
                 waiting_action()
@@ -107,14 +107,14 @@ class ClonerSLAM:
 
         print("SubProcesses Exited")
 
-    def ProcessLidar(self, lidar_scan: LidarScan) -> None:
-        self._lidar_signal.Emit(lidar_scan)
+    def process_lidar(self, lidar_scan: LidarScan) -> None:
+        self._lidar_signal.emit(lidar_scan)
 
     def ProcessRGB(self, image: Image, gt_pose: Pose = None) -> None:
-        self._rgb_signal.Emit((image, gt_pose))
+        self._rgb_signal.emit((image, gt_pose))
 
     def Cleanup(self):
         print("Cleaning Up ClonerSlam")
-        self._frame_signal.Flush()
-        self._rgb_signal.Flush()
-        self._lidar_signal.Flush()
+        self._frame_signal.flush()
+        self._rgb_signal.flush()
+        self._lidar_signal.flush()

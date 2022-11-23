@@ -20,7 +20,7 @@ class Mapper:
     # @param settings: The settings for the mapping and all contained classes
     # @param frame_signal: A Signal which the tracker emits to with completed Frame objects
     def __init__(self, settings: Settings, frame_signal: Signal) -> None:
-        self._frame_slot = frame_signal.Register()
+        self._frame_slot = frame_signal.register()
         self._settings = settings
 
         self._keyframe_manager = KeyFrameManager(settings.keyframe_manager)
@@ -30,10 +30,10 @@ class Mapper:
         self._processed_stop_signal = mp.Value('i', 0)
 
     ## Spin by reading frames from the @m frame_queue as inputs.
-    def Run(self) -> None:
+    def run(self) -> None:
         while True:
-            if self._frame_slot.HasValue():
-                new_frame = self._frame_slot.GetValue()
+            if self._frame_slot.has_value():
+                new_frame = self._frame_slot.get_value()
 
                 if isinstance(new_frame, StopSignal):
                     break

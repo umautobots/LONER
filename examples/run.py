@@ -17,6 +17,6 @@ if __name__ == "__main__":
     cloner_slam.Start()
 
     for x in range(1000):
-        cloner_slam.ProcessLidar(LidarScan(timestamps=torch.Tensor([x])))
+        cloner_slam.process_lidar(LidarScan(timestamps=torch.Tensor([x])))
         cloner_slam.ProcessRGB(Image(3,x))
     cloner_slam.Stop()

@@ -13,7 +13,7 @@ import tf2_ros
 import geometry_msgs.msg
 
 def transform_from_pose(pose, child_frame):
-    tf_mat = pose.GetTransformationMatrix().detach()
+    tf_mat = pose.get_transformation_matrix().detach()
 
     translation = tf_mat[:3, 3]
     rotation = R.from_matrix(tf_mat[:3, :3]).as_quat()
@@ -47,8 +47,8 @@ def transform_from_pose(pose, child_frame):
 
 class FrameDrawer:
     def __init__(self, frame_signal: Signal, rgb_signal: Signal):
-        self._frame_slot = frame_signal.Register()
-        self._rgb_slot = rgb_signal.Register()
+        self._frame_slot = frame_signal.register()
+        self._rgb_slot = rgb_signal.register()
         self._broadcater = tf2_ros.TransformBroadcaster()
 
         self._path = Path()
@@ -64,17 +64,17 @@ class FrameDrawer:
         self._bridge = CvBridge()
         self._gt_pose_offset = None
 
-    def Update(self):
-        while self._frame_slot.HasValue():
-            frame = self._frame_slot.GetValue()
+    def update(self):
+        while self._frame_slot.has_value():
+            frame = self._frame_slot.get_value()
 
             if isinstance(frame, StopSignal):
                 break
 
             if self._gt_pose_offset is None:
-                self._gt_pose_offset = frame._gt_lidar_start_pose.Inv()
+                self._gt_pose_offset = frame._gt_lidar_start_pose.inv()
             
-            transform_msg, new_pose = transform_from_pose(frame.GetStartLidarPose(), "lidar_start_pose")
+            transform_msg, new_pose = transform_from_pose(frame.get_start_lidar_pose(), "lidar_start_pose")
             gt_transform_msg, gt_pose = transform_from_pose(self._gt_pose_offset*frame._gt_lidar_start_pose, "gt_lidar_pose")
 
             self._broadcater.sendTransform(transform_msg)
@@ -92,8 +92,8 @@ class FrameDrawer:
         
             self._frame_img_pub.publish(img)
         
-        while self._rgb_slot.HasValue():
-            img, _ = self._rgb_slot.GetValue()
+        while self._rgb_slot.has_value():
+            img, _ = self._rgb_slot.get_value()
             
             if isinstance(img, StopSignal):
                 break

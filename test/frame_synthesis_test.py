@@ -35,7 +35,7 @@ class TestFrameSynthesis(unittest.TestCase):
         fs_settings = settings.tracker.frame_synthesis
         fs_settings.frame_decimation_rate_hz = 1
 
-        extrinsics = Pose.FromSettings(settings.calibration.lidar_to_camera)
+        extrinsics = Pose.from_settings(settings.calibration.lidar_to_camera)
     
         fs = FrameSynthesis(fs_settings, extrinsics)
 
@@ -48,43 +48,43 @@ class TestFrameSynthesis(unittest.TestCase):
         lidar_scan_12 = BuildLidarScan(1.6, 2.5, 10)
         lidar_scan_23 = BuildLidarScan(2.6, 3.6, 10)
 
-        fs.ProcessImage(image_0)
+        fs.process_image(image_0)
         # print("===== Image 0 =====")
         # print("Active Frame:", fs._active_frame)
         # print("In Progress:", fs._in_progress_frames)
         # print("Completed:", fs._completed_frames)
 
-        fs.ProcessLidar(lidar_scan_01)
+        fs.process_lidar(lidar_scan_01)
         # print("===== Lidar 01 =====")
         # print("Active Frame:", fs._active_frame)
         # print("In Progress:", fs._in_progress_frames)
         # print("Completed:", fs._completed_frames)
         
-        fs.ProcessImage(image_1)
+        fs.process_image(image_1)
         # print("===== Image 1 =====")
         # print("Active Frame:", fs._active_frame)
         # print("In Progress:", fs._in_progress_frames)
         # print("Completed:", fs._completed_frames)
         
-        fs.ProcessLidar(lidar_scan_12)
+        fs.process_lidar(lidar_scan_12)
         # print("===== Lidar 12 =====")
         # print("Active Frame:", fs._active_frame)
         # print("In Progress:", fs._in_progress_frames)
         # print("Completed:", fs._completed_frames)
         
-        fs.ProcessImage(image_2)
+        fs.process_image(image_2)
         # print("===== Image 2 =====")
         # print("Active Frame:", fs._active_frame)
         # print("In Progress:", fs._in_progress_frames)
         # print("Completed:", fs._completed_frames)
         
-        fs.ProcessLidar(lidar_scan_23)
+        fs.process_lidar(lidar_scan_23)
         # print("===== Lidar 23 =====")
         # print("Active Frame:", fs._active_frame)
         # print("In Progress:", fs._in_progress_frames)
         # print("Completed:", fs._completed_frames)
         
-        fs.ProcessImage(image_3)
+        fs.process_image(image_3)
         # print("===== Image 3 =====")
         # print("Active Frame:", fs._active_frame)
         # print("In Progress:", fs._in_progress_frames)
@@ -119,7 +119,7 @@ class TestFrameSynthesis(unittest.TestCase):
         settings = Settings(settings_dict)
         fs_settings = settings.tracker.frame_synthesis
         fs_settings.frame_decimation_rate_hz = 1
-        extrinsics = Pose.FromSettings(settings.calibration.lidar_to_camera)
+        extrinsics = Pose.from_settings(settings.calibration.lidar_to_camera)
     
         fs = FrameSynthesis(fs_settings, extrinsics)
 
@@ -137,67 +137,67 @@ class TestFrameSynthesis(unittest.TestCase):
         lidar_scan_6 = BuildLidarScan(3.3, 3.6, 10)
 
         # print("===== Lidar 0 -> 0.5 =====")
-        fs.ProcessLidar(lidar_scan_0)
+        fs.process_lidar(lidar_scan_0)
         # print("Active Frame:", fs._active_frame)
         # print("In Progress:", fs._in_progress_frames)
         # print("Completed:", fs._completed_frames)
 
         # print("===== Image 0 =====")
-        fs.ProcessImage(image_0)
+        fs.process_image(image_0)
         # print("Active Frame:", fs._active_frame)
         # print("In Progress:", fs._in_progress_frames)
         # print("Completed:", fs._completed_frames)
 
         # print("===== Lidar 0.5->0.8 =====")
-        fs.ProcessLidar(lidar_scan_1)
+        fs.process_lidar(lidar_scan_1)
         # print("Active Frame:", fs._active_frame)
         # print("In Progress:", fs._in_progress_frames)
         # print("Completed:", fs._completed_frames)
 
         # print("===== Lidar 0.9->1.5 =====")
-        fs.ProcessLidar(lidar_scan_2)
+        fs.process_lidar(lidar_scan_2)
         # print("Active Frame:", fs._active_frame)
         # print("In Progress:", fs._in_progress_frames)
         # print("Completed:", fs._completed_frames)
 
         # print("===== Image 1 =====")
-        fs.ProcessImage(image_1)
+        fs.process_image(image_1)
         # print("Active Frame:", fs._active_frame)
         # print("In Progress:", fs._in_progress_frames)
         # print("Completed:", fs._completed_frames)
 
         # print("===== Image 2 =====")
-        fs.ProcessImage(image_2)
+        fs.process_image(image_2)
         # print("Active Frame:", fs._active_frame)
         # print("In Progress:", fs._in_progress_frames)
         # print("Completed:", fs._completed_frames)
 
         # print("===== Lidar 1.6->2.4 =====")
-        fs.ProcessLidar(lidar_scan_3)
+        fs.process_lidar(lidar_scan_3)
         # print("Active Frame:", fs._active_frame)
         # print("In Progress:", fs._in_progress_frames)
         # print("Completed:", fs._completed_frames)
 
         # print("===== Lidar 2.5->2.9 =====")
-        fs.ProcessLidar(lidar_scan_4)
+        fs.process_lidar(lidar_scan_4)
         # print("Active Frame:", fs._active_frame)
         # print("In Progress:", fs._in_progress_frames)
         # print("Completed:", fs._completed_frames)
 
         # print("===== Lidar 3.0->3.2 =====")
-        fs.ProcessLidar(lidar_scan_5)
+        fs.process_lidar(lidar_scan_5)
         # print("Active Frame:", fs._active_frame)
         # print("In Progress:", fs._in_progress_frames)
         # print("Completed:", fs._completed_frames)
 
         # print("===== Image 3 =====")
-        fs.ProcessImage(image_3)
+        fs.process_image(image_3)
         # print("Active Frame:", fs._active_frame)
         # print("In Progress:", fs._in_progress_frames)
         # print("Completed:", fs._completed_frames)
 
         # print("===== Lidar 3.3->3.5 =====")
-        fs.ProcessLidar(lidar_scan_6)
+        fs.process_lidar(lidar_scan_6)
         # print("Active Frame:", fs._active_frame)
         # print("In Progress:", fs._in_progress_frames)
         # print("Completed:", fs._completed_frames)
@@ -227,7 +227,7 @@ class TestFrameSynthesis(unittest.TestCase):
         settings = Settings(settings_dict)
         fs_settings = settings.tracker.frame_synthesis
         fs_settings.frame_decimation_rate_hz = 1
-        extrinsics = Pose.FromSettings(settings.calibration.lidar_to_camera)
+        extrinsics = Pose.from_settings(settings.calibration.lidar_to_camera)
     
         fs = FrameSynthesis(fs_settings, extrinsics)
 
@@ -240,13 +240,13 @@ class TestFrameSynthesis(unittest.TestCase):
         lidar_scan_12 = BuildLidarScan(1.6, 2.5, 10)
         lidar_scan_23 = BuildLidarScan(2.6, 3.6, 10)
 
-        fs.ProcessImage(image_0)
-        fs.ProcessImage(image_1)
-        fs.ProcessImage(image_2)
-        fs.ProcessLidar(lidar_scan_01)
-        fs.ProcessLidar(lidar_scan_12)
-        fs.ProcessLidar(lidar_scan_23)
-        fs.ProcessImage(image_3)
+        fs.process_image(image_0)
+        fs.process_image(image_1)
+        fs.process_image(image_2)
+        fs.process_lidar(lidar_scan_01)
+        fs.process_lidar(lidar_scan_12)
+        fs.process_lidar(lidar_scan_23)
+        fs.process_image(image_3)
 
         # The first frame should be images at t=[0,1]
         first_frame = fs._completed_frames[0]
@@ -270,7 +270,7 @@ class TestFrameSynthesis(unittest.TestCase):
         settings = Settings(settings_dict)
         fs_settings = settings.tracker.frame_synthesis
         fs_settings.frame_decimation_rate_hz = 1
-        extrinsics = Pose.FromSettings(settings.calibration.lidar_to_camera)
+        extrinsics = Pose.from_settings(settings.calibration.lidar_to_camera)
     
         fs = FrameSynthesis(fs_settings, extrinsics)
 
@@ -284,14 +284,14 @@ class TestFrameSynthesis(unittest.TestCase):
         lidar_scan_0 = BuildLidarScan(0, 4, 10)
         lidar_scan_1 = BuildLidarScan(4.1, 10, 10)
 
-        fs.ProcessImage(image_0)
-        fs.ProcessImage(image_1)
-        fs.ProcessImage(image_2)
-        fs.ProcessImage(image_3)
-        fs.ProcessLidar(lidar_scan_0)
-        fs.ProcessLidar(lidar_scan_1)
-        fs.ProcessImage(image_4)
-        fs.ProcessImage(image_5)
+        fs.process_image(image_0)
+        fs.process_image(image_1)
+        fs.process_image(image_2)
+        fs.process_image(image_3)
+        fs.process_lidar(lidar_scan_0)
+        fs.process_lidar(lidar_scan_1)
+        fs.process_image(image_4)
+        fs.process_image(image_5)
 
         # There should be two frames 
         self.assertEqual(len(fs._completed_frames), 3)

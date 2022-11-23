@@ -13,5 +13,5 @@ class SkyRemoval:
         self._settings = settings
 
     ## Given an image, return the binary mask where 1 is sky and 0 is not sky.
-    def GetSkyMask(self, image: torch.Tensor) -> torch.Tensor:
+    def get_sky_mask(self, image: torch.Tensor) -> torch.Tensor:
         pass

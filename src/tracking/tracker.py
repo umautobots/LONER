@@ -44,12 +44,12 @@ class Tracker:
                  lidar_signal: Signal,
                  frame_signal: Signal) -> None:
 
-        self._rgb_slot = rgb_signal.Register()
-        self._lidar_slot = lidar_signal.Register()
+        self._rgb_slot = rgb_signal.register()
+        self._lidar_slot = lidar_signal.register()
         self._frame_signal = frame_signal
         self._settings = settings.tracker
         
-        self._t_lidar_to_camera = Pose.FromSettings(settings.calibration.lidar_to_camera)
+        self._t_lidar_to_camera = Pose.from_settings(settings.calibration.lidar_to_camera)
         self._frame_synthesizer = FrameSynthesis(self._settings.frame_synthesis, self._t_lidar_to_camera)
 
         # Used to indicate to an external process that I've processed the stop signal
@@ -65,43 +65,38 @@ class Tracker:
         self._frame_count = 0        
 
     ## Run spins and processes incoming data while putting resulting frames into the queue
-    def Run(self) -> None:
+    def run(self) -> None:
         times = []
         while True:            
-            if self._rgb_slot.HasValue():
-                val = self._rgb_slot.GetValue()
+            if self._rgb_slot.has_value():
+                val = self._rgb_slot.get_value()
 
                 if isinstance(val, StopSignal):
                     break
 
                 new_rgb, new_gt_pose = val
 
-                self._frame_synthesizer.ProcessImage(new_rgb, new_gt_pose)
+                self._frame_synthesizer.process_image(new_rgb, new_gt_pose)
 
-            if self._lidar_slot.HasValue():
-                new_lidar = self._lidar_slot.GetValue()
+            if self._lidar_slot.has_value():
+                new_lidar = self._lidar_slot.get_value()
 
                 if isinstance(new_lidar, StopSignal):
                     break
                 
-                self._frame_synthesizer.ProcessLidar(new_lidar)
+                self._frame_synthesizer.process_lidar(new_lidar)
 
-            while self._frame_synthesizer.HasFrame():
-                frame = self._frame_synthesizer.PopFrame()
-                start = time.time_ns()
-                tracked = self.TrackFrame(frame)
-                end = time.time_ns()
-
-                times.append(end-start)
+            while self._frame_synthesizer.has_frame():
+                frame = self._frame_synthesizer.pop_frame()
+                tracked = self.track_frame(frame)
 
                 if not tracked:
                     print("Warning: Failed to track frame. Skipping.")
                     continue
-                self._frame_signal.Emit(frame)
+                self._frame_signal.emit(frame)
         
         self._processed_stop_signal.value = True
 
-        print(f"Tracked {len(times)} frames. Average of {np.mean(times)*1e-9} seconds.")
         print("Tracking Done. Waiting to terminate.")
         # Wait until an external terminate signal has been sent.
         # This is used to prevent race conditions at shutdown
@@ -109,9 +104,9 @@ class Tracker:
             continue
         print("Exiting tracking process.")
         
-    ## TrackFrame inputs a @p frame and estimates its pose, which is stored in the Frame.
+    ## track_frame inputs a @p frame and estimates its pose, which is stored in the Frame.
     # @returns True if tracking was successful.
-    def TrackFrame(self, frame: Frame) -> bool:
+    def track_frame(self, frame: Frame) -> bool:
         
 
         downsample_type = self._settings.icp.downsample.type
@@ -131,15 +126,15 @@ class Tracker:
 
         # First Iteration: No reference pose, we fix this as the origin of the coordinate system.
         if self._reference_point_cloud is None:
-            frame._lidar_start_pose = self._reference_pose.Clone(fixed=True)
-            frame._lidar_end_pose = self._reference_pose.Clone(fixed=True)
+            frame._lidar_start_pose = self._reference_pose.clone(fixed=True)
+            frame._lidar_end_pose = self._reference_pose.clone(fixed=True)
             self._reference_point_cloud = frame_point_cloud
             self._reference_time = (frame.start_image.timestamp + frame.end_image.timestamp) / 2
             self._velocity = torch.Tensor([0,0,0])
             self._angular_velocity = torch.Tensor([0,0,0])
             return True
 
-        device = self._reference_pose.GetTransformationMatrix().device
+        device = self._reference_pose.get_transformation_matrix().device
 
         # Future Iterations: Actually do ICP
         initial_guess = np.eye(4)
@@ -158,7 +153,7 @@ class Tracker:
 
         registration_result = torch.from_numpy(registration.transformation.copy()).float().to(device)
 
-        reference_pose_mat = self._reference_pose.GetTransformationMatrix().detach()
+        reference_pose_mat = self._reference_pose.get_transformation_matrix().detach()
 
         tracked_position = reference_pose_mat @ registration_result
 

@@ -10,22 +10,22 @@ class Slot:
     def __init__(self, callback=None):
         self._queue = mp.Queue()
 
-    def HasValue(self) -> bool:
+    def has_value(self) -> bool:
         return not self._queue.empty()
 
-    def GetValue(self):
-        if not self.HasValue():
+    def get_value(self):
+        if not self.has_value():
             return None
         return self._queue.get()
 
-    def insert(self, value):
+    def _insert(self, value):
         self._queue.put(value)
 
 class Signal:
     def __init__(self):
         self._slots = []
 
-    def Flush(self):
+    def flush(self):
         warned = False
         for s in self._slots:
             while not s._queue.empty():
@@ -34,10 +34,10 @@ class Signal:
                     warned = True
                 s._queue.get()
 
-    def Register(self) -> Slot:
+    def register(self) -> Slot:
         self._slots.append(Slot())
         return self._slots[-1]
 
-    def Emit(self, value):
+    def emit(self, value):
         for s in self._slots:
-            s.insert(value)
+            s._insert(value)
