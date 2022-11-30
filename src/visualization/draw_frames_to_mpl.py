@@ -5,6 +5,7 @@ from scipy.spatial.transform import Rotation as R, Slerp
 from common.utils import StopSignal
 import matplotlib.pyplot as plt
 
+
 class MplFrameDrawer:
     def __init__(self, frame_signal: Signal):
         self._frame_slot = frame_signal.register()
@@ -30,9 +31,11 @@ class MplFrameDrawer:
 
             if self._gt_pose_offset is None:
                 self._gt_pose_offset = frame._gt_lidar_start_pose.inv()
-            
-            new_pose = frame.get_start_lidar_pose().get_transformation_matrix()[:3, 3]
-            gt_pose = (self._gt_pose_offset * frame._gt_lidar_start_pose).get_transformation_matrix()[:3, 3]
+
+            new_pose = frame.get_start_lidar_pose(
+            ).get_transformation_matrix()[:3, 3]
+            gt_pose = (self._gt_pose_offset *
+                       frame._gt_lidar_start_pose).get_transformation_matrix()[:3, 3]
 
             self._path.append(new_pose)
             self._gt_path.append(gt_pose)
@@ -42,7 +45,7 @@ class MplFrameDrawer:
 
         xs = [p.detach()[0] for p in self._path]
         ys = [p.detach()[1] for p in self._path]
-        
+
         xs_gt = [p.detach()[0] for p in self._gt_path]
         ys_gt = [p.detach()[1] for p in self._gt_path]
 

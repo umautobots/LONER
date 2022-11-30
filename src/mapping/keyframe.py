@@ -7,7 +7,7 @@ class KeyFrame:
     Note: Currently it's only a frame, but the class is kept separate as future-proofing.
     """
 
-    ## Constructor: Create a KeyFrame from input Frame @p frame. 
+    # Constructor: Create a KeyFrame from input Frame @p frame.
     def __init__(self, frame: Frame) -> None:
         self._frame = frame
 

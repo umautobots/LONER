@@ -21,6 +21,7 @@ class Slot:
     def _insert(self, value):
         self._queue.put(value)
 
+
 class Signal:
     def __init__(self):
         self._slots = []
@@ -30,7 +31,8 @@ class Signal:
         for s in self._slots:
             while not s._queue.empty():
                 if not warned:
-                    print("Warning: Leftover Items in Queue. This may or may not be an issue.")
+                    print(
+                        "Warning: Leftover Items in Queue. This may or may not be an issue.")
                     warned = True
                 s._queue.get()
 

@@ -2,6 +2,7 @@ import torch
 import scipy.spatial.transform as sptransform
 import numpy as np
 
+
 def transform_to_tensor(transformation_matrix, device=None):
     """
     Converts a homogenous transformation matrix into a tensor T = [x,y,z, x',y',z']
@@ -23,7 +24,7 @@ def transform_to_tensor(transformation_matrix, device=None):
         transformation_matrix = transformation_matrix.numpy()
     elif not isinstance(transformation_matrix, (np.array, np.ndarray)):
         raise ValueError((f"Invalid argument of type {type(transformation_matrix).__name__}"
-                           "passed to transform_to_tensor (Expected numpy array or pytorch tensor)"))
+                          "passed to transform_to_tensor (Expected numpy array or pytorch tensor)"))
 
     R = transformation_matrix[:3, :3]
     T = transformation_matrix[:3, 3]
@@ -38,6 +39,7 @@ def transform_to_tensor(transformation_matrix, device=None):
         tensor = tensor.to(gpu_id)
     return tensor
 
+
 def quaternion_to_rotation(quaternion_tensors):
     """
     Converts a quaternion to a tensor using purely pytorch operations, thus preserving gradients.
@@ -51,8 +53,9 @@ def quaternion_to_rotation(quaternion_tensors):
     if len(quaternion_tensors.shape) == 1:
         quaternion_tensors = torch.unsqueeze(quaternion_tensors, 0)
         bs = quaternion_tensors.shape[0]
-    
-    qi, qj, qk, qr = quaternion_tensors[:, 0], quaternion_tensors[:, 1], quaternion_tensors[:, 2], quaternion_tensors[:, 3]
+
+    qi, qj, qk, qr = quaternion_tensors[:, 0], quaternion_tensors[:,
+                                                                  1], quaternion_tensors[:, 2], quaternion_tensors[:, 3]
     two_s = 2.0 / (quaternion_tensors * quaternion_tensors).sum(-1)
     rotation_matrix = torch.zeros(bs, 3, 3)
     if quaternion_tensors.get_device() != -1:
@@ -79,18 +82,19 @@ def tensor_to_transform(transformation_tensors):
     N = len(transformation_tensors.shape)
     if N == 1:
         transformation_tensors = torch.unsqueeze(transformation_tensors, 0)
-    Ts,quats = transformation_tensors[:,:3], transformation_tensors[:,3:]
+    Ts, quats = transformation_tensors[:, :3], transformation_tensors[:, 3:]
     rotation_matrices = quaternion_to_rotation(quats)
-    RT = torch.cat([rotation_matrices, Ts[:,:,None]], 2)
+    RT = torch.cat([rotation_matrices, Ts[:, :, None]], 2)
     if N == 1:
         RT = RT[0]
-    RT = torch.vstack((RT, torch.Tensor([0,0,0,1])))
+    RT = torch.vstack((RT, torch.Tensor([0, 0, 0, 1])))
     return RT
+
 
 class Pose:
     def __init__(self, transformation_matrix: torch.Tensor = torch.eye(4),
-                       pose_tensor: torch.Tensor = None,
-                       fixed: bool=False):
+                 pose_tensor: torch.Tensor = None,
+                 fixed: bool = False):
 
         if pose_tensor is not None:
             self._pose_tensor = pose_tensor
@@ -98,7 +102,7 @@ class Pose:
             self._pose_tensor = transform_to_tensor(transformation_matrix)
         self._pose_tensor.requires_grad_(not fixed)
 
-    def from_settings(pose_dict:dict, fixed: bool=False) -> "Pose":
+    def from_settings(pose_dict: dict, fixed: bool = False) -> "Pose":
         xyz = torch.Tensor(pose_dict['xyz'])
         quat = torch.Tensor(pose_dict['orientation'])
 

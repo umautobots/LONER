@@ -28,14 +28,16 @@ class ClonerSLAM:
     """
 
     def __init__(self, settings: Union[Settings, str]) -> None:
-        
+
         if isinstance(settings, str):
             with open(settings, 'r') as settings_file:
-                self._settings = Settings(yaml.load(settings_file, Loader=yaml.FullLoader))
-        elif type(settings).__name__ == "Settings": # Avoiding strange attrdict behavior
+                self._settings = Settings(
+                    yaml.load(settings_file, Loader=yaml.FullLoader))
+        elif type(settings).__name__ == "Settings":  # Avoiding strange attrdict behavior
             self._settings = settings
         else:
-            raise RuntimeError(f"Can't load settings of type {type(settings).__name__}")
+            raise RuntimeError(
+                f"Can't load settings of type {type(settings).__name__}")
 
         mp.set_start_method('spawn')
 
@@ -58,7 +60,6 @@ class ClonerSLAM:
 
         self._device = self._settings.device
 
-
     def Start(self, synchronous: bool = True) -> None:
         print("Starting Cloner SLAM")
         # Start the children
@@ -72,9 +73,9 @@ class ClonerSLAM:
         if not synchronous:
             self._tracking_process.join()
             self._mapping_process.join()
-        
-    ## Stop the processes running the mapping and tracking
-    def Stop(self, waiting_action = None, finish_action = None):
+
+    # Stop the processes running the mapping and tracking
+    def Stop(self, waiting_action=None, finish_action=None):
         print("Stopping ClonerSLAM Sub-Processes")
 
         self._lidar_signal.emit(StopSignal())
@@ -85,16 +86,15 @@ class ClonerSLAM:
                 waiting_action()
             sleep(0.1)
         print("Processed tracking stop")
-        
+
         # Once we're done tracking frames (no new ones will be emitted),
-        # we can kill the mapper. 
+        # we can kill the mapper.
         self._frame_signal.emit(StopSignal())
         while not self._mapper._processed_stop_signal.value:
             if waiting_action is not None:
                 waiting_action()
             sleep(0.1)
         print("Processed mapping stop")
-
 
         if finish_action is not None:
             finish_action()

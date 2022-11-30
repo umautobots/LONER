@@ -12,14 +12,14 @@ class Model(nn.Module):
     def __init__(self, cfg):
         super(Model, self).__init__()
         self.cfg = cfg
-        
-        if cfg.model_type=='nerf':
+
+        if cfg.model_type == 'nerf':
             self.nerf_model = NeRF(cfg.nerf_config, cfg.num_colors)
         elif cfg.model_type == 'nerf_decoupled':
             self.nerf_model = DecoupledNeRF(cfg.nerf_config, cfg.num_colors)
         else:
             raise NotImplementedError()
-    
+
     def freeze_sigma_head(self):
         for p in self.nerf_model._model_sigma.parameters():
             p.requires_grad = False
@@ -27,7 +27,7 @@ class Model(nn.Module):
     def freeze_rgb_head(self):
         for p in self.nerf_model._model_intensity.parameters():
             p.requires_grad = False
-            
+
     def forward(self, rays, ray_sampler, scale_factor, testing=False, camera=True):
         """Do batched inference on rays using chunk"""
 
@@ -37,14 +37,14 @@ class Model(nn.Module):
         else:
             N_samples = self.cfg.render.N_samples_train
             perturb = self.cfg.render.perturb
-            
+
         B = rays.shape[0]
         results = defaultdict(list)
         for i in range(0, B, self.cfg.render.chunk):
             rays_chunk = rays[i:i+self.cfg.render.chunk, :]
             rendered_ray_chunks = \
                 render_rays(rays_chunk,
-                            ray_sampler, 
+                            ray_sampler,
                             self.nerf_model,
                             self.cfg.ray_range,
                             scale_factor,
@@ -69,22 +69,24 @@ class ModelCF(nn.Module):
     def __init__(self, cfg):
         super(ModelCF, self).__init__()
         self.cfg = cfg
-        
-        if cfg.model_type=='nerf':
+
+        if cfg.model_type == 'nerf':
             self.nerf_model_coarse = NeRF(cfg.nerf_config, cfg.num_colors)
             self.nerf_model_fine = NeRF(cfg.nerf_config, cfg.num_colors)
         elif cfg.model_type == 'nerf_decoupled':
-            self.nerf_model_coarse = DecoupledNeRF(cfg.nerf_config, cfg.num_colors)
-            self.nerf_model_fine = DecoupledNeRF(cfg.nerf_config, cfg.num_colors)
+            self.nerf_model_coarse = DecoupledNeRF(
+                cfg.nerf_config, cfg.num_colors)
+            self.nerf_model_fine = DecoupledNeRF(
+                cfg.nerf_config, cfg.num_colors)
         else:
             raise NotImplementedError()
-    
+
     def freeze_sigma_head(self):
         for p in self.nerf_model_coarse._model_sigma.parameters():
             p.requires_grad = False
         for p in self.nerf_model_fine._model_sigma.parameters():
             p.requires_grad = False
-            
+
     def forward(self, rays, ray_sampler, scale_factor, testing=False, camera=True):
         """Do batched inference on rays using chunk"""
         # ray_sampler is not used here. But retained for function call to be agnostic to Model vs Model_CF
@@ -95,26 +97,26 @@ class ModelCF(nn.Module):
         else:
             N_samples = self.cfg.render.N_samples_train
             perturb = self.cfg.render.perturb
-            
+
         B = rays.shape[0]
         results = defaultdict(list)
         for i in range(0, B, self.cfg.render.chunk):
             rays_chunk = rays[i:i+self.cfg.render.chunk, :]
             rendered_ray_chunks = \
                 render_rays_cf(rays_chunk,
-                            self.nerf_model_coarse, 
-                            self.nerf_model_fine,
-                            self.cfg.ray_range,
-                            scale_factor,
-                            N_samples=N_samples // 4,
-                            N_importance=3 * N_samples // 4,
-                            retraw=self.cfg.render.retraw,
-                            perturb=perturb,
-                            white_bkgd=self.cfg.render.white_bkgd,
-                            raw_noise_std=self.cfg.render.raw_noise_std,
-                            netchunk=self.cfg.render.netchunk,
-                            num_colors=self.cfg.num_colors,
-                            sigma_only=(not camera))
+                               self.nerf_model_coarse,
+                               self.nerf_model_fine,
+                               self.cfg.ray_range,
+                               scale_factor,
+                               N_samples=N_samples // 4,
+                               N_importance=3 * N_samples // 4,
+                               retraw=self.cfg.render.retraw,
+                               perturb=perturb,
+                               white_bkgd=self.cfg.render.white_bkgd,
+                               raw_noise_std=self.cfg.render.raw_noise_std,
+                               netchunk=self.cfg.render.netchunk,
+                               num_colors=self.cfg.num_colors,
+                               sigma_only=(not camera))
             for k, v in rendered_ray_chunks.items():
                 results[k] += [v]
 
@@ -129,19 +131,21 @@ class OccupancyGridModel(nn.Module):
         # 3D grid representing the logits (log-odds) of each voxel
         # log-odds = log(p/1-p)) where p is probability of voxel being occupied
         # a value of zero corresponds to equal likelihood of occupied and free
-        
+
         self.cfg = cfg
         voxel_size = cfg.voxel_size
-        self.occupancy_grid = nn.Parameter(torch.zeros(1, 1, voxel_size, voxel_size, voxel_size))  
+        self.occupancy_grid = nn.Parameter(torch.zeros(
+            1, 1, voxel_size, voxel_size, voxel_size))
 
     def forward(self):
         return self.occupancy_grid
-    
+
     @staticmethod
     def interpolate(occupancy_grid, ray_bin_centers, mode='bilinear'):
         # Uses torch grid_sample to compute the trilinear interpolation of occ_gamma to get values at ray_bin_centers
         # ray_bin_centers: (n_rays, n_bins, 3)
         n_rays, n_bins, _ = ray_bin_centers.shape
         grid_values = ray_bin_centers.reshape(1, 1, n_rays, n_bins, 3)
-        bin_logits = nn.functional.grid_sample(occupancy_grid, grid_values, mode=mode, align_corners=False).reshape(n_rays, n_bins)
+        bin_logits = nn.functional.grid_sample(
+            occupancy_grid, grid_values, mode=mode, align_corners=False).reshape(n_rays, n_bins)
         return bin_logits

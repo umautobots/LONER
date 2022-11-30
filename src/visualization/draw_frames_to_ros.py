@@ -12,12 +12,13 @@ from common.utils import StopSignal
 import tf2_ros
 import geometry_msgs.msg
 
+
 def transform_from_pose(pose, child_frame):
     tf_mat = pose.get_transformation_matrix().detach()
 
     translation = tf_mat[:3, 3]
     rotation = R.from_matrix(tf_mat[:3, :3]).as_quat()
-    
+
     transform_msg = geometry_msgs.msg.TransformStamped()
     transform_msg.header.stamp = rospy.Time.now()
     transform_msg.header.frame_id = "world"
@@ -25,7 +26,7 @@ def transform_from_pose(pose, child_frame):
     transform_msg.transform.translation.x = translation[0]
     transform_msg.transform.translation.y = translation[1]
     transform_msg.transform.translation.z = translation[2]
-    
+
     transform_msg.transform.rotation.x = rotation[0]
     transform_msg.transform.rotation.y = rotation[1]
     transform_msg.transform.rotation.z = rotation[2]
@@ -45,6 +46,7 @@ def transform_from_pose(pose, child_frame):
 
     return transform_msg, pose_msg
 
+
 class FrameDrawer:
     def __init__(self, frame_signal: Signal, rgb_signal: Signal):
         self._frame_slot = frame_signal.register()
@@ -57,9 +59,12 @@ class FrameDrawer:
         self._gt_path.header.frame_id = "world"
 
         self._path_pub = rospy.Publisher("/estimated_path", Path, queue_size=1)
-        self._gt_path_pub = rospy.Publisher("/ground_truth_path", Path, queue_size=1)
-        self._frame_img_pub = rospy.Publisher("/frame_image_raw", Image, queue_size=1)
-        self._input_img_pub = rospy.Publisher("/input_img", Image, queue_size=1)
+        self._gt_path_pub = rospy.Publisher(
+            "/ground_truth_path", Path, queue_size=1)
+        self._frame_img_pub = rospy.Publisher(
+            "/frame_image_raw", Image, queue_size=1)
+        self._input_img_pub = rospy.Publisher(
+            "/input_img", Image, queue_size=1)
 
         self._bridge = CvBridge()
         self._gt_pose_offset = None
@@ -73,13 +78,15 @@ class FrameDrawer:
 
             if self._gt_pose_offset is None:
                 self._gt_pose_offset = frame._gt_lidar_start_pose.inv()
-            
-            transform_msg, new_pose = transform_from_pose(frame.get_start_lidar_pose(), "lidar_start_pose")
-            gt_transform_msg, gt_pose = transform_from_pose(self._gt_pose_offset*frame._gt_lidar_start_pose, "gt_lidar_pose")
+
+            transform_msg, new_pose = transform_from_pose(
+                frame.get_start_lidar_pose(), "lidar_start_pose")
+            gt_transform_msg, gt_pose = transform_from_pose(
+                self._gt_pose_offset*frame._gt_lidar_start_pose, "gt_lidar_pose")
 
             self._broadcater.sendTransform(transform_msg)
             self._broadcater.sendTransform(gt_transform_msg)
-        
+
             self._path.header.stamp = rospy.Time.now()
             self._path.poses.append(new_pose)
             self._path_pub.publish(self._path)
@@ -88,15 +95,17 @@ class FrameDrawer:
             self._gt_path.poses.append(gt_pose)
             self._gt_path_pub.publish(self._gt_path)
 
-            img = self._bridge.cv2_to_imgmsg(frame.start_image.image.detach().cpu().numpy(), encoding="rgb8")
-        
+            img = self._bridge.cv2_to_imgmsg(
+                frame.start_image.image.detach().cpu().numpy(), encoding="rgb8")
+
             self._frame_img_pub.publish(img)
-        
+
         while self._rgb_slot.has_value():
             img, _ = self._rgb_slot.get_value()
-            
+
             if isinstance(img, StopSignal):
                 break
-            
-            img = self._bridge.cv2_to_imgmsg(img.image.cpu().numpy(), encoding='rgb8')
+
+            img = self._bridge.cv2_to_imgmsg(
+                img.image.cpu().numpy(), encoding='rgb8')
             self._input_img_pub.publish(img)
