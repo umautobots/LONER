@@ -242,7 +242,5 @@ class Tracker:
         self._reference_pose = Pose(tracked_position, fixed=True)
         self._reference_point_cloud = frame_point_cloud
 
-        # print(f"Frame {self._frame_count} registration_result:", registration_result)
-
         self._frame_count += 1
         return True

@@ -3,7 +3,8 @@
   "extensions": [
     "ms-python.python",
     "ms-python.vscode-pylance",
-    "donjayamanne.python-environment-manager"
+    "donjayamanne.python-environment-manager",
+    "huizhou.githd"
   ],
   "mounts":[
     "source=/home/${env:USERNAME}/Documents/ClonerSlamData/,target=/home/${env:USERNAME}/data,type=bind"

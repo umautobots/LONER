@@ -19,7 +19,23 @@ tracker:
       voxel_downsample_size: 0.1
 mapper:
   keyframe_manager:
-    key_frame_strategy: NULL
-    window_selection_strategy: NULL
-    sample_allocation_strategy: NULL
+    key_frame_selection:
+      strategy: TEMPORAL
+      temporal:
+        time_diff_seconds: 1
+    window_selection:
+      strategy: MOST_RECENT
+      window_size: 10
+    sample_allocation:
+      strategy: UNIFORM
+
+      # How many samples to take uniformly across non-sky regions
+      num_samples_uniform: 200
+      
+      # How many to use strategy to choose. This is an average since it may vary by image. 
+      avg_num_samples_from_strategy: 200 
+      
+      # How many samples to take from sky region (uniformly)
+      num_sky_samples: 50
+      
   optimizer: NULL
