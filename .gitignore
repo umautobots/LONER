@@ -2,7 +2,7 @@
 *.pyc
 *.log
 *.o
-notes.txt
+todo.txt
 
 docs/html
 docs/latex

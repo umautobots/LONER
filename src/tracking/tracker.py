@@ -8,7 +8,7 @@ import torch.multiprocessing as mp
 from scipy.spatial.transform import Rotation as R
 
 from common.frame import Frame
-from common.pose_utils import Pose
+from src.common.pose import Pose
 from common.settings import Settings
 from common.utils import StopSignal
 from common.signals import Signal
@@ -120,9 +120,9 @@ class Tracker:
         downsample_type = self._settings.icp.downsample.type
 
         if downsample_type is None:
-            frame_point_cloud = frame.BuildPointCloud(0.09)
+            frame_point_cloud = frame.build_point_cloud(0.09)
         elif downsample_type == "VOXEL":
-            frame_point_cloud = frame.BuildPointCloud(0.09)
+            frame_point_cloud = frame.build_point_cloud(0.09)
             voxel_size = self._settings.icp.downsample.voxel_downsample_size
             frame_point_cloud = frame_point_cloud.voxel_down_sample(
                 voxel_size=voxel_size
@@ -130,7 +130,7 @@ class Tracker:
         elif downsample_type == "UNIFORM":
             target_points = self._settings.icp.downsample.target_uniform_point_count
 
-            frame_point_cloud = frame.BuildPointCloud(
+            frame_point_cloud = frame.build_point_cloud(
                 0.09, target_points=target_points)
         else:
             raise Exception(f"Unrecognized downsample type {downsample_type}")

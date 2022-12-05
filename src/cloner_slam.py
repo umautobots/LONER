@@ -1,3 +1,4 @@
+from ast import List
 from time import sleep
 from typing import Union
 
@@ -6,7 +7,8 @@ import torch
 import torch.multiprocessing as mp
 import yaml
 
-from common.pose_utils import Pose
+from common.pose import Pose
+from common.pose_utils import compute_world_cube, WorldCube
 from common.signals import Slot, Signal
 from common.sensors import Image, LidarScan
 from common.settings import Settings
@@ -30,9 +32,8 @@ class ClonerSLAM:
     def __init__(self, settings: Union[Settings, str]) -> None:
 
         if isinstance(settings, str):
-            with open(settings, 'r') as settings_file:
-                self._settings = Settings(
-                    yaml.load(settings_file, Loader=yaml.FullLoader))
+            self._settings = Settings.load_from_file(settings)
+
         elif type(settings).__name__ == "Settings":  # Avoiding strange attrdict behavior
             self._settings = settings
         else:
@@ -48,19 +49,44 @@ class ClonerSLAM:
         # The tracker inserts Frames, and the mapper reads them
         self._frame_signal = Signal()
 
-        self._mapper = Mapper(self._settings.mapper, self._frame_signal)
-        self._tracker = Tracker(self._settings,
-                                self._rgb_signal,
-                                self._lidar_signal,
-                                self._frame_signal)
-
         # Placeholder for the Mapping and Tracking processes
+        self._mapper = None
+        self._tracker = None
         self._tracking_process = None
         self._mapping_process = None
 
         self._device = self._settings.device
 
-    def Start(self, synchronous: bool = True) -> None:
+        self._world_cube = None
+
+        # To initialize, call precompute_world_cube
+        self._initialized = False
+
+    def precompute_world_cube(self, all_cam_poses: torch.Tensor, all_lidar_poses: torch.Tensor,
+                              K_camera: torch.Tensor, camera_range: List[float],
+                              image_size: torch.Tensor):
+        self._world_cube = compute_world_cube(
+            all_cam_poses, K_camera, image_size, all_lidar_poses, camera_range)
+        self._initialized = True
+
+    def get_world_cube(self) -> WorldCube:
+        return self._world_cube
+
+    def start(self, synchronous: bool = True) -> None:
+
+        if not self._initialized:
+            raise RuntimeError(
+                "Can't Start: System Uninitialized. You must call precompute_world_cube first.")
+
+        self._mapper = Mapper(self._settings.mapper,
+                              self._settings.calibration,
+                              self._frame_signal,
+                              self._world_cube)
+        self._tracker = Tracker(self._settings,
+                                self._rgb_signal,
+                                self._lidar_signal,
+                                self._frame_signal)
+
         print("Starting Cloner SLAM")
         # Start the children
         self._tracking_process = mp.Process(target=self._tracker.run)
@@ -75,7 +101,7 @@ class ClonerSLAM:
             self._mapping_process.join()
 
     # Stop the processes running the mapping and tracking
-    def Stop(self, waiting_action=None, finish_action=None):
+    def stop(self, waiting_action=None, finish_action=None):
         print("Stopping ClonerSLAM Sub-Processes")
 
         self._lidar_signal.emit(StopSignal())
@@ -105,15 +131,17 @@ class ClonerSLAM:
         self._tracking_process.join()
         self._mapping_process.join()
 
-        print("SubProcesses Exited")
+        print("Sub-processes Exited")
 
     def process_lidar(self, lidar_scan: LidarScan) -> None:
+        lidar_scan.transform_world_cube(self._world_cube)
         self._lidar_signal.emit(lidar_scan)
 
-    def ProcessRGB(self, image: Image, gt_pose: Pose = None) -> None:
+    def process_rgb(self, image: Image, gt_pose: Pose = None) -> None:
+        gt_pose.transform_world_cube(self._world_cube)
         self._rgb_signal.emit((image, gt_pose))
 
-    def Cleanup(self):
+    def cleanup(self):
         print("Cleaning Up ClonerSlam")
         self._frame_signal.flush()
         self._rgb_signal.flush()

@@ -3,6 +3,7 @@ import rospy
 import numpy as np
 from common.signals import Slot, Signal
 from common.frame import Frame
+from common.pose_utils import WorldCube
 from scipy.spatial.transform import Rotation as R, Slerp
 from nav_msgs.msg import Path
 from sensor_msgs.msg import Image
@@ -48,7 +49,8 @@ def transform_from_pose(pose, child_frame):
 
 
 class FrameDrawer:
-    def __init__(self, frame_signal: Signal, rgb_signal: Signal):
+    def __init__(self, frame_signal: Signal, rgb_signal: Signal, world_cube: WorldCube):
+        self._world_cube = world_cube
         self._frame_slot = frame_signal.register()
         self._rgb_slot = rgb_signal.register()
         self._broadcater = tf2_ros.TransformBroadcaster()
@@ -77,12 +79,17 @@ class FrameDrawer:
                 break
 
             if self._gt_pose_offset is None:
-                self._gt_pose_offset = frame._gt_lidar_start_pose.inv()
+                start_pose = frame._gt_lidar_start_pose
+                start_pose.transform_world_cube(self._world_cube, reverse=True)
+                self._gt_pose_offset = start_pose.inv()
+
+            lidar_pose = frame.get_start_lidar_pose()
+            lidar_pose.transform_world_cube(self._world_cube, reverse=True)
 
             transform_msg, new_pose = transform_from_pose(
-                frame.get_start_lidar_pose(), "lidar_start_pose")
+                lidar_pose, "lidar_start_pose")
             gt_transform_msg, gt_pose = transform_from_pose(
-                self._gt_pose_offset*frame._gt_lidar_start_pose, "gt_lidar_pose")
+                self._gt_pose_offset*frame._gt_lidar_start_pose.transform_world_cube(self._world_cube, True), "gt_lidar_pose")
 
             self._broadcater.sendTransform(transform_msg)
             self._broadcater.sendTransform(gt_transform_msg)

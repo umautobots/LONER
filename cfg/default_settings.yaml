@@ -1,8 +1,19 @@
 device: 0
+
+# This is mainly used for testing purposes and to show structure
+# - but should be overwritten  at runtime by reading data logs,
+# camera info messages, etc.
 calibration:
   lidar_to_camera:
     xyz: [0,0,0]
-    orientation: [0,0,0,1]
+    orientation: [0,0,0,1] 
+  camera_intrinsic:
+    k: NULL
+    distortion: NULL
+    new_k: NULL
+    width: NULL
+    height: NULL
+
 tracker:
   frame_synthesis:
     strategy: NULL
@@ -30,12 +41,26 @@ mapper:
       strategy: UNIFORM
 
       # How many samples to take uniformly across non-sky regions
-      num_samples_uniform: 200
+      num_rgb_uniform_samples: 200
       
       # How many to use strategy to choose. This is an average since it may vary by image. 
-      avg_num_samples_from_strategy: 200 
+      avg_rgb_strategy_samples: 200
+
+      # Same, for lidar
+      num_lidar_uniform_samples: 200
+      avg_lidar_strategy_samples: 200
       
       # How many samples to take from sky region (uniformly)
       num_sky_samples: 50
-      
-  optimizer: NULL
+
+  optimizer:
+    default_optimizer_settings:
+      stage: 3
+      num_iterations: 10
+      fix_poses: False
+      fix_sigma_mlp: False
+      fix_rgb_mlp: False
+    sample_strategy: UNIFORM
+
+    model_config: !include model_config/decoupled_carla_halfres.yaml
+  

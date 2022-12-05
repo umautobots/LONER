@@ -14,9 +14,9 @@ sys.path.append(PROJECT_ROOT + "/src")
 if __name__ == "__main__":
     cloner_slam = ClonerSLAM("../cfg/default_settings.yaml")
 
-    cloner_slam.Start()
+    cloner_slam.start()
 
     for x in range(1000):
         cloner_slam.process_lidar(LidarScan(timestamps=torch.Tensor([x])))
-        cloner_slam.ProcessRGB(Image(3, x))
-    cloner_slam.Stop()
+        cloner_slam.process_rgb(Image(3, x))
+    cloner_slam.stop()

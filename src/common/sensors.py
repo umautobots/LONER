@@ -1,5 +1,7 @@
 import torch
 
+from common.pose_utils import WorldCube
+
 
 class Image:
     """ Image class for holding images.
@@ -100,3 +102,11 @@ class LidarScan:
             if ray_origin_offsets.dim() == 3:
                 self.ray_origin_offsets = torch.hstack(
                     (self.ray_origin_offsets, ray_origin_offsets))
+
+    def transform_world_cube(self, world_cube: WorldCube, reverse=False) -> None:
+        if reverse:
+            self.ray_origin_offsets *= world_cube.scale_factor
+            self.distances *= world_cube.scale_factor
+        else:
+            self.ray_origin_offsets /= world_cube.scale_factor
+            self.distances /= world_cube.scale_factor

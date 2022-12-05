@@ -4,10 +4,12 @@ from common.frame import Frame
 from scipy.spatial.transform import Rotation as R, Slerp
 from common.utils import StopSignal
 import matplotlib.pyplot as plt
+from common.pose_utils import WorldCube
 
 
 class MplFrameDrawer:
-    def __init__(self, frame_signal: Signal):
+    def __init__(self, frame_signal: Signal, world_cube: WorldCube):
+        self._world_cube = world_cube
         self._frame_slot = frame_signal.register()
 
         self._path = []
@@ -30,12 +32,17 @@ class MplFrameDrawer:
                 break
 
             if self._gt_pose_offset is None:
-                self._gt_pose_offset = frame._gt_lidar_start_pose.inv()
+                start_pose = frame._gt_lidar_start_pose
+                start_pose.transform_world_cube(self._world_cube, reverse=True)
+                self._gt_pose_offset = start_pose.inv()
 
-            new_pose = frame.get_start_lidar_pose(
-            ).get_transformation_matrix()[:3, 3]
-            gt_pose = (self._gt_pose_offset *
-                       frame._gt_lidar_start_pose).get_transformation_matrix()[:3, 3]
+            new_pose = frame.get_start_lidar_pose()\
+                .transform_world_cube(self._world_cube, reverse=True)\
+                .get_transformation_matrix()[:3, 3]
+
+            gt_pose = (self._gt_pose_offset * frame._gt_lidar_start_pose)\
+                .transform_world_cube(self._world_cube, reverse=True)\
+                .get_transformation_matrix()[:3, 3]
 
             self._path.append(new_pose)
             self._gt_path.append(gt_pose)

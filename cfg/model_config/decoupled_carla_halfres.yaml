@@ -1,0 +1,77 @@
+seed: 8
+
+data:
+    dataset_type: "carla"
+    root_dir: ""                        # input data directory
+    scene_idx: 326351806588                        # index of the frame within the sequence. 
+    num_lidar_scans: 3 #3                  # number of frames to use for lidar scans for training centered around img_idx
+    filter_top_rows: 0                # number of rows in the top of the image to mask out. 
+    num_render_poses: 60
+    downscale_factor: 2 # !!!!!!!!!!!!!!!!!!!
+    
+    ray_range: &ray_range [1, 100]
+    padding: 0.3                        # additional factor to scale down the world by to give padding around scene content.
+    train_sppd: 2                      # number of samples per pixel for training
+    test_sppd: 2                       # number of samples per pixel for evaluation
+    ray_bundle_size: 1024              # number of rays in a single batch element. Batch size for camera rays must be a multiple of this    
+    
+model:
+    num_colors: 3            # number of output colors
+
+    model_type: "nerf_decoupled"
+    nerf_config: !include "../nerf_config/carla_decoupled_hash.yaml"
+    ray_range: *ray_range
+
+    render:
+        N_samples_train: 2048          # number of samples per ray
+        N_samples_test: 2048      # number of samples per ray during testing
+        retraw: True
+        lindisp: False          # sampling linearly in disparity rather than depth
+        perturb: 1.             # set to 0. for no jitter, 1. for jitter
+        white_bkgd: False
+        raw_noise_std: 1.       # std dev of noise added to regularize sigma_a output, 1e0 recommended
+        chunk: 16384            # number of rays processed in parallel, decrease if running out of memory
+        netchunk: 0             # number of pts sent through network in parallel, decrease if running out of memory. If 0, process all pts together
+
+    # Set occ_model to -1 to use uniform ray sampler
+    occ_model:
+        voxel_size: 100
+        lr: 0.0001
+        N_iters_acc: 10    # number of iters to accumulate gradients before stepping optimizer
+
+train:
+    N_iters: 10000            # number of iters
+    N_rand: 2048 # 2048              # batch size (number of random rays per gradient step)
+    lidar_rays_ratio: 0.5 #0.5     # Proportion of rays from lidar used in a batch
+    
+    lrate: 0.05             # learning rate
+    lrate_decay_steps: 250000          # exponential learning rate decay (in 1000 steps)
+    decay_rate: 0.1
+    
+    # Below flags are only used if stage == 4 (meaning ablation experiments)
+    enable_occ: True           
+    enable_camera: True
+    enable_lidar: True
+    log_losses: True
+    
+loss:
+    decay_depth_lambda: False          # boolean to enable decay
+    depth_lambda: 1000.                # Depth lambda used for loss.
+    min_depth_lambda: 10.              # Minimum value after decay
+    depth_lambda_decay_steps: 15000
+        
+    decay_depth_eps: True              # boolean to enable decay
+    depth_eps: 3.0                     # starting tolerance for line of sight loss in euclidean space
+    min_depth_eps: 0.3                 # Minimum value after decay
+    depth_eps_decay_steps: 2500
+
+    term_lambda: 0.0      # weight for lidar termination depth
+    cam_lambda: 1       # weight for camera intensity value
+    std_lambda: 0.0       # weight for standard deviation loss on camera rays
+
+log: 
+    i_log: 50                 # frequency of logging loss and metrics to wandb
+    i_print: 250              # frequency of console printout and metric logging
+    i_testset: 2500           # frequency of testset saving
+    i_video: 25000            # frequency of render_poses video saving
+    i_weights: 2500           # frequency of weight ckpt saving

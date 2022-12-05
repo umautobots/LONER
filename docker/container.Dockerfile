@@ -75,6 +75,7 @@ RUN python3 -m pip install -r /tmp/requirements.txt \
      && pip3 install gnupg \
      && pip3 install opencv-python==4.5.5.64 \
      && pip3 install open3d \
+     && pip3 install autopep8 \
      && rm /tmp/requirements.txt
 
 # Install tiny-cuda-nn

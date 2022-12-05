@@ -1,4 +1,4 @@
-from src.common.pose_utils import Pose
+from src.common.pose import Pose
 from src.common.settings import Settings
 from src.common.sensors import Image, LidarScan
 from src.tracking.frame_synthesis import FrameSynthesis

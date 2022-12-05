@@ -1,7 +1,7 @@
 import torch
 
 from common.sensors import Image, LidarScan
-from common.pose_utils import Pose
+from src.common.pose import Pose
 import open3d as o3d
 
 
@@ -57,9 +57,10 @@ class Frame:
     # @p compensate_motion: If True, interpolate/extrapolate the lidar poses. If false, don't.
     # @p target_points: If not None, downsample uniformly to approximately this many points.
     # @returns
-    def BuildPointCloud(self, time_per_scan: float = None,
-                        compensate_motion: bool = False,
-                        target_points: int = None) -> o3d.cuda.pybind.geometry.PointCloud:
+
+    def build_point_cloud(self, time_per_scan: float = None,
+                          compensate_motion: bool = False,
+                          target_points: int = None) -> o3d.cuda.pybind.geometry.PointCloud:
         pcd = o3d.cuda.pybind.geometry.PointCloud()
 
         # Only take 1 scan
