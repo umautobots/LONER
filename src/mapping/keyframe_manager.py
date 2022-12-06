@@ -25,14 +25,16 @@ class KeyFrameManager:
 
     # Constructor
     # settings: Settings object for the KeyFrame Manager
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, device:int = -1) -> None:
         self._settings = settings
-        self._keyframe_selection_strategy = KeyFrameSelectionStrategy(
-            settings.key_frame_selection.strategy)
-        self._window_selection_strategy = WindowSelectionStrategy(
-            settings.window_selection.strategy)
-        self._sample_allocation_strategy = SampleAllocationStrategy(
-            settings.sample_allocation_strategy)
+        self._keyframe_selection_strategy = KeyFrameSelectionStrategy[
+            settings.keyframe_selection.strategy]
+        self._window_selection_strategy = WindowSelectionStrategy[
+            settings.window_selection.strategy]
+        self._sample_allocation_strategy = SampleAllocationStrategy[
+            settings.sample_allocation.strategy]
+        
+        self._device = device
 
         # Keep track of the start image timestamp
         self._last_accepted_frame_ts = None
@@ -50,12 +52,15 @@ class KeyFrameManager:
 
         if should_use_frame:
             self._last_accepted_frame_ts = frame.start_image.timestamp
-            new_keyframe = KeyFrame(frame)
+            new_keyframe = KeyFrame(frame, self._device)
             self._keyframes.append(new_keyframe)
 
         return should_use_frame
 
     def _select_frame_temporal(self, frame: Frame) -> bool:
+        if self._last_accepted_frame_ts is None:
+            return True
+        
         dt = self._last_accepted_frame_ts - frame.start_image.timestamp
         dt_threshold = self._settings.keyframe_selection.temporal.time_diff_seconds
         return dt >= dt_threshold

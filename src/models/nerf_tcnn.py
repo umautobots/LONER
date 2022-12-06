@@ -12,20 +12,19 @@ class NeRF(nn.Module):
 
         self.num_colors = num_colors
 
-        with open(cfg) as config_file:
-            config = json.load(config_file)
+        self.cfg = cfg
 
         self._model_sigma = tcnn.NetworkWithInputEncoding(n_input_dims=3,
                                                           n_output_dims=16,
-                                                          encoding_config=config["pos_encoding_sigma"],
-                                                          network_config=config["sigma_network"])
+                                                          encoding_config=self.cfg["pos_encoding_sigma"],
+                                                          network_config=self.cfg["sigma_network"])
 
         self._encoder_dir = tcnn.Encoding(
-            n_input_dims=3, encoding_config=config["dir_encoding_intensity"])
+            n_input_dims=3, encoding_config=self.cfg["dir_encoding_intensity"])
         in_dim_intensity = self._encoder_dir.n_output_dims + 15
         self._model_intensity = tcnn.Network(n_input_dims=in_dim_intensity,
                                              n_output_dims=self.num_colors,
-                                             network_config=config["intensity_network"])
+                                             network_config=self.cfg["intensity_network"])
 
     def forward(self, pos, dir, sigma_only=False):
         # x: [N, 3], scaled to [-1, 1]
@@ -53,14 +52,13 @@ class DecoupledNeRF(nn.Module):
 
         self._num_colors = num_colors
 
-        with open(cfg) as config_file:
-            config = json.load(config_file)
+        self.cfg = cfg
 
-        pos_encoding_sigma = config["pos_encoding_sigma"]
-        sigma_network = config["sigma_network"]
-        pos_encoding_intensity = config["pos_encoding_intensity"]
-        dir_encoding_intensity = config["dir_encoding_intensity"]
-        intensity_network = config["intensity_network"]
+        pos_encoding_sigma = self.cfg["pos_encoding_sigma"]
+        sigma_network = self.cfg["sigma_network"]
+        pos_encoding_intensity = self.cfg["pos_encoding_intensity"]
+        dir_encoding_intensity = self.cfg["dir_encoding_intensity"]
+        intensity_network = self.cfg["intensity_network"]
 
         self._model_sigma = tcnn.NetworkWithInputEncoding(n_input_dims=3,
                                                           n_output_dims=1,

@@ -16,7 +16,13 @@ class Pose:
             self._pose_tensor = pose_tensor
         else:
             self._pose_tensor = transform_to_tensor(transformation_matrix)
+
+    def set_fixed(self, fixed: bool= True)->None:
         self._pose_tensor.requires_grad_(not fixed)
+            
+    def to(self, device: int) -> None:
+        self._pose_tensor = self._pose_tensor.to(device)
+        return self
 
     def from_settings(pose_dict: dict, fixed: bool = False) -> "Pose":
         xyz = torch.Tensor(pose_dict['xyz'])

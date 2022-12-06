@@ -1,11 +1,5 @@
 #!/usr/bin/env python3
 
-from src.common.settings import Settings
-from src.common.pose import Pose
-from src.visualization.draw_frames_to_mpl import MplFrameDrawer
-from src.visualization.draw_frames_to_ros import FrameDrawer
-from src.common.sensors import Image, LidarScan
-from src.cloner_slam import ClonerSLAM
 import rospy
 import rosbag
 from sensor_msgs.msg import Image, PointCloud2, CameraInfo
@@ -31,12 +25,19 @@ PROJECT_ROOT = os.path.abspath(os.path.join(
 sys.path.append(PROJECT_ROOT)
 sys.path.append(PROJECT_ROOT + "/src")
 
+from src.common.settings import Settings
+from src.common.pose import Pose
+from src.common.pose_utils import WorldCube
+from src.visualization.draw_frames_to_mpl import MplFrameDrawer
+from src.visualization.draw_frames_to_ros import FrameDrawer
+from src.common.sensors import Image, LidarScan
+from src.cloner_slam import ClonerSLAM
 
-# LIDAR = "ego_vehicle/lidar/center"
-LIDAR = "ego_vehicle/lidar"
+LIDAR = "ego_vehicle/lidar/center"
+# LIDAR = "ego_vehicle/lidar"
 LIDAR_TOPIC = f"/carla/{LIDAR}"
-CAMERA = "ego_vehicle/rgb_front"
-# CAMERA = "ego_vehicle/camera/rgb"
+# CAMERA = "ego_vehicle/rgb_front"
+CAMERA = "ego_vehicle/camera/rgb"
 IMAGE_TOPIC = f"/carla/{CAMERA}/image"
 CAMERA_INFO_TOPIC = f"/carla/{CAMERA}/camera_info"
 
@@ -81,19 +82,22 @@ def msg_to_transformation_mat(tf_msg):
 
     T = torch.hstack((rotmat, xyz))
     T = torch.vstack((T, torch.Tensor([0, 0, 0, 1])))
+    return T
 
 
 def build_poses_from_buffer(tf_buffer, timestamps):
     camera_poses = []
     lidar_poses = []
     for t in timestamps:
-        camera_tf = tf_buffer.lookup_transform_core('map', CAMERA, t)
-        lidar_tf = tf_buffer.lookup_transform_core('map', LIDAR, t)
+        try:
+            camera_tf = tf_buffer.lookup_transform_core('map', CAMERA, t)
+            lidar_tf = tf_buffer.lookup_transform_core('map', LIDAR, t)
+            camera_poses.append(msg_to_transformation_mat(camera_tf))
+            lidar_poses.append(msg_to_transformation_mat(lidar_tf))
+        except Exception as e:
+            print("Skipping invalid tf")
 
-        camera_poses.append(msg_to_transformation_mat(camera_tf))
-        lidar_poses.append(msg_to_transformation_mat(lidar_tf))
-
-    return torch.stack(camera_poses), torch.stack(lidar_poses)
+    return torch.stack(camera_poses).float(), torch.stack(lidar_poses).float()
 
 
 if __name__ == "__main__":
@@ -118,6 +122,7 @@ if __name__ == "__main__":
 
     ego_pose_timestamps = []
 
+    found_intrinsic = False
     for topic, msg, t in bag.read_messages(topics=["/tf", CAMERA_INFO_TOPIC]):
         if topic == "/tf":
             for tf_msg in msg.transforms:
@@ -129,11 +134,13 @@ if __name__ == "__main__":
             if start_time is None:
                 start_time = t
             end_time = t
-        elif topic == CAMERA_INFO_TOPIC:
-            settings.calibration.camera_intrinsic.k = torch.Tensor(
-                msg.K).reshape(3, 3)
-            settings.calibration.camera_intrinsic.height = msg.height
-            settings.calibration.camera_intrinsic.width = msg.width
+        elif topic == CAMERA_INFO_TOPIC and not found_intrinsic:
+            found_intrinsic = True
+
+            k_list = list(msg.K)
+            settings["calibration"]["camera_intrinsic"]["k"] = torch.Tensor(k_list).reshape(3,3)
+            settings["calibration"]["camera_intrinsic"]["height"] = msg.height
+            settings["calibration"]["camera_intrinsic"]["width"] = msg.width
 
     bag.close()
 
@@ -148,10 +155,8 @@ if __name__ == "__main__":
 
     settings["calibration"]["lidar_to_camera"] = lidar_to_camera
 
-    device = settings["device"]
-
     cloner_slam = ClonerSLAM(settings)
-    ray_range = settings.optimizer.model_config.data.ray_range
+    ray_range = settings.mapper.optimizer.model_config.data.ray_range
     image_size = (settings.calibration.camera_intrinsic.height,
                   settings.calibration.camera_intrinsic.width)
 

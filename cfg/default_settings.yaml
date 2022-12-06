@@ -1,5 +1,3 @@
-device: 0
-
 # This is mainly used for testing purposes and to show structure
 # - but should be overwritten  at runtime by reading data logs,
 # camera info messages, etc.
@@ -29,8 +27,9 @@ tracker:
       target_uniform_point_count: 10000
       voxel_downsample_size: 0.1
 mapper:
+  device: 0
   keyframe_manager:
-    key_frame_selection:
+    keyframe_selection:
       strategy: TEMPORAL
       temporal:
         time_diff_seconds: 1

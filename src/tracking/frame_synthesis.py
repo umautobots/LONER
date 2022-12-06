@@ -24,7 +24,7 @@ class FrameSynthesis:
         self._t_lidar_to_camera = T_lidar_to_camera
         self._t_camera_to_lidar = self._t_lidar_to_camera.inv()
 
-        self._active_frame = Frame()
+        self._active_frame = Frame(T_lidar_to_camera=T_lidar_to_camera)
 
         # Frames that have both images, but might still need more lidar points
         self._in_progress_frames = []

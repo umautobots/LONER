@@ -3,7 +3,7 @@ import torch.multiprocessing as mp
 from common.pose_utils import WorldCube
 from common.frame import Frame
 from common.settings import Settings
-from common.signals import Signal, Slot
+from common.signals import Signal
 from common.utils import StopSignal
 from mapping.keyframe_manager import KeyFrameManager
 from mapping.optimizer import Optimizer
@@ -25,8 +25,8 @@ class Mapper:
         self._frame_slot = frame_signal.register()
         self._settings = settings
 
-        self._keyframe_manager = KeyFrameManager(settings.keyframe_manager)
-        self._optimizer = Optimizer(settings.optimizer, calibration, world_cube)
+        self._keyframe_manager = KeyFrameManager(settings.keyframe_manager, settings.device)
+        self._optimizer = Optimizer(settings.optimizer, calibration, world_cube, settings.device)
 
         self._term_signal = mp.Value('i', 0)
         self._processed_stop_signal = mp.Value('i', 0)

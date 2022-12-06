@@ -4,10 +4,15 @@ import numpy as np
 import torch
 import scipy.spatial.transform as sptransform
 
+@dataclass
+class WorldCube:
+    scale_factor: float
+    shift: float
+
 
 def normalize(v):
     """Normalize a vector."""
-    return v/np.linalg.norm(v)
+    return v/torch.linalg.norm(v)
 
 
 def average_poses(poses):
@@ -38,12 +43,12 @@ def average_poses(poses):
 
     # 4. Compute the x axis
     # Note (seth): Don't push this. Hack around pylance.
-    def do_cross(x, y): return np.cross(x, y)
+    def do_cross(x, y): return torch.cross(x, y)
     x = normalize(do_cross(y_, z))  # (3)
     # 5. Compute the y axis (as z and x are normalized, y is already of norm 1)
     y = do_cross(z, x)  # (3)
 
-    pose_avg = np.stack([x, y, z, center], 1)  # (3, 4)
+    pose_avg = torch.stack([x, y, z, center], 1)  # (3, 4)
 
     return pose_avg
 
@@ -60,26 +65,26 @@ def center_poses(poses):
     """
 
     pose_avg = average_poses(poses)  # (3, 4)
-    pose_avg_homo = np.eye(4)
+    pose_avg_homo = torch.eye(4)
     # convert to homogeneous coordinate for faster computation
     pose_avg_homo[:3] = pose_avg
     # by simply adding 0, 0, 0, 1 as the last row
-    last_row = np.tile(np.array([0, 0, 0, 1]),
+    last_row = torch.tile(torch.Tensor([0, 0, 0, 1]),
                        (len(poses), 1, 1))  # (N_images, 1, 4)
     # (N_images, 4, 4) homogeneous coordinate
-    poses_homo = np.concatenate([poses, last_row], 1)
+    poses_homo = torch.cat([poses, last_row], 1)
 
-    poses_centered = np.linalg.inv(
+    poses_centered = torch.linalg.inv(
         pose_avg_homo) @ poses_homo  # (N_images, 4, 4)
     poses_centered = poses_centered[:, :3]  # (N_images, 3, 4)
 
-    return poses_centered, np.linalg.inv(pose_avg_homo)
+    return poses_centered, torch.linalg.inv(pose_avg_homo)
 
 
 def _get_view_frustum_corners(K, H, W, min_depth=1, max_depth=1e6):
     assert min_depth < max_depth
     assert min_depth > 0 and max_depth > 0
-    return np.array([[-K[0, 2] / K[0, 0] * min_depth, K[1, 2] / K[1, 1] * min_depth, -min_depth, 1],          # left, up, near
+    return torch.Tensor([[-K[0, 2] / K[0, 0] * min_depth, K[1, 2] / K[1, 1] * min_depth, -min_depth, 1],          # left, up, near
                     [-K[0, 2] / K[0, 0] * max_depth, K[1, 2] / K[1, 1] * \
                         max_depth, -max_depth, 1],           # left, up, far
                     # left, down, near
@@ -98,7 +103,7 @@ def _get_view_frustum_corners(K, H, W, min_depth=1, max_depth=1e6):
 
 
 # TODO (seth): Update comments, this is all fake news now. we don't actually move anything
-def compute_world_cube(camera_poses, intrinsic_mats, image_sizes, lidar_poses, camera_range, padding=0.3):
+def compute_world_cube(camera_poses, intrinsic_mats, image_sizes, lidar_poses, camera_range, padding=0.3) -> WorldCube:
     """
     Compute an axis aligned minimal cube encompassing sensor poses and camera view frustums with the given camera range. 
     An additional padding is added. 
@@ -131,12 +136,12 @@ def compute_world_cube(camera_poses, intrinsic_mats, image_sizes, lidar_poses, c
     assert 0 <= padding < 1
 
     if len(intrinsic_mats.shape) == 2:
-        intrinsic_mats = np.broadcast_to(
+        intrinsic_mats = torch.broadcast_to(
             intrinsic_mats, (camera_poses.shape[0], 3, 3))
     if isinstance(image_sizes, tuple):
-        image_sizes = np.array(image_sizes)
+        image_sizes = torch.Tensor(image_sizes)
     if image_sizes.shape == (2,):
-        image_sizes = np.broadcast_to(image_sizes, (camera_poses.shape[0], 2))
+        image_sizes = torch.broadcast_to(image_sizes, (camera_poses.shape[0], 2))
     else:
         assert image_sizes.shape[0] == camera_poses.shape[0]
 
@@ -146,35 +151,35 @@ def compute_world_cube(camera_poses, intrinsic_mats, image_sizes, lidar_poses, c
         # need to compute min_depth by looking at the z value of the corner ray with length camera_range[0]
         pts_homo = _get_view_frustum_corners(
             K, hw[0], hw[1], min_depth=camera_range[0], max_depth=camera_range[1])    # (8, 4)
-        corners = c2w @ pts_homo.T
+        corners = c2w[:3,:] @ pts_homo.T
         all_corners += [corners.T]
-    all_corners = np.concatenate(all_corners, axis=0)  # (8N, 3)
+    all_corners = torch.cat(all_corners, dim=0)  # (8N, 3)
     print(f'Computed a list of corners with shape {all_corners.shape}')
 
-    all_poses = np.concatenate(
-        [camera_poses[..., 3], lidar_poses[..., 3]], axis=0)
+    all_poses = torch.cat(
+        [camera_poses[...,:3, 3], lidar_poses[...,:3, 3]], dim=0)
     print(f'Computed a list of poses with shape {all_poses.shape}')
 
-    all_points = np.concatenate([all_corners, all_poses])
+    all_points = torch.cat([all_corners, all_poses])
     print(f'Accumulated all points to get: {all_points.shape}')
 
     # TODO: Convert this to minimal volume bounding box.
     # For now, using Axis Aligned Bounding Box
 
-    min_coord = all_points.min(axis=0)
-    max_coord = all_points.max(axis=0)
+    min_coord = all_points.min(dim=0)[0]
+    max_coord = all_points.max(dim=0)[0]
 
     # TODO: Change to scaling world cube without shifting origin
 
     origin = min_coord + (max_coord - min_coord) / 2
-    # origin = np.zeros(3)
+    # origin = torch.zeros(3)
     print(
         f'Minimum coordinate: {min_coord}, Maximum coordinate: {max_coord}, New origin: {origin}')
 
-    scale_factor = (np.linalg.norm(max_coord - min_coord) /
-                    (2 * np.sqrt(3))) * (1+padding)
+    scale_factor = (torch.linalg.norm(max_coord - min_coord) /
+                    (2 * torch.sqrt(torch.Tensor([3])))) * (1+padding)
 
-    return -origin, scale_factor
+    return WorldCube(scale_factor, -origin)
 
 
 def create_spiral_poses(radii, focus_depth, n_poses=60):
@@ -191,19 +196,19 @@ def create_spiral_poses(radii, focus_depth, n_poses=60):
         poses_spiral: (n_poses, 3, 4) the poses in the spiral path
     """
     poses_spiral = []
-    for t in np.linspace(0, 4*np.pi, n_poses+1)[:-1]:  # rotate 4pi (2 rounds)
+    for t in torch.linspace(0, 4*torch.pi, n_poses+1)[:-1]:  # rotate 4pi (2 rounds)
         # the parametric function of the spiral (see the interactive web)
-        center = np.array([np.cos(t), -np.sin(t), -np.sin(0.5*t)]) * radii
+        center = torch.Tensor([torch.cos(t), -torch.sin(t), -torch.sin(0.5*t)]) * radii
         # the viewing z axis is the vector pointing from the @focus_depth plane
         # to @center
-        z = normalize(center - np.array([0, 0, -focus_depth]))
+        z = normalize(center - torch.Tensor([0, 0, -focus_depth]))
 
         # compute other axes as in @average_poses
-        y_ = np.array([0, 1, 0])  # (3)
-        x = normalize(np.cross(y_, z))  # (3)
-        y = np.cross(z, x)  # (3)#
-        poses_spiral += [np.stack([x, y, z, center], 1)]  # (3, 4)#
-    return np.stack(poses_spiral, 0)  # (n_poses, 3, 4)
+        y_ = torch.Tensor([0, 1, 0])  # (3)
+        x = normalize(torch.cross(y_, z))  # (3)
+        y = torch.cross(z, x)  # (3)#
+        poses_spiral += [torch.stack([x, y, z, center], 1)]  # (3, 4)#
+    return torch.stack(poses_spiral, 0)  # (n_poses, 3, 4)
 
 
 def transform_to_tensor(transformation_matrix, device=None):
@@ -216,7 +221,7 @@ def transform_to_tensor(transformation_matrix, device=None):
     """
 
     gpu_id = -1
-    if isinstance(transformation_matrix, torch.Tensor):
+    if isinstance(transformation_matrix, np.ndarray):
         if transformation_matrix.get_device() != -1:
             if transformation_matrix.requires_grad:
                 transformation_matrix = transformation_matrix.detach()
@@ -225,17 +230,17 @@ def transform_to_tensor(transformation_matrix, device=None):
         elif transformation_matrix.requires_grad:
             transformation_matrix = transformation_matrix.detach()
         transformation_matrix = transformation_matrix.numpy()
-    elif not isinstance(transformation_matrix, (np.array, np.ndarray)):
+    elif not isinstance(transformation_matrix, torch.Tensor):
         raise ValueError((f"Invalid argument of type {type(transformation_matrix).__name__}"
                           "passed to transform_to_tensor (Expected numpy array or pytorch tensor)"))
 
     R = transformation_matrix[:3, :3]
     T = transformation_matrix[:3, 3]
 
-    rotation = sptransform.Rotation.from_matrix(R)
-    quat = rotation.as_quat()
+    rotation = sptransform.Rotation.from_matrix(R.detach())
+    quat = torch.from_numpy(rotation.as_quat())
 
-    tensor = torch.from_numpy(np.concatenate([T, quat])).float()
+    tensor = torch.cat([T, quat]).float()
     if device is not None:
         tensor = tensor.to(device)
     elif gpu_id != -1:
@@ -294,7 +299,3 @@ def tensor_to_transform(transformation_tensors):
     return RT
 
 
-@dataclass
-class WorldCube:
-    scale_factor: float
-    shift: float

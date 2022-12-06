@@ -16,6 +16,13 @@ class Image:
         self.image = image
         self.timestamp = timestamp
 
+    def to(self, device: int) -> None:
+        self.image = self.image.to(device)
+        
+        if isinstance(self.timestamp, torch.Tensor):
+            self.timestamp = self.timestamp.to(device)
+        else:
+            self.timestamp = torch.Tensor([self.timestamp]).to(device)
 
 class LidarScan:
     """ LidarScan class for handling lidar data

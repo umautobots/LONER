@@ -55,15 +55,13 @@ class ClonerSLAM:
         self._tracking_process = None
         self._mapping_process = None
 
-        self._device = self._settings.device
-
         self._world_cube = None
 
         # To initialize, call precompute_world_cube
         self._initialized = False
 
     def precompute_world_cube(self, all_cam_poses: torch.Tensor, all_lidar_poses: torch.Tensor,
-                              K_camera: torch.Tensor, camera_range: List[float],
+                              K_camera: torch.Tensor, camera_range: List,
                               image_size: torch.Tensor):
         self._world_cube = compute_world_cube(
             all_cam_poses, K_camera, image_size, all_lidar_poses, camera_range)

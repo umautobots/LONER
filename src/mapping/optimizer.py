@@ -44,16 +44,17 @@ class Optimizer:
     which the Optimizer then uses to draw samples and iterate the optimization
     """
 
-    def __init__(self, settings: Settings, calibration: Settings, world_cube: WorldCube):
+    def __init__(self, settings: Settings, calibration: Settings, world_cube: WorldCube, device: int):
         self._settings = settings
         self._calibration = calibration
+        self._device = device
 
         opt_settings = settings.default_optimizer_settings
         self._optimization_settings = OptimizationSettings(
             opt_settings.stage, opt_settings.num_iterations, opt_settings.fix_poses,
             opt_settings.fix_sigma_mlp, opt_settings.fix_rgb_mlp)
 
-        self._sample_strategy = SampleStrategy(settings.sample_strategy)
+        self._sample_strategy = SampleStrategy[settings.sample_strategy]
 
         if self._sample_strategy != SampleStrategy.UNIFORM:
             raise ValueError(
@@ -63,7 +64,7 @@ class Optimizer:
         # This kills a lot of memory, but saves a ton of runtime
         self._lidar_shuffled_indices = torch.randperm(kMaxPossibleLidarRays)
         self._rgb_shuffled_indices = torch.randperm(
-            calibration.width * calibration.height)
+            calibration.camera_intrinsic.width * calibration.camera_intrinsic.height)
 
         self._model_config = settings.model_config
 
@@ -73,7 +74,7 @@ class Optimizer:
         self._ray_range = torch.Tensor(self._model_config.model.ray_range)
 
         # Main Model
-        self._model = Model(self._model_config.model.nerf_config)
+        self._model = Model(self._model_config.model)
 
         # Occupancy grid
         self._occupancy_grid_model = OccupancyGridModel(self._model_config.model.occ_model)
@@ -109,8 +110,8 @@ class Optimizer:
 
         optimize_poses = not self._optimization_settings.freeze_poses
         for kf in keyframe_window:
-            kf.get_start_lidar_pose().get_pose_tensor().requires_grad_(optimize_poses)
-            kf.get_end_lidar_pose().get_pose_tensor().requires_grad_(optimize_poses)
+            kf.get_start_lidar_pose().set_fixed(not optimize_poses)
+            kf.get_end_lidar_pose().set_fixed(not optimize_poses)
 
         if optimize_poses:
             trainable_translations = [kf.get_start_lidar_pose().get_translation() for kf in keyframe_window] \

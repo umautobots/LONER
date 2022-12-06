@@ -15,8 +15,8 @@ class KeyFrame:
     """
 
     # Constructor: Create a KeyFrame from input Frame @p frame.
-    def __init__(self, frame: Frame) -> None:
-        self._frame = frame
+    def __init__(self, frame: Frame, device: int = None) -> None:
+        self._frame = frame.to(device)
 
         # How many RGB samples to sample uniformly
         self.num_uniform_rgb_samples = None

@@ -37,7 +37,7 @@ class Frame:
         self.start_sky_mask = start_sky_mask
         self.end_sky_mask = end_sky_mask
 
-        self._lidar_to_camera: T_lidar_to_camera
+        self._lidar_to_camera = T_lidar_to_camera
         # TODO
         self._lidar_start_pose = None
         self._lidar_end_pose = None
@@ -52,12 +52,22 @@ class Frame:
     def __repr__(self):
         return self.__str__()
 
+    # in-place move to device
+    def to(self, device: int) -> None:
+        self.start_image.to(device)
+        self.end_image.to(device)
+        self.lidar_points.to(device)
+        self._lidar_to_camera.to(device)
+        self._lidar_start_pose.to(device)
+        self._lidar_end_pose.to(device)
+        self._gt_lidar_start_pose.to(device)
+        self._gt_lidar_end_pose.to(device)
+
     # Builds a point cloud from the lidar scan.
     # @p time_per_scan: The maximum time to allow in a scan. This prevents aliasing without motion compensation.
     # @p compensate_motion: If True, interpolate/extrapolate the lidar poses. If false, don't.
     # @p target_points: If not None, downsample uniformly to approximately this many points.
-    # @returns
-
+    # @returns a open3d Pointcloud
     def build_point_cloud(self, time_per_scan: float = None,
                           compensate_motion: bool = False,
                           target_points: int = None) -> o3d.cuda.pybind.geometry.PointCloud:
