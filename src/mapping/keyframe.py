@@ -27,6 +27,12 @@ class KeyFrame:
         # Same for lidar
         self.num_uniform_lidar_samples = None
         self.num_strategy_lidar_samples = None
+    
+    def __str__(self) -> str:
+        return str(self._frame)
+    
+    def __repr__(self) -> str:
+        return str(self)
 
     def get_start_camera_transform(self) -> torch.Tensor:
         return self._frame.get_start_camera_transform()

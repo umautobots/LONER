@@ -44,9 +44,13 @@ class Mapper:
 
                 accepted_frame = self._keyframe_manager.process_frame(
                     new_frame)
+                
+                accepted_str = "Accepted" if accepted_frame else "Didn't accept"
+                print(f"{accepted_str} frame at time {new_frame.start_image.timestamp}")
 
-                # if accepted_frame:
-                #     active_window = self._keyframe_manager.get_active_window()
+                if accepted_frame:
+                    active_window = self._keyframe_manager.get_active_window()
+                    print(f"Chose active window: [{active_window}]")
                 #     self._optimizer.iterate_optimizer(active_window)
 
         self._processed_stop_signal.value = True

@@ -47,13 +47,18 @@ class Frame:
     def __str__(self):
         start_im_str = "None" if self.start_image is None else self.start_image.timestamp
         end_im_str = "None" if self.end_image is None else self.end_image.timestamp
-        return f"<Frame {start_im_str}->{end_im_str}, {self.lidar_points.timestamps})>"
+        if isinstance(start_im_str, torch.Tensor):
+            start_im_str = start_im_str.item()
+        if isinstance(end_im_str, torch.Tensor):
+            end_im_str = end_im_str.item()
+            
+        return f"<Frame {start_im_str}->{end_im_str}, {len(self.lidar_points.timestamps)} points)>"
 
     def __repr__(self):
         return self.__str__()
 
     # in-place move to device
-    def to(self, device: int) -> None:
+    def to(self, device: int) -> "Frame":
         self.start_image.to(device)
         self.end_image.to(device)
         self.lidar_points.to(device)
@@ -62,6 +67,7 @@ class Frame:
         self._lidar_end_pose.to(device)
         self._gt_lidar_start_pose.to(device)
         self._gt_lidar_end_pose.to(device)
+        return self
 
     # Builds a point cloud from the lidar scan.
     # @p time_per_scan: The maximum time to allow in a scan. This prevents aliasing without motion compensation.
@@ -105,11 +111,13 @@ class Frame:
             end_points_global.cpu().numpy().transpose())
         return pcd
 
-    def set_start_sky_mask(self, mask: Image) -> None:
+    def set_start_sky_mask(self, mask: Image) -> "Frame":
         self.start_sky_mask = mask
+        return self
 
-    def set_end_sky_mask(self, mask: Image) -> None:
+    def set_end_sky_mask(self, mask: Image) -> "Frame":
         self.end_sky_mask = mask
+        return self
 
     # Returns the Pose of the camera at the start of the frame as a transformation matrix
     def get_start_camera_transform(self) -> torch.Tensor:

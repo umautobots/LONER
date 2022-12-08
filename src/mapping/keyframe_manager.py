@@ -61,7 +61,7 @@ class KeyFrameManager:
         if self._last_accepted_frame_ts is None:
             return True
         
-        dt = self._last_accepted_frame_ts - frame.start_image.timestamp
+        dt = frame.start_image.timestamp - self._last_accepted_frame_ts
         dt_threshold = self._settings.keyframe_selection.temporal.time_diff_seconds
         return dt >= dt_threshold
 
@@ -91,6 +91,9 @@ class KeyFrameManager:
                 kf.num_strategy_rgb_samples = avg_rgb_samples
                 kf.num_uniform_lidar_samples = uniform_lidar_samples
                 kf.num_strategy_lidar_samples = avg_lidar_samples
+                print(f"Allocated {uniform_rgb_samples+avg_rgb_samples} samples to kf: {kf}")
         else:
             raise ValueError(
                 f"Can't use unknown SampleAllocationStrategy {self._sample_allocation_strategy}")
+
+        return keyframes

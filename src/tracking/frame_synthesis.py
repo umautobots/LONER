@@ -49,7 +49,6 @@ class FrameSynthesis:
 
     # Enqueues image from @p image.
     # @precond incoming images are in monotonically increasing order (in timestamp)
-
     def process_image(self, image: Image, gt_pose: Pose = None) -> None:
         if image.timestamp - self._prev_accepted_timestamp >= self._frame_delta_t_sec:
             self._prev_accepted_timestamp = image.timestamp
@@ -66,7 +65,7 @@ class FrameSynthesis:
                         gt_pose * self._t_camera_to_lidar)
                 self._in_progress_frames.append(
                     copy.deepcopy(self._active_frame))
-                self._active_frame = Frame()
+                self._active_frame = Frame(T_lidar_to_camera = self._t_lidar_to_camera)
                 self.dequeue_lidar_points()
             else:
                 raise RuntimeError("This should be unreachable")
