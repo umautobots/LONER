@@ -18,8 +18,8 @@ tracker:
     sky_removal: NULL
     frame_decimation_rate_hz: 10
   icp:
-    threshold: 2.2
-    max_iterations: 18
+    threshold: 0.125
+    max_iterations: 20
     relative_fitness: 1.e-10
     relative_rmse: 1.e-10
     downsample:

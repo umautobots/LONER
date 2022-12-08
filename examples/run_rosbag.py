@@ -33,11 +33,11 @@ from src.visualization.draw_frames_to_ros import FrameDrawer
 from src.common.sensors import Image, LidarScan
 from src.cloner_slam import ClonerSLAM
 
-LIDAR = "ego_vehicle/lidar/center"
-# LIDAR = "ego_vehicle/lidar"
+# LIDAR = "ego_vehicle/lidar/center"
+LIDAR = "ego_vehicle/lidar"
 LIDAR_TOPIC = f"/carla/{LIDAR}"
-# CAMERA = "ego_vehicle/rgb_front"
-CAMERA = "ego_vehicle/camera/rgb"
+CAMERA = "ego_vehicle/rgb_front"
+# CAMERA = "ego_vehicle/camera/rgb"
 IMAGE_TOPIC = f"/carla/{CAMERA}/image"
 CAMERA_INFO_TOPIC = f"/carla/{CAMERA}/camera_info"
 

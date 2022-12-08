@@ -18,8 +18,9 @@
       "request": "launch",
       "program": "${workspaceFolder}/examples/run_rosbag.py",
       "console": "integratedTerminal",
-      "args": ["${workspaceFolder}/../data/cloner_carla_dataset.bag"],
-      "cwd": "${workspaceFolder}/examples"
+      "args": ["${workspaceFolder}/../data/carla_forward_no_sky.bag"],
+      "cwd": "${workspaceFolder}/examples",
+      "subProcess": true
     }
   ]
 }

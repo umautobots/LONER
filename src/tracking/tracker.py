@@ -8,8 +8,9 @@ import torch.multiprocessing as mp
 from scipy.spatial.transform import Rotation as R
 
 from common.frame import Frame
-from src.common.pose import Pose
+from common.pose import Pose
 from common.settings import Settings
+from common.pose_utils import WorldCube
 from common.utils import StopSignal
 from common.signals import Signal
 from tracking.frame_synthesis import FrameSynthesis
@@ -48,8 +49,9 @@ class Tracker:
         rgb_signal: Signal,
         lidar_signal: Signal,
         frame_signal: Signal,
-    ) -> None:
+        world_cube: WorldCube) -> None:
 
+        self._world_cube = world_cube
         self._rgb_slot = rgb_signal.register()
         self._lidar_slot = lidar_signal.register()
         self._frame_signal = frame_signal
@@ -168,7 +170,7 @@ class Tracker:
         registration = o3d.pipelines.registration.registration_icp(
             frame_point_cloud,
             self._reference_point_cloud,
-            self._settings.icp.threshold,
+            self._settings.icp.threshold / self._world_cube.scale_factor,
             initial_guess,
             o3d.pipelines.registration.TransformationEstimationPointToPlane(),
             criteria=convergence_criteria,
@@ -237,6 +239,7 @@ class Tracker:
                 f"{logdir}/transformed_frame_cloud.pcd",
                 transform_cloud(frame_point_cloud, registration_result),
             )
+            np.savetxt(f"{logdir}/transform.txt", registration.transformation)
 
         self._reference_time = new_reference_time
         self._reference_pose = Pose(tracked_position, fixed=True)

@@ -83,7 +83,8 @@ class ClonerSLAM:
         self._tracker = Tracker(self._settings,
                                 self._rgb_signal,
                                 self._lidar_signal,
-                                self._frame_signal)
+                                self._frame_signal,
+                                self._world_cube)
 
         print("Starting Cloner SLAM")
         # Start the children
@@ -136,7 +137,6 @@ class ClonerSLAM:
         self._lidar_signal.emit(lidar_scan)
 
     def process_rgb(self, image: Image, gt_pose: Pose = None) -> None:
-        gt_pose.transform_world_cube(self._world_cube)
         self._rgb_signal.emit((image, gt_pose))
 
     def cleanup(self):

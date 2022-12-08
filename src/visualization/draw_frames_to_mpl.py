@@ -5,6 +5,7 @@ from scipy.spatial.transform import Rotation as R, Slerp
 from common.utils import StopSignal
 import matplotlib.pyplot as plt
 from common.pose_utils import WorldCube
+import torch
 
 
 class MplFrameDrawer:
@@ -33,16 +34,15 @@ class MplFrameDrawer:
 
             if self._gt_pose_offset is None:
                 start_pose = frame._gt_lidar_start_pose
-                start_pose.transform_world_cube(self._world_cube, reverse=True)
                 self._gt_pose_offset = start_pose.inv()
 
-            new_pose = frame.get_start_lidar_pose()\
-                .transform_world_cube(self._world_cube, reverse=True)\
-                .get_transformation_matrix()[:3, 3]
+            new_pose = frame.get_start_lidar_pose()
+            new_pose = new_pose.transform_world_cube(self._world_cube, reverse=True, ignore_shift=True)
+            new_pose = new_pose.get_transformation_matrix()[:3, 3]
 
-            gt_pose = (self._gt_pose_offset * frame._gt_lidar_start_pose)\
-                .transform_world_cube(self._world_cube, reverse=True)\
-                .get_transformation_matrix()[:3, 3]
+            gt_pose = self._gt_pose_offset * frame._gt_lidar_start_pose
+            gt_pose = gt_pose.get_transformation_matrix()[:3, 3]    
+                
 
             self._path.append(new_pose)
             self._gt_path.append(gt_pose)
@@ -67,16 +67,28 @@ class MplFrameDrawer:
         rmse = np.sqrt(np.mean(np.linalg.norm(estimated-truth, axis=1)**2))
 
         dists = np.linalg.norm(estimated-truth, axis=1)
-        plt.plot(range(len(dists)), dists)
         plt.plot(xs, ys, color='r', label="Estimated")
         plt.plot(xs_gt, ys_gt, color='g', label="Ground Truth")
+
         plt.xlabel("X (m)")
         plt.ylabel("Y (m)")
-        plt.title("Ego Vehicle Path: Looped Dataset")
+        plt.title("Ego Vehicle Path")
         ax = plt.gca()
         ax.set_aspect('equal', adjustable='box')
-        # plt.ylim(-1.25, 1.25)
+        plt.ylim(-1.0, 1.0)
         plt.legend()
-        plt.savefig("looped_trajectory.png", bbox_inches="tight")
+        plt.savefig("trajectory_tracking.png", bbox_inches="tight")
+        plt.clf()
 
+        # plt.plot(xs_gt, ys_gt, color='g', label="Ground Truth")
+        # plt.xlabel("X (m)")
+        # plt.ylabel("Y (m)")
+        # plt.title("Ego Vehicle Path: Looped Dataset")
+        # ax = plt.gca()
+        # # ax.set_aspect('equal', adjustable='box')
+        # # plt.ylim(-.125, .125)
+        # plt.legend()
+        # plt.savefig("ground_truth.png", bbox_inches="tight")
+
+        
         self._done = True

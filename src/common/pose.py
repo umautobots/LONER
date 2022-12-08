@@ -20,7 +20,7 @@ class Pose:
     def set_fixed(self, fixed: bool= True)->None:
         self._pose_tensor.requires_grad_(not fixed)
             
-    def to(self, device: int) -> None:
+    def to(self, device: int) -> "Pose":
         self._pose_tensor = self._pose_tensor.to(device)
         return self
 
@@ -31,19 +31,21 @@ class Pose:
         tensor = torch.cat((xyz, quat))
         return Pose(pose_tensor=tensor, fixed=fixed)
 
-    def transform_world_cube(self, world_cube: WorldCube, reverse=False) -> "Pose":
+    def transform_world_cube(self, world_cube: WorldCube, reverse=False, ignore_shift=False) -> "Pose":
         if reverse:
             self._pose_tensor[:3] *= world_cube.scale_factor
-            self._pose_tensor[:3] -= world_cube.shift
+            if not ignore_shift:
+                self._pose_tensor[:3] -= world_cube.shift
         else:
             self._pose_tensor[:3] += world_cube.shift
-            self._pose_tensor[:3] /= world_cube.scale_factor
+            if not ignore_shift:
+                self._pose_tensor[:3] /= world_cube.scale_factor
 
         return self
 
     def clone(self, fixed=None):
         if fixed is None:
-            fixed = self.fixed
+            fixed = self._pose_tensor.requires_grad
         return Pose(pose_tensor=self._pose_tensor.clone(), fixed=fixed)
 
     def __mul__(self, other) -> "Pose":

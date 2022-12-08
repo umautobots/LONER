@@ -6,7 +6,7 @@ import scipy.spatial.transform as sptransform
 
 @dataclass
 class WorldCube:
-    scale_factor: float
+    scale_factor: torch.Tensor
     shift: float
 
 

@@ -112,8 +112,8 @@ class LidarScan:
 
     def transform_world_cube(self, world_cube: WorldCube, reverse=False) -> None:
         if reverse:
-            self.ray_origin_offsets *= world_cube.scale_factor
+            self.ray_origin_offsets[...,:3,3] *= world_cube.scale_factor
             self.distances *= world_cube.scale_factor
         else:
             self.ray_origin_offsets /= world_cube.scale_factor
-            self.distances /= world_cube.scale_factor
+            self.ray_origin_offsets[...,:3,3] /= world_cube.scale_factor
