@@ -13,6 +13,10 @@ from common.utils import StopSignal
 import tf2_ros
 import geometry_msgs.msg
 
+"""
+Listens to data on the given signals, and publishes to ROS for visualization. 
+"""
+
 
 def transform_from_pose(pose, child_frame):
     tf_mat = pose.get_transformation_matrix().detach()

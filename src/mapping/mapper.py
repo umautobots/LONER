@@ -17,7 +17,7 @@ class Mapper:
     the optimizer.
     """
 
-    # Constructor
+    ## Constructor
     # @param settings: The settings for the mapping and all contained classes
     # @param frame_signal: A Signal which the tracker emits to with completed Frame objects
     def __init__(self, settings: Settings, calibration: Settings, frame_signal: Signal,
@@ -33,7 +33,7 @@ class Mapper:
 
         self._world_cube = world_cube
 
-    # Spin by reading frames from the @m frame_slot as inputs.
+    ## Spins by reading frames from the @m frame_slot as inputs.
     def run(self) -> None:
         while True:
             if self._frame_slot.has_value():

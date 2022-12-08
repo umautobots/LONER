@@ -142,10 +142,11 @@ class FrameSynthesis:
                 self._sky_remover.get_sky_mask(frame.end_image))
             self._completed_frames.append(frame)
 
+    ## Check if a frame exists to be returned
     def has_frame(self) -> bool:
         return len(self._completed_frames) != 0
 
-    # Return and remove a newly synthesized Frame. If unavailable, returns None.
+    ## Return and remove a newly synthesized Frame. If unavailable, returns None.
     def pop_frame(self) -> Union[Frame, None]:
 
         # note: this is done with queues to avoid potentially expensive copies

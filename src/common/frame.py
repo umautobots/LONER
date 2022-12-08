@@ -1,3 +1,4 @@
+from typing import Union
 import torch
 
 from common.sensors import Image, LidarScan
@@ -38,7 +39,7 @@ class Frame:
         self.end_sky_mask = end_sky_mask
 
         self._lidar_to_camera = T_lidar_to_camera
-        # TODO
+
         self._lidar_start_pose = None
         self._lidar_end_pose = None
         self._gt_lidar_start_pose = None
@@ -51,22 +52,25 @@ class Frame:
             start_im_str = start_im_str.item()
         if isinstance(end_im_str, torch.Tensor):
             end_im_str = end_im_str.item()
-            
+
         return f"<Frame {start_im_str}->{end_im_str}, {len(self.lidar_points.timestamps)} points)>"
 
     def __repr__(self):
         return self.__str__()
 
-    # in-place move to device
-    def to(self, device: int) -> "Frame":
+    ## Moves all items in the frame to the specified device, in-place. Also returns the current frame.
+    # @param device: Target device, as int (GPU) or string (CPU or GPU)
+    def to(self, device: Union[int, str]) -> "Frame":
+
         self.start_image.to(device)
         self.end_image.to(device)
         self.lidar_points.to(device)
-        self._lidar_to_camera.to(device)
-        self._lidar_start_pose.to(device)
-        self._lidar_end_pose.to(device)
-        self._gt_lidar_start_pose.to(device)
-        self._gt_lidar_end_pose.to(device)
+
+        for pose in [self._lidar_to_camera, self._lidar_start_pose, self._lidar_end_pose, 
+                     self._gt_lidar_start_pose, self._gt_lidar_end_pose]:
+            if pose is not None:
+                pose.to(device)
+
         return self
 
     # Builds a point cloud from the lidar scan.
@@ -119,18 +123,18 @@ class Frame:
         self.end_sky_mask = mask
         return self
 
-    # Returns the Pose of the camera at the start of the frame as a transformation matrix
+    ## @returns the Pose of the camera at the start of the frame as a transformation matrix
     def get_start_camera_transform(self) -> torch.Tensor:
         return self._lidar_start_pose * self._lidar_to_camera
 
-    # Returns the Pose of the camera at the end of the frame as a transformation matrix
+    ## @returns the Pose of the camera at the end of the frame as a transformation matrix
     def get_end_camera_transform(self) -> torch.Tensor:
         return self._lidar_end_pose * self._lidar_to_camera
 
-    # Returns the Pose of the lidar at the start of the frame as a transformation matrix
+    ## @returns the Pose of the lidar at the start of the frame as a transformation matrix
     def get_start_lidar_pose(self) -> Pose:
         return self._lidar_start_pose
 
-    # Returns the Pose of the lidar at the end of the frame as a transformation matrix
+    ## @returns the Pose of the lidar at the end of the frame as a transformation matrix
     def get_end_lidar_pose(self) -> Pose:
         return self._lidar_end_pose

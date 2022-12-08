@@ -14,7 +14,7 @@ class KeyFrame:
     """ The KeyFrame class stores a frame an additional metadata to be used in optimization.
     """
 
-    # Constructor: Create a KeyFrame from input Frame @p frame.
+    ## Constructor: Create a KeyFrame from input Frame @p frame.
     def __init__(self, frame: Frame, device: int = None) -> None:
         self._frame = frame.to(device)
 
@@ -58,6 +58,8 @@ class KeyFrame:
     def get_end_time(self) -> float:
         return self._frame.end_image.timestamp
 
+    ## At the given @p timestamps, interpolate/extrapolate and return the lidar poses.
+    # @returns For N timestamps, returns a Nx4x4 tensor with all the interpolated/extrapolated transforms
     def interpolate_lidar_poses(self, timestamps) -> torch.Tensor:
         assert timestamps.dim() == 1
 
@@ -102,6 +104,7 @@ class KeyFrame:
 
         return output_rotmats_homo
 
+    ## For all the points in teh frame, create lidar rays in the format Cloner wants
     def build_lidar_rays(self,
                          lidar_indices: torch.Tensor,
                          ray_range: torch.Tensor,
@@ -160,6 +163,7 @@ class KeyFrame:
         valid_idxs = (far > (near + 1. / world_cube.scale_factor))[...,0]
         return rays[valid_idxs]
 
+    ## Given the images, create camera rays in Cloner's format
     def build_camera_rays(self,
                           first_camera_indices: torch.Tensor,
                           second_camera_indices: torch.Tensor,

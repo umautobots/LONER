@@ -44,6 +44,11 @@ class Optimizer:
     which the Optimizer then uses to draw samples and iterate the optimization
     """
 
+    ## Constructor
+    # @param settings: Optimizer-specific settings. See the example settings for details.
+    # @param calibration: Calibration-related settings. See the example settings for details
+    # @param world_cube: The world cube pre-computed that is used to scale the world.
+    # @param device: Which device to put the data on and run the optimizer on
     def __init__(self, settings: Settings, calibration: Settings, world_cube: WorldCube, device: int):
         self._settings = settings
         self._calibration = calibration
@@ -91,8 +96,8 @@ class Optimizer:
 
         self._cam_ray_directions = CameraRayDirections(calibration)
 
-    # Run one or more iterations of the optimizer, as specified by the
-    # stored settings, @p keyframe_window as the set of keyframes.
+    ## Run one or more iterations of the optimizer, as specified by the stored settings
+    # @param keyframe_window: The set of keyframes to use in the optimization.
     def iterate_optimizer(self, keyframe_window: List[KeyFrame]) -> float:
 
         # Step 1: Get uniformly random camera and lidar rays
@@ -201,12 +206,16 @@ class Optimizer:
 
             self._global_step += 1
 
+    ## Returns whether or not the lidar should be used, as indicated by the settings
     def should_enable_lidar(self) -> bool:
         return self._optimization_settings.stage in [1, 3]
 
+    
+    ## Returns whether or not the camera should be use, as indicated by the settings
     def should_enable_camera(self) -> bool:
         self._optimization_settings.stage in [2, 3]
     
+    ## For the given camera and lidar rays, compute and return the differentiable loss
     def compute_loss(self, camera_samples: torch.Tensor, lidar_samples: torch.Tensor) -> torch.Tensor:
 
         enable_lidar = self.should_enable_lidar()

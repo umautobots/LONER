@@ -32,6 +32,7 @@ RUN apt-get -y update \
       wget \
       curl \
       software-properties-common \
+      doxygen \
     && rm -rf /var/lib/apt/lists/*
 
 # Install ROS noetic (desktop full)

@@ -7,6 +7,10 @@ import matplotlib.pyplot as plt
 from common.pose_utils import WorldCube
 import torch
 
+"""
+Listens to data on the given signals, and creates matplotlib plots. 
+"""
+
 
 class MplFrameDrawer:
     def __init__(self, frame_signal: Signal, world_cube: WorldCube):
