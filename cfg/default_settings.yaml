@@ -40,14 +40,14 @@ mapper:
       strategy: UNIFORM
 
       # How many samples to take uniformly across non-sky regions
-      num_rgb_uniform_samples: 200
+      num_rgb_uniform_samples: 500
       
       # How many to use strategy to choose. This is an average since it may vary by image. 
-      avg_rgb_strategy_samples: 200
+      avg_rgb_strategy_samples: 500
 
       # Same, for lidar
-      num_lidar_uniform_samples: 200
-      avg_lidar_strategy_samples: 200
+      num_lidar_uniform_samples: 500
+      avg_lidar_strategy_samples: 500
       
       # How many samples to take from sky region (uniformly)
       num_sky_samples: 50

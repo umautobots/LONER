@@ -105,13 +105,14 @@ class Optimizer:
         uniform_camera_rays = None
 
         stage = self._optimization_settings.stage
-        self._model.freeze_sigma_head(
-            stage == 2 or self._optimization_settings.freeze_sigma_mlp)
-        self._model.freeze_sigma_head(
-            self._optimization_settings.freeze_rgb_mlp)
+        
+        if not self.should_enable_camera():
+            self._model.freeze_sigma_head()
+            
+        if not self.should_enable_camera():
+            self._model.freeze_rgb_head()
 
-        trainable_model_params = [
-            p for p in self._model.parameters if p.requires_grad]
+        trainable_model_params = [p for p in self._model.parameters() if p.requires_grad]
 
         optimize_poses = not self._optimization_settings.freeze_poses
         for kf in keyframe_window:
@@ -119,21 +120,14 @@ class Optimizer:
             kf.get_end_lidar_pose().set_fixed(not optimize_poses)
 
         if optimize_poses:
-            trainable_translations = [kf.get_start_lidar_pose().get_translation() for kf in keyframe_window] \
-                + [kf.get_end_lidar_pose().get_translation()
-                   for kf in keyframe_window]
+            trainable_poses = [kf.get_start_lidar_pose().get_pose_tensor() for kf in keyframe_window] \
+                + [kf.get_end_lidar_pose().get_pose_tensor() for kf in keyframe_window]
 
-            trainable_rotations = [kf.get_start_lidar_pose().get_rotation() for kf in keyframe_window] \
-                + [kf.get_end_lidar_pose().get_rotation()
-                   for kf in keyframe_window]
-
-            optimizer = torch.optim.Adam([{'params': trainable_model_params, 'lr': self._model_config.train.lrate},
-                                          {'params': trainable_translations,
-                                              'lr': self._model_config.train.lrate_pose_trans},
-                                          {'params': trainable_rotations, 'lr': self._model_config.train.lrate_pose_rot}])
+            optimizer = torch.optim.Adam([{'params': trainable_model_params, 'lr': self._model_config.train.lrate_mlp},
+                                          {'params': trainable_poses, 'lr': self._model_config.train.lrate_pose}])
         else:
             optimizer = torch.optim.Adam(
-                trainable_model_params, lr=self._model_config.train.lrate)
+                trainable_model_params, lr=self._model_config.train.lrate_mlp)
 
         # Bookkeeping for occ update 
         self._results_lidar = None
@@ -141,56 +135,58 @@ class Optimizer:
 
         for _ in range(self._optimization_settings.num_iterations):
             for kf in keyframe_window:
-                lidar_start_idx = torch.randint(kMaxPossibleLidarRays)
-                # TODO: This addition will NOT work for non-uniform sampling
-                lidar_end_idx = lidar_start_idx + kf.num_uniform_rgb_samples
-                lidar_indices = self._lidar_shuffled_indices[lidar_start_idx:lidar_end_idx]
 
-                if kf.num_uniform_lidar_samples > len(kf.get_lidar_scan()):
-                    print(
-                        "Warning: Dropping lidar points since too many were requested")
-                    lidar_end_idx = lidar_start_idx + len(kf.get_lidar_scan())
+                if self.should_enable_lidar():
+                    lidar_start_idx = torch.randint(kMaxPossibleLidarRays, (1,))
+                    # TODO: This addition will NOT work for non-uniform sampling
+                    lidar_end_idx = lidar_start_idx + kf.num_uniform_rgb_samples
+                    lidar_indices = self._lidar_shuffled_indices[lidar_start_idx:lidar_end_idx]
 
-                # lidar_indices was roughly estimated using some way-too-big indices
-                if lidar_end_idx > kMaxPossibleLidarRays:
-                    lidar_indices = lidar_indices % kMaxPossibleLidarRays
+                    if kf.num_uniform_lidar_samples > len(kf.get_lidar_scan()):
+                        print(
+                            "Warning: Dropping lidar points since too many were requested")
+                        lidar_end_idx = lidar_start_idx + len(kf.get_lidar_scan())
 
-                if uniform_lidar_rays is None:
-                    uniform_lidar_rays = kf.build_lidar_rays(lidar_indices, self._ray_range, self._world_cube)
-                else:
-                    uniform_lidar_rays = torch.vstack(
-                        (uniform_lidar_rays, kf.build_lidar_rays(lidar_indices, self._ray_range, self._world_cube)))
+                    # lidar_indices was roughly estimated using some way-too-big indices
+                    if lidar_end_idx > kMaxPossibleLidarRays:
+                        lidar_indices = lidar_indices % kMaxPossibleLidarRays
 
-                first_im_start_idx = torch.randint(
-                    len(self._rgb_shuffled_indices))
-                # TODO: This addition will NOT work for non-uniform sampling
-                first_im_end_idx = first_im_start_idx + kf.num_uniform_rgb_samples
-                first_im_indices = self._rgb_shuffled_indices[first_im_start_idx:first_im_end_idx]
+                    if uniform_lidar_rays is None:
+                        uniform_lidar_rays = kf.build_lidar_rays(lidar_indices, self._ray_range, self._world_cube)
+                    else:
+                        uniform_lidar_rays = torch.vstack(
+                            (uniform_lidar_rays, kf.build_lidar_rays(lidar_indices, self._ray_range, self._world_cube)))
 
-                if first_im_end_idx > len(self._rgb_shuffled_indices):
-                    first_im_indices = first_im_indices % len(
-                        self._rgb_shuffled_indices)
+                if self.should_enable_camera():
+                    start_idxs = torch.randint(len(self._rgb_shuffled_indices), (1,))
+ 
+                    # TODO: This addition will NOT work for non-uniform sampling
+                    first_im_end_idx = start_idxs[0] + kf.num_uniform_rgb_samples
+                    first_im_indices = self._rgb_shuffled_indices[start_idxs[0]:first_im_end_idx]
 
-                second_im_start_idx = torch.randint(
-                    len(self._rgb_shuffled_indices))
-                # TODO: This addition will NOT work for non-uniform sampling
-                second_im_end_idx = first_im_start_idx + kf.num_uniform_rgb_samples
-                second_im_indices = self._rgb_shuffled_indices[second_im_start_idx:second_im_end_idx]
+                    if first_im_end_idx > len(self._rgb_shuffled_indices):
+                        first_im_indices = first_im_indices % len(
+                            self._rgb_shuffled_indices)
 
-                if second_im_indices > len(self._rgb_shuffled_indices):
-                    second_im_indices = second_im_indices % len(
-                        self._rgb_shuffled_indices)
+    
+                    # TODO: This addition will NOT work for non-uniform sampling
+                    second_im_end_idx = start_idxs[1] + kf.num_uniform_rgb_samples
+                    second_im_indices = self._rgb_shuffled_indices[start_idxs[1]:second_im_end_idx]
 
-                if uniform_camera_rays is None:
-                    uniform_camera_rays = kf.build_camera_rays(
-                        first_im_indices, second_im_indices, self._ray_range,
-                        self._cam_ray_directions, self._world_cube)
-                else:
-                    uniform_camera_rays = torch.vstack((
-                        uniform_camera_rays,
-                        kf.build_camera_rays(
-                        first_im_indices, second_im_indices, self._ray_range,
-                        self._cam_ray_directions, self._world_cube)))
+                    if second_im_indices > len(self._rgb_shuffled_indices):
+                        second_im_indices = second_im_indices % len(
+                            self._rgb_shuffled_indices)
+
+                    if uniform_camera_rays is None:
+                        uniform_camera_rays = kf.build_camera_rays(
+                            first_im_indices, second_im_indices, self._ray_range,
+                            self._cam_ray_directions, self._world_cube)
+                    else:
+                        uniform_camera_rays = torch.vstack((
+                            uniform_camera_rays,
+                            kf.build_camera_rays(
+                            first_im_indices, second_im_indices, self._ray_range,
+                            self._cam_ray_directions, self._world_cube)))
 
             loss = self.compute_loss(uniform_camera_rays, uniform_lidar_rays)
 
@@ -218,13 +214,12 @@ class Optimizer:
     ## For the given camera and lidar rays, compute and return the differentiable loss
     def compute_loss(self, camera_samples: torch.Tensor, lidar_samples: torch.Tensor) -> torch.Tensor:
 
-        enable_lidar = self.should_enable_lidar()
-        enable_camera = self.should_enable_camera()
-
         loss = 0
         wandb_logs = {}
 
-        if enable_lidar:
+        if self.should_enable_lidar():
+
+            assert lidar_samples is not None, "Got None lidar_samples with lidar enabled"
 
             # Lidar samples are organized as [rays, depths]
             # rays = [origin, direction, viewdir, <ignore>, near limit, far limit]
@@ -289,7 +284,9 @@ class Optimizer:
             wandb_logs['depth_lambda'] = depth_lambda
             wandb_logs['depth_eps'] = depth_eps
 
-        if enable_camera:
+        if self.should_enable_camera():
+
+            assert camera_samples is not None, "Got None camera_samples with camera enabled"
 
             # camera_samples is organized as [cam_rays, cam_intensities]
             # cam_rays = [origin, direction, viewdir, ray_i_grid, ray_j_grid, near limit, far limit]

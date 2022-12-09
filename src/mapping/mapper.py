@@ -50,8 +50,7 @@ class Mapper:
 
                 if accepted_frame:
                     active_window = self._keyframe_manager.get_active_window()
-                    print(f"Chose active window: [{active_window}]")
-                #     self._optimizer.iterate_optimizer(active_window)
+                    self._optimizer.iterate_optimizer(active_window)
 
         self._processed_stop_signal.value = True
         print("Mapping Done. Waiting to terminate.")

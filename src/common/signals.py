@@ -44,9 +44,6 @@ class Signal:
 
         ## Stores Slot objects to write to when data is emitted
         self._slots = []
-
-    def __del__(self):
-        self.flush()
         
     ## Removes all leftover items from the queue.
     # This is important if you want your code to terminate properly. 

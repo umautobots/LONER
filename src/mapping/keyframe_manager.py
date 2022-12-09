@@ -93,7 +93,6 @@ class KeyFrameManager:
                 kf.num_strategy_rgb_samples = avg_rgb_samples
                 kf.num_uniform_lidar_samples = uniform_lidar_samples
                 kf.num_strategy_lidar_samples = avg_lidar_samples
-                print(f"Allocated {uniform_rgb_samples+avg_rgb_samples} samples to kf: {kf}")
         else:
             raise ValueError(
                 f"Can't use unknown SampleAllocationStrategy {self._sample_allocation_strategy}")
