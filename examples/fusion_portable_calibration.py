@@ -91,6 +91,7 @@ class FusionPortableCalibration:
                 "translation": frame1_cal["translation_stereo"],
                 "rotation": stereo_rotation
             }
+            self.stereo_baseline = np.linalg.norm(frame1_cal["translation_stereo"])
 
 
         
