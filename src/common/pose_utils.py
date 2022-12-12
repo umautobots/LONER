@@ -9,6 +9,24 @@ class WorldCube:
     scale_factor: torch.Tensor
     shift: float
 
+    def to(self, device, clone=False) -> "WorldCube":
+
+        if clone:
+
+            if isinstance(self.shift, torch.Tensor):
+                shift = self.shift.to(device, copy=True)
+            else:
+                shift = torch.Tensor([self.shift], device)
+            scale_factor = self.scale_factor.to(device, copy=True)
+            return WorldCube(scale_factor, shift)
+
+        if isinstance(self.shift, torch.Tensor):
+            self.shift = self.shift.to(device)
+        else:
+            self.shift = torch.Tensor([self.shift], device)
+
+        self.scale_factor = self.scale_factor.to(device)
+        return self
 
 def normalize(v):
     """Normalize a vector."""
@@ -295,7 +313,10 @@ def tensor_to_transform(transformation_tensors):
     RT = torch.cat([rotation_matrices, Ts[:, :, None]], 2)
     if N == 1:
         RT = RT[0]
-    RT = torch.vstack((RT, torch.Tensor([0, 0, 0, 1])))
+
+    H_row = torch.zeros_like(RT[0])
+    H_row[3] = 1
+    RT = torch.vstack((RT, H_row))
     return RT
 
 

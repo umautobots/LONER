@@ -40,6 +40,10 @@ class NeRF(nn.Module):
         dir = (dir + 1) / 2
         dir = self._encoder_dir(dir)
         h_c = torch.cat([dir, h[..., 1:]], dim=-1)
+
+        # No view dependence:
+        # h_c = h[..., 1:]
+
         h_c = self._model_intensity(h_c)
         color = torch.sigmoid(h_c)
 

@@ -8,7 +8,7 @@ from common.sensors import LidarScan, Image
 from common.pose_utils import WorldCube
 from common.ray_utils import get_far_val, CameraRayDirections
 
-
+NUMERIC_TOLERANCE = 1e-9
 
 class KeyFrame:
     """ The KeyFrame class stores a frame an additional metadata to be used in optimization.
@@ -60,7 +60,7 @@ class KeyFrame:
 
     ## At the given @p timestamps, interpolate/extrapolate and return the lidar poses.
     # @returns For N timestamps, returns a Nx4x4 tensor with all the interpolated/extrapolated transforms
-    def interpolate_lidar_poses(self, timestamps) -> torch.Tensor:
+    def interpolate_lidar_poses(self, timestamps: torch.Tensor) -> torch.Tensor:
         assert timestamps.dim() == 1
 
         N = timestamps.shape[0]
@@ -89,20 +89,25 @@ class KeyFrame:
         rotation_axis_angle = pytorch3d.transforms.matrix_to_axis_angle(relative_rotation)
 
         rotation_angle = torch.linalg.norm(rotation_axis_angle)
-        rotation_axis = rotation_axis_angle / rotation_angle
 
-        rotation_amounts = rotation_angle * interp_factors[:,None]
-        output_rotation_axis_angles = rotation_amounts * rotation_axis
+        if rotation_angle < NUMERIC_TOLERANCE:
+            rotation_matrices = torch.eye(3).to(timestamps.device).repeat(N,1,1)
+        
+        else:
+            rotation_axis = rotation_axis_angle / rotation_angle
 
-        rotation_matrices = pytorch3d.transforms.axis_angle_to_matrix()
+            rotation_amounts = rotation_angle * interp_factors[:,None]
+            output_rotation_axis_angles = rotation_amounts * rotation_axis
 
-        output_rotmats = torch.cat([rotation_matrices, output_translations], dim=-1)
+            rotation_matrices = pytorch3d.transforms.axis_angle_to_matrix(output_rotation_axis_angles)
+
+        output_transformations = torch.cat([rotation_matrices, output_translations], dim=-1)
 
         # make it homogenous
-        h = torch.Tensor([0,0,0,1]).to(output_rotmats.device).repeat(N, 1, 1)
-        output_rotmats_homo = torch.cat([output_rotmats, h], dim=1)
+        h = torch.Tensor([0,0,0,1]).to(output_transformations.device).repeat(N, 1, 1)
+        output_transformations_homo = torch.cat([output_transformations, h], dim=1)
 
-        return output_rotmats_homo
+        return output_transformations_homo
 
     ## For all the points in teh frame, create lidar rays in the format Cloner wants
     def build_lidar_rays(self,
@@ -112,35 +117,43 @@ class KeyFrame:
 
         lidar_scan = self.get_lidar_scan()
 
+        # TODO: Should these depths be used anywhere??
         depths = lidar_scan.distances[lidar_indices]
-        directions = lidar_scan.ray_directions[lidar_indices]
+        directions = lidar_scan.ray_directions[:, lidar_indices]
+        # print(lidar_scan.ray_directions.shape, directions.shape, lidar_scan.timestamps.shape, lidar_scan.distances.shape, max(lidar_indices))
         timestamps = lidar_scan.timestamps[lidar_indices]
 
         origin = lidar_scan.ray_origin_offsets
         assert origin.dim() == 2, "Currently there is not support for unique lidar origin offsets"
 
+        # N x 4 x 4
         lidar_poses = self.interpolate_lidar_poses(timestamps)
 
         # N x 3 x 3 (N homogenous transformation matrices)
         lidar_rotations = lidar_poses[..., :3, :3]
+
         # N x 3 x 1. This takes a 3xN matrix and makes it 1x3xN, then Nx3x1
         directions_3d = directions.unsqueeze(0).swapaxes(0, 2)
 
         # rotate ray directions from sensor coordinates to world coordinates
         # The transpose(1,2) effectively transposes each 3x3 matrix in the nx3x3 tensor
-        ray_directions = directions_3d @ lidar_rotations.transpose(1, 2)
+        # TODO: This is a bit different from how original cloner calculates it. Verify correctness.
+        ray_directions = lidar_rotations @ directions_3d
 
         # ray_directions is now Nx3x1, we want Nx3.
         ray_directions = ray_directions.squeeze()
         ray_directions /= torch.norm(ray_directions, dim=1, keepdim=True)
-        
+
         # Nx3
         lidar_origins = lidar_poses[..., :3, 3]
         # Nx4
         lidar_origins_homo = torch.hstack(
             (lidar_origins, torch.ones_like(lidar_origins[:, :1])))
-        lidar_origins_homo_3d = lidar_origins_homo.unsqueeze(0).swapaxes(0, 2)
-        ray_origins = lidar_origins_homo_3d @ lidar_poses.transpose(1, 2)
+
+        lidar_origins_homo_3d = lidar_origins_homo.unsqueeze(2)
+        print(lidar_origins_homo_3d.shape, lidar_poses.shape)
+        # TODO: This is a bit different from how original cloner calculates it. Verify correctness.
+        ray_origins = lidar_poses @ lidar_origins_homo_3d
         ray_origins = ray_origins.squeeze()[:,:3]
 
         view_directions = -ray_directions
@@ -158,7 +171,6 @@ class KeyFrame:
         rays = torch.cat([ray_origins, ray_directions, view_directions,
                           torch.inf * torch.ones_like(ray_origins[:, :2]),
                           near, far], 1)
-        
         # Only rays that have more than 1m inside world
         valid_idxs = (far > (near + 1. / world_cube.scale_factor))[...,0]
         return rays[valid_idxs]

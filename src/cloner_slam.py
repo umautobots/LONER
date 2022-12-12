@@ -16,7 +16,6 @@ from common.utils import StopSignal
 from mapping.mapper import Mapper
 from tracking.tracker import Tracker
 
-
 class ClonerSLAM:
     """ Top-level SLAM module.
 

@@ -23,8 +23,6 @@ class SampleStrategy(Enum):
 
 # Note: This is a bit of a deviation from how the rest of the code handles settings.
 # But it makes sense here to be a bit extra explicit since we'll change these often
-
-
 @dataclass
 class OptimizationSettings:
     """ OptimizationSettings is a simple container for parameters for the optimizer
@@ -76,7 +74,7 @@ class Optimizer:
         self._scale_factor = world_cube.scale_factor
         self._world_cube = world_cube
 
-        self._ray_range = torch.Tensor(self._model_config.model.ray_range)
+        self._ray_range = torch.Tensor(self._model_config.model.ray_range).to(self._device)
 
         # Main Model
         self._model = Model(self._model_config.model)
@@ -148,8 +146,7 @@ class Optimizer:
                         lidar_end_idx = lidar_start_idx + len(kf.get_lidar_scan())
 
                     # lidar_indices was roughly estimated using some way-too-big indices
-                    if lidar_end_idx > kMaxPossibleLidarRays:
-                        lidar_indices = lidar_indices % kMaxPossibleLidarRays
+                    lidar_indices = lidar_indices % len(kf.get_lidar_scan())
 
                     if uniform_lidar_rays is None:
                         uniform_lidar_rays = kf.build_lidar_rays(lidar_indices, self._ray_range, self._world_cube)
@@ -164,18 +161,14 @@ class Optimizer:
                     first_im_end_idx = start_idxs[0] + kf.num_uniform_rgb_samples
                     first_im_indices = self._rgb_shuffled_indices[start_idxs[0]:first_im_end_idx]
 
-                    if first_im_end_idx > len(self._rgb_shuffled_indices):
-                        first_im_indices = first_im_indices % len(
-                            self._rgb_shuffled_indices)
+                    first_im_indices = first_im_indices % len(self._rgb_shuffled_indices)
 
     
                     # TODO: This addition will NOT work for non-uniform sampling
                     second_im_end_idx = start_idxs[1] + kf.num_uniform_rgb_samples
                     second_im_indices = self._rgb_shuffled_indices[start_idxs[1]:second_im_end_idx]
 
-                    if second_im_indices > len(self._rgb_shuffled_indices):
-                        second_im_indices = second_im_indices % len(
-                            self._rgb_shuffled_indices)
+                    second_im_indices = second_im_indices % len(self._rgb_shuffled_indices)
 
                     if uniform_camera_rays is None:
                         uniform_camera_rays = kf.build_camera_rays(
