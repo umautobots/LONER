@@ -59,7 +59,9 @@ class FusionPortableCalibration:
                 "distortion_model": distortion_model,
                 "distortion_coeffs": distortion_coeffs,
                 "rectification_matrix": rectification_matrix,
-                "projection_matrix": projection_matrix
+                "projection_matrix": projection_matrix,
+                "width": frame0_cal["image_width"],
+                "height": frame0_cal["image_height"]
             }
 
 
@@ -77,7 +79,9 @@ class FusionPortableCalibration:
                 "distortion_model": distortion_model,
                 "distortion_coeffs": distortion_coeffs,
                 "rectification_matrix": rectification_matrix,
-                "projection_matrix": projection_matrix
+                "projection_matrix": projection_matrix,
+                "width": frame1_cal["image_width"],
+                "height": frame1_cal["image_height"]
             }
 
             stereo_rotation = frame1_cal["quaternion_stereo"]
