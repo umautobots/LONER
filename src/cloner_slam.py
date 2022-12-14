@@ -16,6 +16,7 @@ from common.utils import StopSignal
 from mapping.mapper import Mapper
 from tracking.tracker import Tracker
 
+
 class ClonerSLAM:
     """ Top-level SLAM module.
 
@@ -70,7 +71,6 @@ class ClonerSLAM:
         return self._world_cube
 
     def start(self, synchronous: bool = True) -> None:
-
         if not self._initialized:
             raise RuntimeError(
                 "Can't Start: System Uninitialized. You must call precompute_world_cube first.")

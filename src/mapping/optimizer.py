@@ -1,9 +1,10 @@
 import torch
 import wandb
 from dataclasses import dataclass
-from typing import List
+from typing import List, Tuple
 from enum import Enum
 import torch.nn as nn
+import torchviz
 
 from common.settings import Settings
 from mapping.keyframe import KeyFrame
@@ -15,14 +16,19 @@ from models.ray_sampling import OccGridRaySampler
 
 
 # Used for pre-creating random indices
-kMaxPossibleLidarRays = int(1e7)
+MAX_POSSIBLE_LIDAR_RAYS = int(1e7)
 
+ENABLE_WANDB = False
+
+DEBUG_DRAW_COMP_GRAPH = True
 
 class SampleStrategy(Enum):
     UNIFORM = 0
 
 # Note: This is a bit of a deviation from how the rest of the code handles settings.
 # But it makes sense here to be a bit extra explicit since we'll change these often
+
+
 @dataclass
 class OptimizationSettings:
     """ OptimizationSettings is a simple container for parameters for the optimizer
@@ -42,7 +48,7 @@ class Optimizer:
     which the Optimizer then uses to draw samples and iterate the optimization
     """
 
-    ## Constructor
+    # Constructor
     # @param settings: Optimizer-specific settings. See the example settings for details.
     # @param calibration: Calibration-related settings. See the example settings for details
     # @param world_cube: The world cube pre-computed that is used to scale the world.
@@ -65,7 +71,7 @@ class Optimizer:
 
         # We pre-create random numbers to lookup at runtime to save runtime.
         # This kills a lot of memory, but saves a ton of runtime
-        self._lidar_shuffled_indices = torch.randperm(kMaxPossibleLidarRays)
+        self._lidar_shuffled_indices = torch.randperm(MAX_POSSIBLE_LIDAR_RAYS)
         self._rgb_shuffled_indices = torch.randperm(
             calibration.camera_intrinsic.width * calibration.camera_intrinsic.height)
 
@@ -74,68 +80,79 @@ class Optimizer:
         self._scale_factor = world_cube.scale_factor
         self._world_cube = world_cube
 
-        self._ray_range = torch.Tensor(self._model_config.model.ray_range).to(self._device)
+        self._ray_range = torch.Tensor(
+            self._model_config.model.ray_range).to(self._device)
 
         # Main Model
         self._model = Model(self._model_config.model)
 
         # Occupancy grid
-        self._occupancy_grid_model = OccupancyGridModel(self._model_config.model.occ_model)
+        self._occupancy_grid_model = OccupancyGridModel(
+            self._model_config.model.occ_model).to(self._device)
         self._occupancy_grid = self._occupancy_grid_model()
 
         occ_grid_parameters = [
-                p for p in self._occupancy_grid_model.parameters() if p.requires_grad]
+            p for p in self._occupancy_grid_model.parameters() if p.requires_grad]
         self._occupancy_grid_optimizer = torch.optim.SGD(
-                occ_grid_parameters, lr=self._model_config.model.occ_model.lr)
-        
+            occ_grid_parameters, lr=self._model_config.model.occ_model.lr)
+
         self._ray_sampler = OccGridRaySampler()
 
         self._global_step = 1
 
         self._cam_ray_directions = CameraRayDirections(calibration)
 
-    ## Run one or more iterations of the optimizer, as specified by the stored settings
+        # TODO: This breaks multiprocessing
+        # self._wandb_mode = "online" if kEnableWandb else "disabled"
+        # self._wandb = wandb.init(project='cloner_slam', config=self._model_config,
+        #                          save_code=True, mode=self._wandb_mode)
+
+    # Run one or more iterations of the optimizer, as specified by the stored settings
     # @param keyframe_window: The set of keyframes to use in the optimization.
-    def iterate_optimizer(self, keyframe_window: List[KeyFrame]) -> float:
 
-        # Step 1: Get uniformly random camera and lidar rays
-        uniform_lidar_rays = None
-        uniform_camera_rays = None
+    def iterate_optimizer(self, keyframe_window: List[KeyFrame]) -> float:        
+        self._ray_sampler.update_occ_grid(self._occupancy_grid.detach())
 
-        stage = self._optimization_settings.stage
-        
-        if not self.should_enable_camera():
-            self._model.freeze_sigma_head()
-            
-        if not self.should_enable_camera():
-            self._model.freeze_rgb_head()
+        self._model.freeze_sigma_head(not self.should_enable_lidar())
+        self._model.freeze_rgb_head(not self.should_enable_camera())
 
-        trainable_model_params = [p for p in self._model.parameters() if p.requires_grad]
+        trainable_model_params = [
+            p for p in self._model.parameters() if p.requires_grad]
 
         optimize_poses = not self._optimization_settings.freeze_poses
+
+
         for kf in keyframe_window:
             kf.get_start_lidar_pose().set_fixed(not optimize_poses)
             kf.get_end_lidar_pose().set_fixed(not optimize_poses)
 
         if optimize_poses:
             trainable_poses = [kf.get_start_lidar_pose().get_pose_tensor() for kf in keyframe_window] \
-                + [kf.get_end_lidar_pose().get_pose_tensor() for kf in keyframe_window]
-
+                + [kf.get_end_lidar_pose().get_pose_tensor()
+                   for kf in keyframe_window]
+            print(f"Num keyframes: {len(keyframe_window)}, Num Trainable Poses: {len(trainable_poses)}")
             optimizer = torch.optim.Adam([{'params': trainable_model_params, 'lr': self._model_config.train.lrate_mlp},
                                           {'params': trainable_poses, 'lr': self._model_config.train.lrate_pose}])
         else:
             optimizer = torch.optim.Adam(
                 trainable_model_params, lr=self._model_config.train.lrate_mlp)
 
-        # Bookkeeping for occ update 
-        self._results_lidar = None
+
 
 
         for _ in range(self._optimization_settings.num_iterations):
-            for kf in keyframe_window:
+            uniform_lidar_rays, uniform_lidar_depths = None, None
+            uniform_camera_rays, uniform_camera_intensities = None, None
+            
+            # Bookkeeping for occ update
+            # TODO: Find a better solution to this.
+            self._results_lidar = None
 
+            for kf in keyframe_window:
+                
                 if self.should_enable_lidar():
-                    lidar_start_idx = torch.randint(kMaxPossibleLidarRays, (1,))
+                    lidar_start_idx = torch.randint(
+                        MAX_POSSIBLE_LIDAR_RAYS, (1,))
                     # TODO: This addition will NOT work for non-uniform sampling
                     lidar_end_idx = lidar_start_idx + kf.num_uniform_rgb_samples
                     lidar_indices = self._lidar_shuffled_indices[lidar_start_idx:lidar_end_idx]
@@ -143,81 +160,111 @@ class Optimizer:
                     if kf.num_uniform_lidar_samples > len(kf.get_lidar_scan()):
                         print(
                             "Warning: Dropping lidar points since too many were requested")
-                        lidar_end_idx = lidar_start_idx + len(kf.get_lidar_scan())
+                        lidar_end_idx = lidar_start_idx + \
+                            len(kf.get_lidar_scan())
 
                     # lidar_indices was roughly estimated using some way-too-big indices
                     lidar_indices = lidar_indices % len(kf.get_lidar_scan())
 
+                    new_rays, new_depths = kf.build_lidar_rays(lidar_indices, self._ray_range, self._world_cube)
                     if uniform_lidar_rays is None:
-                        uniform_lidar_rays = kf.build_lidar_rays(lidar_indices, self._ray_range, self._world_cube)
+                        uniform_lidar_rays = new_rays
+                        uniform_lidar_depths = new_depths
                     else:
-                        uniform_lidar_rays = torch.vstack(
-                            (uniform_lidar_rays, kf.build_lidar_rays(lidar_indices, self._ray_range, self._world_cube)))
+                        uniform_lidar_rays = torch.vstack((uniform_lidar_rays, new_rays))
+                        uniform_lidar_depths = torch.vstack((uniform_lidar_depths, new_depths))
+                        
+                # if self.should_enable_camera():
+                #     start_idxs = torch.randint(
+                #         len(self._rgb_shuffled_indices), (1,))
 
-                if self.should_enable_camera():
-                    start_idxs = torch.randint(len(self._rgb_shuffled_indices), (1,))
- 
-                    # TODO: This addition will NOT work for non-uniform sampling
-                    first_im_end_idx = start_idxs[0] + kf.num_uniform_rgb_samples
-                    first_im_indices = self._rgb_shuffled_indices[start_idxs[0]:first_im_end_idx]
+                #     # TODO: This addition will NOT work for non-uniform sampling
+                #     first_im_end_idx = start_idxs[0] + \
+                #         kf.num_uniform_rgb_samples
 
-                    first_im_indices = first_im_indices % len(self._rgb_shuffled_indices)
+                #     # autopep8: off
+                #     first_im_indices = self._rgb_shuffled_indices[start_idxs[0]:first_im_end_idx]
 
-    
-                    # TODO: This addition will NOT work for non-uniform sampling
-                    second_im_end_idx = start_idxs[1] + kf.num_uniform_rgb_samples
-                    second_im_indices = self._rgb_shuffled_indices[start_idxs[1]:second_im_end_idx]
+                #     first_im_indices = first_im_indices % len(
+                #         self._rgb_shuffled_indices)
 
-                    second_im_indices = second_im_indices % len(self._rgb_shuffled_indices)
+                #     # TODO: This addition will NOT work for non-uniform sampling
+                #     second_im_end_idx = start_idxs[1] + \
+                #         kf.num_uniform_rgb_samples
+                #     second_im_indices = self._rgb_shuffled_indices[start_idxs[1]:second_im_end_idx]
+                #     # autopep8: on
 
-                    if uniform_camera_rays is None:
-                        uniform_camera_rays = kf.build_camera_rays(
-                            first_im_indices, second_im_indices, self._ray_range,
-                            self._cam_ray_directions, self._world_cube)
-                    else:
-                        uniform_camera_rays = torch.vstack((
-                            uniform_camera_rays,
-                            kf.build_camera_rays(
-                            first_im_indices, second_im_indices, self._ray_range,
-                            self._cam_ray_directions, self._world_cube)))
+                #     second_im_indices = second_im_indices % len(
+                #         self._rgb_shuffled_indices)
 
-            loss = self.compute_loss(uniform_camera_rays, uniform_lidar_rays)
+                #     if uniform_camera_rays is None:
+                #         uniform_camera_rays = kf.build_camera_rays(
+                #             first_im_indices, second_im_indices, self._ray_range,
+                #             self._cam_ray_directions, self._world_cube)
+                #     else:
+                #         uniform_camera_rays = torch.vstack((
+                #             uniform_camera_rays,
+                #             kf.build_camera_rays(
+                #                 first_im_indices, second_im_indices, self._ray_range,
+                #                 self._cam_ray_directions, self._world_cube)))
+
+
+            lidar_samples = (uniform_lidar_rays, uniform_lidar_depths)
+
+            loss = self.compute_loss(uniform_camera_rays, lidar_samples)
+
+            if DEBUG_DRAW_COMP_GRAPH:
+                loss_dot = torchviz.make_dot(loss)
+                loss_dot.format = "png"
+                loss_dot.render(directory="../graphs", filename=f"iteration_{self._global_step}")
+
+            optimizer.zero_grad()
+            loss.backward(retain_graph=True)
+            optimizer.step()
 
             # TODO: Active Sampling
 
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
 
-            if self._model_config.train.enable_occ and self.should_enable_lidar():
-                if self._global_step % self._model_config.model.occ_model.N_iters_acc == 0:
-                    self._step_occupancy_grid()
-
+            if self.should_enable_lidar() and \
+                    self._global_step % self._model_config.model.occ_model.N_iters_acc == 0:
+                self._step_occupancy_grid()
             self._global_step += 1
 
-    ## Returns whether or not the lidar should be used, as indicated by the settings
+    # Returns whether or not the lidar should be used, as indicated by the settings
     def should_enable_lidar(self) -> bool:
         return self._optimization_settings.stage in [1, 3]
 
-    
-    ## Returns whether or not the camera should be use, as indicated by the settings
+    # Returns whether or not the camera should be use, as indicated by the settings
+
     def should_enable_camera(self) -> bool:
-        self._optimization_settings.stage in [2, 3]
-    
-    ## For the given camera and lidar rays, compute and return the differentiable loss
-    def compute_loss(self, camera_samples: torch.Tensor, lidar_samples: torch.Tensor) -> torch.Tensor:
+        return self._optimization_settings.stage in [2, 3]
+
+    # For the given camera and lidar rays, compute and return the differentiable loss
+    def compute_loss(self, camera_samples: torch.Tensor, lidar_samples: Tuple[torch.Tensor, torch.Tensor]) -> torch.Tensor:
 
         loss = 0
         wandb_logs = {}
 
+        # TODO: Update
+        if self._model_config.loss.decay_depth_eps:
+            depth_eps = max(self._model_config.loss.depth_eps * (self._model_config.train.decay_rate ** (
+                            self._global_step / (self._model_config.loss.depth_eps_decay_steps))), self._model_config.loss.min_depth_eps)
+        else:
+            depth_eps = self._model_config.loss.depth_eps
+
+        if self._model_config.loss.decay_depth_lambda:
+            depth_lambda = max(self._model_config.loss.depth_lambda * (self._model_config.train.decay_rate ** (
+                self._global_step / (self._model_config.loss.depth_lambda_decay_steps))), self._model_config.loss.min_depth_lambda)
+        else:
+            depth_lambda = self._model_config.loss.depth_lambda
+
         if self.should_enable_lidar():
+            
 
             assert lidar_samples is not None, "Got None lidar_samples with lidar enabled"
 
-            # Lidar samples are organized as [rays, depths]
             # rays = [origin, direction, viewdir, <ignore>, near limit, far limit]
-            lidar_rays, lidar_depths = lidar_samples.split(
-                lidar_samples.shape[1]-1, dim=1)
+            lidar_rays, lidar_depths = lidar_samples
 
             lidar_rays = lidar_rays.reshape(-1, lidar_rays.shape[-1])
             lidar_depths = lidar_depths.reshape(-1, 1)
@@ -259,7 +306,7 @@ class Optimizer:
             loss += loss_opacity_lidar
             wandb_logs['loss_opacity_lidar'] = loss_opacity_lidar.item()
 
-            n_depth = lidar_samples.shape[0]
+            n_depth = lidar_depths.shape[0]
 
             depth_peaks_lidar = self._lidar_depth_samples_fine[torch.arange(
                 n_depth), weights_pred_lidar.argmax(dim=1)].detach()
@@ -277,14 +324,14 @@ class Optimizer:
             wandb_logs['depth_lambda'] = depth_lambda
             wandb_logs['depth_eps'] = depth_eps
 
-        if self.should_enable_camera():
-
+        if False and self.should_enable_camera():
             assert camera_samples is not None, "Got None camera_samples with camera enabled"
 
             # camera_samples is organized as [cam_rays, cam_intensities]
             # cam_rays = [origin, direction, viewdir, ray_i_grid, ray_j_grid, near limit, far limit]
-            cam_rays, cam_intensities = camera_samples.split(
-                camera_samples.shape[1]-3, dim=1)
+            cam_rays, cam_intensities = camera_samples
+
+            cam_intensities = cam_intensities.detach()
 
             cam_rays = cam_rays.reshape(-1, cam_rays.shape[-1])
             cam_intensities = cam_intensities.reshape(
@@ -329,20 +376,22 @@ class Optimizer:
             loss += self._model_config.loss.std_lambda * loss_std_cam
             wandb_logs['loss_std_cam'] = loss_std_cam.item()
 
-        if self._global_step % self._model_config.log.i_log == 0:
-            wandb.log(wandb_logs, commit=False)
+        # if self._global_step % self._model_config.log.i_log == 0:
+        #     wandb.log(wandb_logs, commit=False)
 
-        wandb.log({}, commit=True)
+        # wandb.log({}, commit=True)
 
         return loss
 
-    ## @precond: This MUST be called after compute_loss!!
+    # @precond: This MUST be called after compute_loss!!
     def _step_occupancy_grid(self):
-        lidar_points = self._results_lidar.detach()
-        point_logits = OccupancyGridModel.interpolate(self._occupancy_grid, lidar_points)
-        point_logits_grad = get_logits_grad(self._lidar_depth_samples_fine, self._lidar_depths_gt)
+        lidar_points = self._results_lidar['points_fine'].detach()
+        point_logits = OccupancyGridModel.interpolate(
+            self._occupancy_grid, lidar_points)
+        point_logits_grad = get_logits_grad(
+            self._lidar_depth_samples_fine, self._lidar_depths_gt)
         point_logits.backward(
-                    gradient=point_logits_grad, retain_graph=True)
+            gradient=point_logits_grad, retain_graph=True)
         self._occupancy_grid_optimizer.step()
         self._occupancy_grid = self._occupancy_grid_model()
         self._ray_sampler.update_occ_grid(self._occupancy_grid.detach())

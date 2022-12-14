@@ -15,7 +15,7 @@ from common.utils import StopSignal
 from common.signals import Signal
 from tracking.frame_synthesis import FrameSynthesis
 
-kDebugClouds = False
+DEBUG_POINT_CLOUDS = False
 
 
 # Yanked from http://www.open3d.org/docs/release/python_example/pipelines/index.html#icp-registration-py
@@ -44,12 +44,12 @@ class Tracker:
     # @param lidar_signal: Same as rgb_signal, but for lidar
     # @param frame_queue: A Signal which the Tracker emits to when it completes a frame
     def __init__(
-        self,
-        settings: Settings,
-        rgb_signal: Signal,
-        lidar_signal: Signal,
-        frame_signal: Signal,
-        world_cube: WorldCube) -> None:
+            self,
+            settings: Settings,
+            rgb_signal: Signal,
+            lidar_signal: Signal,
+            frame_signal: Signal,
+            world_cube: WorldCube) -> None:
 
         self._world_cube = world_cube
         self._rgb_slot = rgb_signal.register()
@@ -76,7 +76,7 @@ class Tracker:
 
         self._frame_count = 0
 
-    ## Run spins and processes incoming data while putting resulting frames into the queue
+    # Run spins and processes incoming data while putting resulting frames into the queue
     def run(self) -> None:
         while True:
             if self._rgb_slot.has_value():
@@ -115,7 +115,7 @@ class Tracker:
             continue
         print("Exiting tracking process.")
 
-    ## track_frame inputs a @p frame and estimates its pose, which is stored in the Frame.
+    # track_frame inputs a @p frame and estimates its pose, which is stored in the Frame.
     # @returns True if tracking was successful.
     def track_frame(self, frame: Frame) -> bool:
 
@@ -143,8 +143,7 @@ class Tracker:
             frame._lidar_end_pose = self._reference_pose.clone(fixed=True)
             self._reference_point_cloud = frame_point_cloud
             self._reference_time = (
-                frame.start_image.timestamp + frame.end_image.timestamp
-            ) / 2
+                frame.start_image.timestamp + frame.end_image.timestamp) / 2
             self._velocity = torch.Tensor([0, 0, 0])
             self._angular_velocity = torch.Tensor([0, 0, 0])
             return True
@@ -192,12 +191,11 @@ class Tracker:
         trans_vec = registration_result[:3, 3]
 
         new_reference_time = (
-            frame.start_image.timestamp + frame.end_image.timestamp
-        ) / 2
+            frame.start_image.timestamp + frame.end_image.timestamp) / 2
 
         start_time_interp_factor = (
-            frame.start_image.timestamp - self._reference_time
-        ) / (new_reference_time - self._reference_time)
+            frame.start_image.timestamp - self._reference_time) \
+            / (new_reference_time - self._reference_time)
         rot_vec_start = rot_vec * start_time_interp_factor
         rot_start = torch.from_numpy(R.from_rotvec(rot_vec_start).as_matrix())
         trans_vec_start = start_time_interp_factor * trans_vec
@@ -220,13 +218,11 @@ class Tracker:
         end_transformation_mat = torch.hstack(
             (rot_end, trans_vec_end.reshape(3, 1)))
         end_transformation_mat = torch.vstack(
-            (end_transformation_mat, torch.Tensor([0, 0, 0, 1]))
-        ).float()
+            (end_transformation_mat, torch.Tensor([0, 0, 0, 1]))).float()
         frame._lidar_end_pose = Pose(
-            (reference_pose_mat @ end_transformation_mat).float().to(device)
-        )
+            (reference_pose_mat @ end_transformation_mat).float().to(device))
 
-        if kDebugClouds:
+        if DEBUG_POINT_CLOUDS:
             logdir = f"../outputs/frame_{self._frame_count}"
             os.mkdir(f"../outputs/frame_{self._frame_count}")
             o3d.io.write_point_cloud(

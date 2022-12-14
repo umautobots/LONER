@@ -23,9 +23,9 @@ class KeyFrameManager:
     data to the optimizer.
     """
 
-    ## Constructor
+    # Constructor
     # @param settings: Settings object for the KeyFrame Manager
-    def __init__(self, settings: Settings, device:int = -1) -> None:
+    def __init__(self, settings: Settings, device: int = -1) -> None:
         self._settings = settings
         self._keyframe_selection_strategy = KeyFrameSelectionStrategy[
             settings.keyframe_selection.strategy]
@@ -33,7 +33,7 @@ class KeyFrameManager:
             settings.window_selection.strategy]
         self._sample_allocation_strategy = SampleAllocationStrategy[
             settings.sample_allocation.strategy]
-        
+
         self._device = device
 
         # Keep track of the start image timestamp
@@ -41,9 +41,9 @@ class KeyFrameManager:
 
         self._keyframes = []
 
-    ## Processes the input @p frame, decides whether it's a KeyFrame, and if so
+    # Processes the input @p frame, decides whether it's a KeyFrame, and if so
     # adds it to internal KeyFrame storage
-    def process_frame(self, frame: Frame) -> bool:
+    def process_frame(self, frame: Frame) -> KeyFrame:
         if self._keyframe_selection_strategy == KeyFrameSelectionStrategy.TEMPORAL:
             should_use_frame = self._select_frame_temporal(frame)
         else:
@@ -55,17 +55,17 @@ class KeyFrameManager:
             new_keyframe = KeyFrame(frame, self._device)
             self._keyframes.append(new_keyframe)
 
-        return should_use_frame
+        return new_keyframe if should_use_frame else None 
 
     def _select_frame_temporal(self, frame: Frame) -> bool:
         if self._last_accepted_frame_ts is None:
             return True
-        
+
         dt = frame.start_image.timestamp - self._last_accepted_frame_ts
         dt_threshold = self._settings.keyframe_selection.temporal.time_diff_seconds
         return dt >= dt_threshold
 
-    ## Selects which KeyFrames are to be used in the optimization, allocates
+    # Selects which KeyFrames are to be used in the optimization, allocates
     # samples to them, and returns the result as {keyframe: num_samples}
     def get_active_window(self) -> List[KeyFrame]:
         window_size = self._settings.window_selection.window_size
@@ -78,7 +78,7 @@ class KeyFrameManager:
 
         return self.allocate_samples(window)
 
-    ## Given the input @p keyframes, set the correct number of samples per frame. Modifies in-place.
+    # Given the input @p keyframes, set the correct number of samples per frame. Modifies in-place.
     # @returns The updated list of keyframes.
     def allocate_samples(self, keyframes: List[KeyFrame]) -> List[KeyFrame]:
         uniform_rgb_samples = self._settings.sample_allocation.num_rgb_uniform_samples

@@ -12,21 +12,21 @@ class Slot:
     This is analogous to a subscriber in ROS
     """
 
-    ## This should not be called directly. Instead, call Signal.register
+    # This should not be called directly. Instead, call Signal.register
     def __init__(self):
         self._queue = mp.Queue()
 
-    ## Checks whether a value is available
+    # Checks whether a value is available
     def has_value(self) -> bool:
         return not self._queue.empty()
 
-    ## Returns a value if available, and otherwise None
+    # Returns a value if available, and otherwise None
     def get_value(self):
         if not self.has_value():
             return None
         return self._queue.get()
 
-    ## Used by Signal to send data. Don't call directly.
+    # Used by Signal to send data. Don't call directly.
     def _insert(self, value):
         self._queue.put(value)
 
@@ -39,14 +39,14 @@ class Signal:
     Calling @m register returns a slot, which functions as a subscriber.
     """
 
-    ## Constructor: An empty signal is just an empty list of slots
+    # Constructor: An empty signal is just an empty list of slots
     def __init__(self):
 
-        ## Stores Slot objects to write to when data is emitted
+        # Stores Slot objects to write to when data is emitted
         self._slots = []
-        
-    ## Removes all leftover items from the queue.
-    # This is important if you want your code to terminate properly. 
+
+    # Removes all leftover items from the queue.
+    # This is important if you want your code to terminate properly.
     def flush(self):
         warned = False
         for s in self._slots:
@@ -57,12 +57,12 @@ class Signal:
                     warned = True
                 s._queue.get()
 
-    ## Creates and returns a Slot which listens on the Signal 
+    # Creates and returns a Slot which listens on the Signal
     def register(self) -> Slot:
         self._slots.append(Slot())
         return self._slots[-1]
 
-    ## Sends the given value to all the registered Slots
+    # Sends the given value to all the registered Slots
     def emit(self, value: any) -> None:
         for s in self._slots:
             s._insert(value)

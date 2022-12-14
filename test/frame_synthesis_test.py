@@ -19,7 +19,7 @@ def BuildLidarScan(start_time, end_time, num_steps):
     timestamps = torch.linspace(start_time, end_time, num_steps)
     directions = torch.tile(timestamps, (3, 1))
     distances = torch.linalg.norm(directions, axis=0)
-    directions /= distances
+    directions = directions / distances
     offsets = torch.eye(4)
     return LidarScan(directions, distances, offsets, timestamps)
 

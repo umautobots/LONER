@@ -4,6 +4,7 @@ import numpy as np
 import torch
 import scipy.spatial.transform as sptransform
 
+
 @dataclass
 class WorldCube:
     scale_factor: torch.Tensor
@@ -27,6 +28,7 @@ class WorldCube:
 
         self.scale_factor = self.scale_factor.to(device)
         return self
+
 
 def normalize(v):
     """Normalize a vector."""
@@ -88,7 +90,7 @@ def center_poses(poses):
     pose_avg_homo[:3] = pose_avg
     # by simply adding 0, 0, 0, 1 as the last row
     last_row = torch.tile(torch.Tensor([0, 0, 0, 1]),
-                       (len(poses), 1, 1))  # (N_images, 1, 4)
+                          (len(poses), 1, 1))  # (N_images, 1, 4)
     # (N_images, 4, 4) homogeneous coordinate
     poses_homo = torch.cat([poses, last_row], 1)
 
@@ -103,21 +105,21 @@ def _get_view_frustum_corners(K, H, W, min_depth=1, max_depth=1e6):
     assert min_depth < max_depth
     assert min_depth > 0 and max_depth > 0
     return torch.Tensor([[-K[0, 2] / K[0, 0] * min_depth, K[1, 2] / K[1, 1] * min_depth, -min_depth, 1],          # left, up, near
-                    [-K[0, 2] / K[0, 0] * max_depth, K[1, 2] / K[1, 1] * \
+                         [-K[0, 2] / K[0, 0] * max_depth, K[1, 2] / K[1, 1] * \
                         max_depth, -max_depth, 1],           # left, up, far
-                    # left, down, near
-                     [-K[0, 2] / K[0, 0] * min_depth, - \
-                         (H-K[1, 2]) / K[1, 1] * min_depth, -min_depth, 1],
-                     # left, down, far
-                     [-K[0, 2] / K[0, 0] * max_depth, - \
-                         (H-K[1, 2]) / K[1, 1] * max_depth, -max_depth, 1],
-                     [(W-K[0, 2]) / K[0, 0] * min_depth, K[1, 2] / K[1, 1]
-                     * min_depth, -min_depth, 1],        # right, up, near
-                     [(W-K[0, 2]) / K[0, 0] * max_depth, K[1, 2] / K[1, 1]
-                     * max_depth, -max_depth, 1],        # right, up, far
-                     [(W-K[0, 2]) / K[0, 0] * min_depth, -(H-K[1, 2]) / K[1, 1]
-                     * min_depth, -min_depth, 1],   # right, down, near
-                     [(W-K[0, 2]) / K[0, 0] * max_depth, -(H-K[1, 2]) / K[1, 1] * max_depth, -max_depth, 1]])  # right, down, far
+                         # left, down, near
+                         [-K[0, 2] / K[0, 0] * min_depth, - \
+                          (H-K[1, 2]) / K[1, 1] * min_depth, -min_depth, 1],
+                         # left, down, far
+                         [-K[0, 2] / K[0, 0] * max_depth, - \
+                          (H-K[1, 2]) / K[1, 1] * max_depth, -max_depth, 1],
+                         [(W-K[0, 2]) / K[0, 0] * min_depth, K[1, 2] / K[1, 1]
+                          * min_depth, -min_depth, 1],        # right, up, near
+                         [(W-K[0, 2]) / K[0, 0] * max_depth, K[1, 2] / K[1, 1]
+                          * max_depth, -max_depth, 1],        # right, up, far
+                         [(W-K[0, 2]) / K[0, 0] * min_depth, -(H-K[1, 2]) / K[1, 1]
+                          * min_depth, -min_depth, 1],   # right, down, near
+                         [(W-K[0, 2]) / K[0, 0] * max_depth, -(H-K[1, 2]) / K[1, 1] * max_depth, -max_depth, 1]])  # right, down, far
 
 
 # TODO (seth): Update comments, this is all fake news now. we don't actually move anything
@@ -159,7 +161,8 @@ def compute_world_cube(camera_poses, intrinsic_mats, image_sizes, lidar_poses, c
     if isinstance(image_sizes, tuple):
         image_sizes = torch.Tensor(image_sizes)
     if image_sizes.shape == (2,):
-        image_sizes = torch.broadcast_to(image_sizes, (camera_poses.shape[0], 2))
+        image_sizes = torch.broadcast_to(
+            image_sizes, (camera_poses.shape[0], 2))
     else:
         assert image_sizes.shape[0] == camera_poses.shape[0]
 
@@ -169,13 +172,13 @@ def compute_world_cube(camera_poses, intrinsic_mats, image_sizes, lidar_poses, c
         # need to compute min_depth by looking at the z value of the corner ray with length camera_range[0]
         pts_homo = _get_view_frustum_corners(
             K, hw[0], hw[1], min_depth=camera_range[0], max_depth=camera_range[1])    # (8, 4)
-        corners = c2w[:3,:] @ pts_homo.T
+        corners = c2w[:3, :] @ pts_homo.T
         all_corners += [corners.T]
     all_corners = torch.cat(all_corners, dim=0)  # (8N, 3)
     print(f'Computed a list of corners with shape {all_corners.shape}')
 
     all_poses = torch.cat(
-        [camera_poses[...,:3, 3], lidar_poses[...,:3, 3]], dim=0)
+        [camera_poses[..., :3, 3], lidar_poses[..., :3, 3]], dim=0)
     print(f'Computed a list of poses with shape {all_poses.shape}')
 
     all_points = torch.cat([all_corners, all_poses])
@@ -214,9 +217,11 @@ def create_spiral_poses(radii, focus_depth, n_poses=60):
         poses_spiral: (n_poses, 3, 4) the poses in the spiral path
     """
     poses_spiral = []
-    for t in torch.linspace(0, 4*torch.pi, n_poses+1)[:-1]:  # rotate 4pi (2 rounds)
+    # rotate 4pi (2 rounds)
+    for t in torch.linspace(0, 4*torch.pi, n_poses+1)[:-1]:
         # the parametric function of the spiral (see the interactive web)
-        center = torch.Tensor([torch.cos(t), -torch.sin(t), -torch.sin(0.5*t)]) * radii
+        center = torch.Tensor(
+            [torch.cos(t), -torch.sin(t), -torch.sin(0.5*t)]) * radii
         # the viewing z axis is the vector pointing from the @focus_depth plane
         # to @center
         z = normalize(center - torch.Tensor([0, 0, -focus_depth]))
@@ -318,5 +323,3 @@ def tensor_to_transform(transformation_tensors):
     H_row[3] = 1
     RT = torch.vstack((RT, H_row))
     return RT
-
-

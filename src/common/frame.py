@@ -58,7 +58,7 @@ class Frame:
     def __repr__(self):
         return self.__str__()
 
-    ## Moves all items in the frame to the specified device, in-place. Also returns the current frame.
+    # Moves all items in the frame to the specified device, in-place. Also returns the current frame.
     # @param device: Target device, as int (GPU) or string (CPU or GPU)
     def to(self, device: Union[int, str]) -> "Frame":
 
@@ -66,10 +66,16 @@ class Frame:
         self.end_image.to(device)
         self.lidar_points.to(device)
 
-        for pose in [self._lidar_to_camera, self._lidar_start_pose, self._lidar_end_pose, 
+        for pose in [self._lidar_to_camera, self._lidar_start_pose, self._lidar_end_pose,
                      self._gt_lidar_start_pose, self._gt_lidar_end_pose]:
             if pose is not None:
                 pose.to(device)
+
+        return self
+
+    def detach(self) -> "Frame":
+        self._lidar_start_pose.detach()
+        self._lidar_end_pose.detach()
 
         return self
 
@@ -123,18 +129,18 @@ class Frame:
         self.end_sky_mask = mask
         return self
 
-    ## @returns the Pose of the camera at the start of the frame as a transformation matrix
+    # @returns the Pose of the camera at the start of the frame as a transformation matrix
     def get_start_camera_transform(self) -> torch.Tensor:
         return self._lidar_start_pose * self._lidar_to_camera
 
-    ## @returns the Pose of the camera at the end of the frame as a transformation matrix
+    # @returns the Pose of the camera at the end of the frame as a transformation matrix
     def get_end_camera_transform(self) -> torch.Tensor:
         return self._lidar_end_pose * self._lidar_to_camera
 
-    ## @returns the Pose of the lidar at the start of the frame as a transformation matrix
+    # @returns the Pose of the lidar at the start of the frame as a transformation matrix
     def get_start_lidar_pose(self) -> Pose:
         return self._lidar_start_pose
 
-    ## @returns the Pose of the lidar at the end of the frame as a transformation matrix
+    # @returns the Pose of the lidar at the end of the frame as a transformation matrix
     def get_end_lidar_pose(self) -> Pose:
         return self._lidar_end_pose

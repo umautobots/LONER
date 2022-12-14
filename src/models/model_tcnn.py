@@ -20,13 +20,13 @@ class Model(nn.Module):
         else:
             raise NotImplementedError()
 
-    def freeze_sigma_head(self):
+    def freeze_sigma_head(self, should_freeze=True):
         for p in self.nerf_model._model_sigma.parameters():
-            p.requires_grad = False
+            p.requires_grad = not should_freeze
 
-    def freeze_rgb_head(self):
+    def freeze_rgb_head(self, should_freeze=True):
         for p in self.nerf_model._model_intensity.parameters():
-            p.requires_grad = False
+            p.requires_grad = not should_freeze
 
     def forward(self, rays, ray_sampler, scale_factor, testing=False, camera=True):
         """Do batched inference on rays using chunk"""

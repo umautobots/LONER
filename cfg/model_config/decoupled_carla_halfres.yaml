@@ -50,7 +50,8 @@ loss:
     min_depth_lambda: 10.              # Minimum value after decay
     depth_lambda_decay_steps: 15000
         
-    decay_depth_eps: True              # boolean to enabl: 3.0                     # starting tolerance for line of sight loss in euclidean space
+    decay_depth_eps: True              # boolean to enable decay
+    depth_eps: 3.0                     # starting tolerance for line of sight loss in euclidean space
     min_depth_eps: 0.3                 # Minimum value after decay
     depth_eps_decay_steps: 2500
 

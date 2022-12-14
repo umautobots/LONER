@@ -17,6 +17,8 @@ from scipy.spatial.transform import Rotation as R
 import argparse
 from attrdict import AttrDict
 
+# autopep8: off
+# Linting needs to be disabled here or it'll try to move includes before path.
 PUB_ROS = False
 
 PROJECT_ROOT = os.path.abspath(os.path.join(
@@ -25,13 +27,15 @@ PROJECT_ROOT = os.path.abspath(os.path.join(
 sys.path.append(PROJECT_ROOT)
 sys.path.append(PROJECT_ROOT + "/src")
 
-from src.common.settings import Settings
-from src.common.pose import Pose
-from src.common.pose_utils import WorldCube
-from src.visualization.draw_frames_to_mpl import MplFrameDrawer
-from src.visualization.draw_frames_to_ros import FrameDrawer
-from src.common.sensors import Image, LidarScan
 from src.cloner_slam import ClonerSLAM
+from src.common.sensors import Image, LidarScan
+from src.visualization.draw_frames_to_ros import FrameDrawer
+from src.visualization.draw_frames_to_mpl import MplFrameDrawer
+from src.common.pose_utils import WorldCube
+from src.common.pose import Pose
+from src.common.settings import Settings
+# autopep8: on
+
 
 # LIDAR = "ego_vehicle/lidar/center"
 LIDAR = "ego_vehicle/lidar"
@@ -138,7 +142,8 @@ if __name__ == "__main__":
             found_intrinsic = True
 
             k_list = list(msg.K)
-            settings["calibration"]["camera_intrinsic"]["k"] = torch.Tensor(k_list).reshape(3,3)
+            settings["calibration"]["camera_intrinsic"]["k"] = torch.Tensor(
+                k_list).reshape(3, 3)
             settings["calibration"]["camera_intrinsic"]["height"] = msg.height
             settings["calibration"]["camera_intrinsic"]["width"] = msg.width
 

@@ -10,11 +10,12 @@ from common.ray_utils import get_far_val, CameraRayDirections
 
 NUMERIC_TOLERANCE = 1e-9
 
+
 class KeyFrame:
     """ The KeyFrame class stores a frame an additional metadata to be used in optimization.
     """
 
-    ## Constructor: Create a KeyFrame from input Frame @p frame.
+    # Constructor: Create a KeyFrame from input Frame @p frame.
     def __init__(self, frame: Frame, device: int = None) -> None:
         self._frame = frame.to(device)
 
@@ -27,10 +28,14 @@ class KeyFrame:
         # Same for lidar
         self.num_uniform_lidar_samples = None
         self.num_strategy_lidar_samples = None
-    
+
+    def detach(self) -> "KeyFrame":
+        self._frame.detach()
+        return self
+
     def __str__(self) -> str:
         return str(self._frame)
-    
+
     def __repr__(self) -> str:
         return str(self)
 
@@ -58,7 +63,7 @@ class KeyFrame:
     def get_end_time(self) -> float:
         return self._frame.end_image.timestamp
 
-    ## At the given @p timestamps, interpolate/extrapolate and return the lidar poses.
+    # At the given @p timestamps, interpolate/extrapolate and return the lidar poses.
     # @returns For N timestamps, returns a Nx4x4 tensor with all the interpolated/extrapolated transforms
     def interpolate_lidar_poses(self, timestamps: torch.Tensor) -> torch.Tensor:
         assert timestamps.dim() == 1
@@ -69,47 +74,55 @@ class KeyFrame:
         end_time = self.get_end_time()
 
         interp_factors = (timestamps - start_time)/(end_time - start_time)
-        
+
         start_trans = self.get_start_lidar_pose().get_translation()
         end_trans = self.get_end_lidar_pose().get_translation()
         delta_translation = end_trans - start_trans
 
         # the interp_factors[:, None] adds a singleton dimension to support element-wise mult
-        output_translations = delta_translation * interp_factors[:,None] + start_trans
+        output_translations = delta_translation * \
+            interp_factors[:, None] + start_trans
 
         # Reshape it from Nx3 to Nx3x1
-        output_translations.unsqueeze_(2)
+        output_translations = output_translations.unsqueeze(2)
 
         # Interpolate/extrapolate rotations via axis angle
-        start_rot = self.get_start_lidar_pose().get_transformation_matrix()[:3,:3]
-        end_rot = self.get_end_lidar_pose().get_transformation_matrix()[:3,:3]
+        start_rot = self.get_start_lidar_pose(
+        ).get_transformation_matrix()[:3, :3]
+        end_rot = self.get_end_lidar_pose().get_transformation_matrix()[:3, :3]
 
         relative_rotation = torch.linalg.inv(start_rot) @ end_rot
 
-        rotation_axis_angle = pytorch3d.transforms.matrix_to_axis_angle(relative_rotation)
+        rotation_axis_angle = pytorch3d.transforms.matrix_to_axis_angle(
+            relative_rotation)
 
         rotation_angle = torch.linalg.norm(rotation_axis_angle)
 
         if rotation_angle < NUMERIC_TOLERANCE:
-            rotation_matrices = torch.eye(3).to(timestamps.device).repeat(N,1,1)
-        
+            rotation_matrices = torch.eye(3).to(
+                timestamps.device).repeat(N, 1, 1)
+
         else:
             rotation_axis = rotation_axis_angle / rotation_angle
 
-            rotation_amounts = rotation_angle * interp_factors[:,None]
+            rotation_amounts = rotation_angle * interp_factors[:, None]
             output_rotation_axis_angles = rotation_amounts * rotation_axis
 
-            rotation_matrices = pytorch3d.transforms.axis_angle_to_matrix(output_rotation_axis_angles)
+            rotation_matrices = pytorch3d.transforms.axis_angle_to_matrix(
+                output_rotation_axis_angles)
 
-        output_transformations = torch.cat([rotation_matrices, output_translations], dim=-1)
+        output_transformations = torch.cat(
+            [rotation_matrices, output_translations], dim=-1)
 
         # make it homogenous
-        h = torch.Tensor([0,0,0,1]).to(output_transformations.device).repeat(N, 1, 1)
-        output_transformations_homo = torch.cat([output_transformations, h], dim=1)
+        h = torch.Tensor([0, 0, 0, 1]).to(
+            output_transformations.device).repeat(N, 1, 1)
+        output_transformations_homo = torch.cat(
+            [output_transformations, h], dim=1)
 
         return output_transformations_homo
 
-    ## For all the points in teh frame, create lidar rays in the format Cloner wants
+    # For all the points in teh frame, create lidar rays in the format Cloner wants
     def build_lidar_rays(self,
                          lidar_indices: torch.Tensor,
                          ray_range: torch.Tensor,
@@ -117,10 +130,8 @@ class KeyFrame:
 
         lidar_scan = self.get_lidar_scan()
 
-        # TODO: Should these depths be used anywhere??
         depths = lidar_scan.distances[lidar_indices]
         directions = lidar_scan.ray_directions[:, lidar_indices]
-        # print(lidar_scan.ray_directions.shape, directions.shape, lidar_scan.timestamps.shape, lidar_scan.distances.shape, max(lidar_indices))
         timestamps = lidar_scan.timestamps[lidar_indices]
 
         origin = lidar_scan.ray_origin_offsets
@@ -142,7 +153,10 @@ class KeyFrame:
 
         # ray_directions is now Nx3x1, we want Nx3.
         ray_directions = ray_directions.squeeze()
-        ray_directions /= torch.norm(ray_directions, dim=1, keepdim=True)
+
+        # Note to self: don't use /= here. Breaks autograd.
+        ray_directions = ray_directions / \
+            torch.norm(ray_directions, dim=1, keepdim=True)
 
         # Nx3
         lidar_origins = lidar_poses[..., :3, 3]
@@ -151,10 +165,9 @@ class KeyFrame:
             (lidar_origins, torch.ones_like(lidar_origins[:, :1])))
 
         lidar_origins_homo_3d = lidar_origins_homo.unsqueeze(2)
-        print(lidar_origins_homo_3d.shape, lidar_poses.shape)
         # TODO: This is a bit different from how original cloner calculates it. Verify correctness.
         ray_origins = lidar_poses @ lidar_origins_homo_3d
-        ray_origins = ray_origins.squeeze()[:,:3]
+        ray_origins = ray_origins.squeeze()[:, :3]
 
         view_directions = -ray_directions
 
@@ -165,61 +178,59 @@ class KeyFrame:
             torch.ones_like(ray_origins[:, :1])
         far_range = ray_range[1] / world_cube.scale_factor * \
             torch.ones_like(ray_origins[:, :1])
-        far_clip = get_far_val(ray_origins, ray_directions)
+
+        # TODO: Does no_nan cause problems here? 
+        far_clip = get_far_val(ray_origins, ray_directions, no_nan=True)
         far = torch.minimum(far_range, far_clip)
 
         rays = torch.cat([ray_origins, ray_directions, view_directions,
-                          torch.inf * torch.ones_like(ray_origins[:, :2]),
+                          torch.zeros_like(ray_origins[:, :2]),
                           near, far], 1)
         # Only rays that have more than 1m inside world
-        valid_idxs = (far > (near + 1. / world_cube.scale_factor))[...,0]
-        return rays[valid_idxs]
+        valid_idxs = (far > (near + 1. / world_cube.scale_factor))[..., 0]
+        return rays[valid_idxs], depths[valid_idxs]
 
-    ## Given the images, create camera rays in Cloner's format
+    # Given the images, create camera rays in Cloner's format
     def build_camera_rays(self,
                           first_camera_indices: torch.Tensor,
                           second_camera_indices: torch.Tensor,
                           ray_range: torch.Tensor,
                           cam_ray_directions: CameraRayDirections,
                           world_cube: WorldCube) -> torch.Tensor:
-        
+
         def _build_rays(camera_indices, pose):
-            
+
             directions = cam_ray_directions.directions[camera_indices]
             ray_i_grid = cam_ray_directions.i_meshgrid[camera_indices]
             ray_j_grid = cam_ray_directions.j_meshgrid[camera_indices]
 
             ray_directions = directions @ pose[:3, :3].T
-            ray_directions /= torch.norm(ray_directions, dim=-1, keepdim=True)
-            ray_directions = ray_directions[:,:3] #TODO: is needed?
+            # Note to self: don't use /= here. Breaks autograd.
+            ray_directions = ray_directions / \
+                torch.norm(ray_directions, dim=-1, keepdim=True)
+            ray_directions = ray_directions[:, :3]  # TODO: is needed?
 
             # We assume for cameras that the near plane distances are all zero
             # TODO: Verify
             ray_origins = torch.zeros_like(ray_directions)
-            ray_origins_homo = torch.cat([ray_origins, torch.ones_like(ray_origins[:,:1])], dim=-1)
+            ray_origins_homo = torch.cat(
+                [ray_origins, torch.ones_like(ray_origins[:, :1])], dim=-1)
             ray_origins = ray_origins_homo @ pose[:3, :].T
 
             view_directions = -ray_directions
-            near = ray_range[0] / world_cube.scale_factor * torch.ones_like(ray_origins[:,:1])
-            far = get_far_val(ray_origins, ray_directions)
+            near = ray_range[0] / world_cube.scale_factor * \
+                torch.ones_like(ray_origins[:, :1])
+
+            # TODO: Does no_nan cause problems here?
+            far = get_far_val(ray_origins, ray_directions, no_nan=True)
             rays = torch.cat([ray_origins, ray_directions, view_directions,
                               ray_i_grid, ray_j_grid, near, far], 1).float()
 
             return rays
 
-        first_rays = _build_rays(first_camera_indices, self.get_end_camera_transform())
-        second_rays = _build_rays(second_camera_indices, self.get_end_camera_transform())
+        first_rays = _build_rays(first_camera_indices,
+                                 self.get_end_camera_transform())
+        second_rays = _build_rays(
+            second_camera_indices, self.get_end_camera_transform())
 
         return torch.vstack((first_rays, second_rays))
-
-
-
-
-
-
-
-
-
-
-
-

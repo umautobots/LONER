@@ -41,12 +41,12 @@ class MplFrameDrawer:
                 self._gt_pose_offset = start_pose.inv()
 
             new_pose = frame.get_start_lidar_pose()
-            new_pose = new_pose.transform_world_cube(self._world_cube, reverse=True, ignore_shift=True)
+            new_pose = new_pose.transform_world_cube(
+                self._world_cube, reverse=True, ignore_shift=True)
             new_pose = new_pose.get_transformation_matrix()[:3, 3]
 
             gt_pose = self._gt_pose_offset * frame._gt_lidar_start_pose
-            gt_pose = gt_pose.get_transformation_matrix()[:3, 3]    
-                
+            gt_pose = gt_pose.get_transformation_matrix()[:3, 3]
 
             self._path.append(new_pose)
             self._gt_path.append(gt_pose)
@@ -94,5 +94,4 @@ class MplFrameDrawer:
         # plt.legend()
         # plt.savefig("ground_truth.png", bbox_inches="tight")
 
-        
         self._done = True

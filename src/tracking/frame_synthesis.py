@@ -65,7 +65,8 @@ class FrameSynthesis:
                         gt_pose * self._t_camera_to_lidar)
                 self._in_progress_frames.append(
                     copy.deepcopy(self._active_frame))
-                self._active_frame = Frame(T_lidar_to_camera = self._t_lidar_to_camera)
+                self._active_frame = Frame(
+                    T_lidar_to_camera=self._t_lidar_to_camera)
                 self.dequeue_lidar_points()
             else:
                 raise RuntimeError("This should be unreachable")
@@ -142,11 +143,11 @@ class FrameSynthesis:
                 self._sky_remover.get_sky_mask(frame.end_image))
             self._completed_frames.append(frame)
 
-    ## Check if a frame exists to be returned
+    # Check if a frame exists to be returned
     def has_frame(self) -> bool:
         return len(self._completed_frames) != 0
 
-    ## Return and remove a newly synthesized Frame. If unavailable, returns None.
+    # Return and remove a newly synthesized Frame. If unavailable, returns None.
     def pop_frame(self) -> Union[Frame, None]:
 
         # note: this is done with queues to avoid potentially expensive copies
