@@ -1,6 +1,5 @@
 import torch
 from typing import Union
-import scipy.spatial.transform as sptransform
 import numpy as np
 import pytorch3d.transforms
 

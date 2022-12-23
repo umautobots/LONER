@@ -37,14 +37,6 @@ from src.common.settings import Settings
 # autopep8: on
 
 
-# LIDAR = "ego_vehicle/lidar/center"
-LIDAR = "ego_vehicle/lidar"
-LIDAR_TOPIC = f"/carla/{LIDAR}"
-CAMERA = "ego_vehicle/rgb_front"
-# CAMERA = "ego_vehicle/camera/rgb"
-IMAGE_TOPIC = f"/carla/{CAMERA}/image"
-CAMERA_INFO_TOPIC = f"/carla/{CAMERA}/camera_info"
-
 bridge = CvBridge()
 
 
@@ -89,13 +81,13 @@ def msg_to_transformation_mat(tf_msg):
     return T
 
 
-def build_poses_from_buffer(tf_buffer, timestamps):
+def build_poses_from_buffer(tf_buffer, timestamps, camera, lidar):
     camera_poses = []
     lidar_poses = []
     for t in timestamps:
         try:
-            camera_tf = tf_buffer.lookup_transform_core('map', CAMERA, t)
-            lidar_tf = tf_buffer.lookup_transform_core('map', LIDAR, t)
+            camera_tf = tf_buffer.lookup_transform_core('map', camera, t)
+            lidar_tf = tf_buffer.lookup_transform_core('map', lidar, t)
             camera_poses.append(msg_to_transformation_mat(camera_tf))
             lidar_poses.append(msg_to_transformation_mat(lidar_tf))
         except Exception as e:
@@ -126,8 +118,17 @@ if __name__ == "__main__":
 
     ego_pose_timestamps = []
 
+    camera = settings.ros_names.camera
+    lidar = settings.ros_names.lidar
+    camera_suffix = settings.ros_names.camera_suffix
+    topic_prefix = settings.ros_names.topic_prefix
+
+    camera_info_topic = f"{topic_prefix}/{camera}/camera_info" 
+    image_topic = f"{topic_prefix}/{camera}/{camera_suffix}"
+    lidar_topic = f"{topic_prefix}/{lidar}"
+
     found_intrinsic = False
-    for topic, msg, t in bag.read_messages(topics=["/tf", CAMERA_INFO_TOPIC]):
+    for topic, msg, t in bag.read_messages(topics=["/tf", camera_info_topic]):
         if topic == "/tf":
             for tf_msg in msg.transforms:
                 tf_buffer.set_transform(tf_msg, "default_authority")
@@ -138,7 +139,7 @@ if __name__ == "__main__":
             if start_time is None:
                 start_time = t
             end_time = t
-        elif topic == CAMERA_INFO_TOPIC and not found_intrinsic:
+        elif topic == camera_info_topic and not found_intrinsic:
             found_intrinsic = True
 
             k_list = list(msg.K)
@@ -146,17 +147,18 @@ if __name__ == "__main__":
                 k_list).reshape(3, 3)
             settings["calibration"]["camera_intrinsic"]["height"] = msg.height
             settings["calibration"]["camera_intrinsic"]["width"] = msg.width
+            settings["calibration"]["camera_intrinsic"]["distortion"] = torch.Tensor(msg.D)
 
     bag.close()
 
     # Build the camera poses and lidar poses
     cam_poses, lidar_poses = build_poses_from_buffer(
-        tf_buffer, ego_pose_timestamps)
+        tf_buffer, ego_pose_timestamps, camera, lidar)
 
     t_avg = rospy.Time.from_sec((start_time.to_sec() + end_time.to_sec())/2)
 
     lidar_to_camera = tf_to_settings(
-        tf_buffer.lookup_transform_core(LIDAR, CAMERA, t_avg))
+        tf_buffer.lookup_transform_core(lidar, camera, t_avg))
 
     settings["calibration"]["lidar_to_camera"] = lidar_to_camera
 
@@ -165,8 +167,8 @@ if __name__ == "__main__":
     image_size = (settings.calibration.camera_intrinsic.height,
                   settings.calibration.camera_intrinsic.width)
 
-    cloner_slam.precompute_world_cube(cam_poses, lidar_poses,  settings.calibration.camera_intrinsic.k,
-                                      ray_range, image_size)
+    cloner_slam.initialize(cam_poses, lidar_poses,  settings.calibration.camera_intrinsic.k,
+                           ray_range, image_size, args.rosbag_path)
 
     if PUB_ROS:
         rospy.init_node('cloner_slam')
@@ -185,20 +187,28 @@ if __name__ == "__main__":
 
     cloner_slam.start()
 
-    for topic, msg, t in bag.read_messages(topics=[LIDAR_TOPIC, IMAGE_TOPIC]):
+    start_time = None
+    for topic, msg, t in bag.read_messages(topics=[lidar_topic, image_topic]):
+        
+        if start_time is None:
+            start_time = t.to_sec()
+
+        if t.to_sec() - start_time > 2:
+            break
+
         # Wait for lidar to init
-        if topic == LIDAR_TOPIC and not init:
+        if topic == lidar_topic and not init:
             init = True
             start_time = t.to_sec()
             prev_time = start_time
         if not init:
             continue
 
-        if topic == IMAGE_TOPIC:
+        if topic == image_topic:
             image = build_image_from_msg(msg, t)
 
             try:
-                camera_tf = tf_buffer.lookup_transform_core('map', CAMERA, t)
+                camera_tf = tf_buffer.lookup_transform_core('map', camera, t)
             except tf2_py.ExtrapolationException as e:
                 continue
 
@@ -206,12 +216,10 @@ if __name__ == "__main__":
 
             camera_pose = Pose(T)
             cloner_slam.process_rgb(image, camera_pose)
-        elif topic == LIDAR_TOPIC:
+        elif topic == lidar_topic:
             lidar_scan = build_scan_from_msg(msg, t)
             cloner_slam.process_lidar(lidar_scan)
         else:
             raise Exception("Should be unreachable")
 
     cloner_slam.stop(drawer.update, drawer.finish)
-    cloner_slam.cleanup()
-    del drawer

@@ -2,7 +2,7 @@
 from dataclasses import dataclass
 import numpy as np
 import torch
-import scipy.spatial.transform as sptransform
+import pytorch3d.transforms
 
 
 @dataclass
@@ -260,8 +260,7 @@ def transform_to_tensor(transformation_matrix, device=None):
     R = transformation_matrix[:3, :3]
     T = transformation_matrix[:3, 3]
 
-    rotation = sptransform.Rotation.from_matrix(R.detach())
-    quat = torch.from_numpy(rotation.as_quat())
+    quat = pytorch3d.transforms.matrix_to_quaternion(R)
 
     tensor = torch.cat([T, quat]).float()
     if device is not None:

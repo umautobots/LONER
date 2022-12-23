@@ -1,21 +1,21 @@
 from ast import List
-from time import sleep
+import time
 from typing import Union
 
-import numpy as np
 import torch
 import torch.multiprocessing as mp
-import yaml
+import os
+import pickle
 
 from common.pose import Pose
 from common.pose_utils import compute_world_cube, WorldCube
-from common.signals import Slot, Signal
+from common.signals import Slot, Signal, StopSignal
 from common.sensors import Image, LidarScan
 from common.settings import Settings
-from common.utils import StopSignal
 from mapping.mapper import Mapper
 from tracking.tracker import Tracker
-
+import yaml
+import datetime 
 
 class ClonerSLAM:
     """ Top-level SLAM module.
@@ -60,12 +60,16 @@ class ClonerSLAM:
         # To initialize, call precompute_world_cube
         self._initialized = False
 
-    def precompute_world_cube(self, all_cam_poses: torch.Tensor, all_lidar_poses: torch.Tensor,
+
+    def initialize(self, all_cam_poses: torch.Tensor, all_lidar_poses: torch.Tensor,
                               K_camera: torch.Tensor, camera_range: List,
-                              image_size: torch.Tensor):
+                              image_size: torch.Tensor,
+                              dataset_path: str):
         self._world_cube = compute_world_cube(
             all_cam_poses, K_camera, image_size, all_lidar_poses, camera_range)
         self._initialized = True
+        self._dataset_path = dataset_path
+
 
     def get_world_cube(self) -> WorldCube:
         return self._world_cube
@@ -73,7 +77,30 @@ class ClonerSLAM:
     def start(self, synchronous: bool = True) -> None:
         if not self._initialized:
             raise RuntimeError(
-                "Can't Start: System Uninitialized. You must call precompute_world_cube first.")
+                "Can't Start: System Uninitialized. You must call initialize first.")
+
+        now = datetime.datetime.now()
+        now_str = now.strftime("%m%d%y_%H%M%S")
+        self._experiment_name = f"experiment_{now_str}"
+        self._log_directory = os.path.expanduser(f"~/ClonerSLAM/outputs/{self._experiment_name}/")
+        os.makedirs(self._log_directory, exist_ok=True)
+
+        self._settings["experiment_name"] = self._experiment_name
+        self._settings["dataset_path"] = self._dataset_path
+        self._settings["log_directory"] = self._log_directory
+        self._settings["world_cube"] = {"scale_factor": self._world_cube.scale_factor, "shift": self._world_cube.shift}
+
+        self._settings["mapper"]["experiment_name"] = self._experiment_name
+        self._settings["mapper"]["log_directory"] = self._log_directory
+
+        self._settings["tracker"]["experiment_name"] = self._experiment_name
+        self._settings["tracker"]["log_directory"] = self._log_directory
+
+        with open(f"{self._log_directory}/full_config.yaml", 'w+') as f:
+            yaml.dump(self._settings, f)
+
+        with open(f"{self._log_directory}/full_config.pkl", 'wb+') as f:
+            pickle.dump(self._settings, f)
 
         self._mapper = Mapper(self._settings.mapper,
                               self._settings.calibration,
@@ -108,7 +135,7 @@ class ClonerSLAM:
         while not self._tracker._processed_stop_signal.value:
             if waiting_action is not None:
                 waiting_action()
-            sleep(0.1)
+            time.sleep(0.1)
         print("Processed tracking stop")
 
         # Once we're done tracking frames (no new ones will be emitted),
@@ -117,7 +144,7 @@ class ClonerSLAM:
         while not self._mapper._processed_stop_signal.value:
             if waiting_action is not None:
                 waiting_action()
-            sleep(0.1)
+            time.sleep(0.1)
         print("Processed mapping stop")
 
         if finish_action is not None:
@@ -138,8 +165,11 @@ class ClonerSLAM:
     def process_rgb(self, image: Image, gt_pose: Pose = None) -> None:
         self._rgb_signal.emit((image, gt_pose))
 
+    # Note: This is only needed when using mp.Queue instead of mp.Manager().Queue() in Slots. 
+    #       Left here mainly in case that gets changed for some reason in the future and someone
+    #       is confused why this exists.
     def cleanup(self):
-        print("Cleaning Up ClonerSlam")
+        print("Cleaning Up Cloner SLAM")
         self._frame_signal.flush()
         self._rgb_signal.flush()
         self._lidar_signal.flush()

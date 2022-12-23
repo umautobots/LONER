@@ -5,6 +5,7 @@ from typing import List, Tuple
 from enum import Enum
 import torch.nn as nn
 import torchviz
+import tqdm
 
 from common.settings import Settings
 from mapping.keyframe import KeyFrame
@@ -20,7 +21,7 @@ MAX_POSSIBLE_LIDAR_RAYS = int(1e7)
 
 ENABLE_WANDB = False
 
-DEBUG_DRAW_COMP_GRAPH = True
+DEBUG_DRAW_COMP_GRAPH = False
 
 class SampleStrategy(Enum):
     UNIFORM = 0
@@ -100,10 +101,10 @@ class Optimizer:
 
         self._global_step = 1
 
-        self._cam_ray_directions = CameraRayDirections(calibration)
+        self._cam_ray_directions = CameraRayDirections(calibration, device=device)
 
         # TODO: This breaks multiprocessing
-        # self._wandb_mode = "online" if kEnableWandb else "disabled"
+        # self._wandb_mode = "online" if ENABLE_WANDB else "disabled"
         # self._wandb = wandb.init(project='cloner_slam', config=self._model_config,
         #                          save_code=True, mode=self._wandb_mode)
 
@@ -131,16 +132,13 @@ class Optimizer:
                 + [kf.get_end_lidar_pose().get_pose_tensor()
                    for kf in keyframe_window]
             print(f"Num keyframes: {len(keyframe_window)}, Num Trainable Poses: {len(trainable_poses)}")
-            optimizer = torch.optim.Adam([{'params': trainable_model_params, 'lr': self._model_config.train.lrate_mlp},
+            self._optimizer = torch.optim.Adam([{'params': trainable_model_params, 'lr': self._model_config.train.lrate_mlp},
                                           {'params': trainable_poses, 'lr': self._model_config.train.lrate_pose}])
         else:
-            optimizer = torch.optim.Adam(
+            self._optimizer = torch.optim.Adam(
                 trainable_model_params, lr=self._model_config.train.lrate_mlp)
 
-
-
-
-        for _ in range(self._optimization_settings.num_iterations):
+        for _ in tqdm.tqdm(range(self._optimization_settings.num_iterations)):
             uniform_lidar_rays, uniform_lidar_depths = None, None
             uniform_camera_rays, uniform_camera_intensities = None, None
             
@@ -174,53 +172,53 @@ class Optimizer:
                         uniform_lidar_rays = torch.vstack((uniform_lidar_rays, new_rays))
                         uniform_lidar_depths = torch.vstack((uniform_lidar_depths, new_depths))
                         
-                # if self.should_enable_camera():
-                #     start_idxs = torch.randint(
-                #         len(self._rgb_shuffled_indices), (1,))
+                if self.should_enable_camera():
+                    start_idxs = torch.randint(
+                        len(self._rgb_shuffled_indices), (2,))
 
-                #     # TODO: This addition will NOT work for non-uniform sampling
-                #     first_im_end_idx = start_idxs[0] + \
-                #         kf.num_uniform_rgb_samples
+                    # TODO: This addition will NOT work for non-uniform sampling
+                    first_im_end_idx = start_idxs[0] + \
+                        kf.num_uniform_rgb_samples
 
-                #     # autopep8: off
-                #     first_im_indices = self._rgb_shuffled_indices[start_idxs[0]:first_im_end_idx]
+                    # autopep8: off
+                    first_im_indices = self._rgb_shuffled_indices[start_idxs[0]:first_im_end_idx]
 
-                #     first_im_indices = first_im_indices % len(
-                #         self._rgb_shuffled_indices)
+                    first_im_indices = first_im_indices % len(
+                        self._rgb_shuffled_indices)
 
-                #     # TODO: This addition will NOT work for non-uniform sampling
-                #     second_im_end_idx = start_idxs[1] + \
-                #         kf.num_uniform_rgb_samples
-                #     second_im_indices = self._rgb_shuffled_indices[start_idxs[1]:second_im_end_idx]
-                #     # autopep8: on
+                    # TODO: This addition will NOT work for non-uniform sampling
+                    second_im_end_idx = start_idxs[1] + \
+                        kf.num_uniform_rgb_samples
+                    second_im_indices = self._rgb_shuffled_indices[start_idxs[1]:second_im_end_idx]
+                    # autopep8: on
 
-                #     second_im_indices = second_im_indices % len(
-                #         self._rgb_shuffled_indices)
+                    second_im_indices = second_im_indices % len(
+                        self._rgb_shuffled_indices)
 
-                #     if uniform_camera_rays is None:
-                #         uniform_camera_rays = kf.build_camera_rays(
-                #             first_im_indices, second_im_indices, self._ray_range,
-                #             self._cam_ray_directions, self._world_cube)
-                #     else:
-                #         uniform_camera_rays = torch.vstack((
-                #             uniform_camera_rays,
-                #             kf.build_camera_rays(
-                #                 first_im_indices, second_im_indices, self._ray_range,
-                #                 self._cam_ray_directions, self._world_cube)))
+                    new_cam_rays, new_cam_intensities = kf.build_camera_rays(
+                        first_im_indices, second_im_indices, self._ray_range,
+                        self._cam_ray_directions, self._world_cube)
+
+                    if uniform_camera_rays is None:
+                        uniform_camera_rays, uniform_camera_intensities = new_cam_rays, new_cam_intensities
+                    else:
+                        uniform_camera_rays = torch.vstack((uniform_camera_rays, new_cam_rays))
+                        uniform_camera_intensities = torch.vstack((uniform_camera_intensities, new_cam_intensities))
 
 
             lidar_samples = (uniform_lidar_rays, uniform_lidar_depths)
+            camera_samples = (uniform_camera_rays, uniform_camera_intensities)
 
-            loss = self.compute_loss(uniform_camera_rays, lidar_samples)
+            loss = self.compute_loss(camera_samples, lidar_samples)
 
             if DEBUG_DRAW_COMP_GRAPH:
                 loss_dot = torchviz.make_dot(loss)
                 loss_dot.format = "png"
                 loss_dot.render(directory="../graphs", filename=f"iteration_{self._global_step}")
 
-            optimizer.zero_grad()
-            loss.backward(retain_graph=True)
-            optimizer.step()
+            self._optimizer.zero_grad()
+            loss.backward(retain_graph=False)
+            self._optimizer.step()
 
             # TODO: Active Sampling
 
@@ -232,15 +230,18 @@ class Optimizer:
 
     # Returns whether or not the lidar should be used, as indicated by the settings
     def should_enable_lidar(self) -> bool:
-        return self._optimization_settings.stage in [1, 3]
+        return self._optimization_settings.stage in [1, 3] \
+                    and not self._optimization_settings.freeze_sigma_mlp
 
     # Returns whether or not the camera should be use, as indicated by the settings
 
     def should_enable_camera(self) -> bool:
-        return self._optimization_settings.stage in [2, 3]
+        return self._optimization_settings.stage in [2, 3] \
+                and not self._optimization_settings.freeze_rgb_mlp
 
     # For the given camera and lidar rays, compute and return the differentiable loss
-    def compute_loss(self, camera_samples: torch.Tensor, lidar_samples: Tuple[torch.Tensor, torch.Tensor]) -> torch.Tensor:
+    def compute_loss(self, camera_samples: Tuple[torch.Tensor, torch.Tensor], 
+                           lidar_samples: Tuple[torch.Tensor, torch.Tensor]) -> torch.Tensor:
 
         loss = 0
         wandb_logs = {}
@@ -324,7 +325,7 @@ class Optimizer:
             wandb_logs['depth_lambda'] = depth_lambda
             wandb_logs['depth_eps'] = depth_eps
 
-        if False and self.should_enable_camera():
+        if self.should_enable_camera():
             assert camera_samples is not None, "Got None camera_samples with camera enabled"
 
             # camera_samples is organized as [cam_rays, cam_intensities]
@@ -358,7 +359,7 @@ class Optimizer:
             cam_samples_fine = results_cam['samples_fine'] * self._scale_factor
             weights_pred_cam = results_cam['weights_fine']
 
-            n_color = camera_samples.shape[0]
+            n_color = cam_intensities.shape[0]
             depths_peaks_cam = cam_samples_fine[torch.arange(
                 n_color), weights_pred_cam.argmax(dim=1)].detach()
 

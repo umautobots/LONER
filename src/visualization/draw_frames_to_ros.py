@@ -1,14 +1,13 @@
 import rospy
 
 import numpy as np
-from common.signals import Slot, Signal
+from common.signals import Slot, Signal, StopSignal
 from common.frame import Frame
 from common.pose_utils import WorldCube
 from scipy.spatial.transform import Rotation as R, Slerp
 from nav_msgs.msg import Path
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
-from common.utils import StopSignal
 
 import tf2_ros
 import geometry_msgs.msg

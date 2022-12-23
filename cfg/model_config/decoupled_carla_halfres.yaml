@@ -1,20 +1,8 @@
 seed: 8
 
 data:
-    dataset_type: "carla"
-    root_dir: ""                        # input data directory
-    scene_idx: 326351806588                        # index of the frame within the sequence. 
-    num_lidar_scans: 3 #3                  # number of frames to use for lidar scans for training centered around img_idx
-    filter_top_rows: 0                # number of rows in the top of the image to mask out. 
-    num_render_poses: 60
-    downscale_factor: 2 # !!!!!!!!!!!!!!!!!!!
-    
     ray_range: &ray_range [1, 100]
-    padding: 0.3                        # additional factor to scale down the world by to give padding around scene content.
-    train_sppd: 2                      # number of samples per pixel for training
-    test_sppd: 2                       # number of samples per pixel for evaluation
-    ray_bundle_size: 1024              # number of rays in a single batch element. Batch size for camera rays must be a multiple of this    
-    
+
 model:
     num_colors: 3            # number of output colors
 
@@ -59,9 +47,3 @@ loss:
     cam_lambda: 1       # weight for camera intensity value
     std_lambda: 0.0       # weight for standard deviation loss on camera rays
 
-log: 
-    i_log: 50                 # frequency of logging loss and metrics to wandb
-    i_print: 250              # frequency of console printout and metric logging
-    i_testset: 2500           # frequency of testset saving
-    i_video: 25000            # frequency of render_poses video saving
-    i_weights: 2500           # frequency of weight ckpt saving

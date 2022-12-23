@@ -12,6 +12,12 @@ calibration:
     width: NULL
     height: NULL
 
+ros_names:
+  camera: "ego_vehicle/rgb_front"
+  lidar: "ego_vehicle/lidar"
+  camera_suffix: "image"
+  topic_prefix: "/carla"
+
 tracker:
   frame_synthesis:
     strategy: NULL
@@ -40,14 +46,14 @@ mapper:
       strategy: UNIFORM
 
       # How many samples to take uniformly across non-sky regions
-      num_rgb_uniform_samples: 500
+      num_rgb_uniform_samples: 1024
       
       # How many to use strategy to choose. This is an average since it may vary by image. 
-      avg_rgb_strategy_samples: 500
+      avg_rgb_strategy_samples: 1024
 
       # Same, for lidar
-      num_lidar_uniform_samples: 500
-      avg_lidar_strategy_samples: 500
+      num_lidar_uniform_samples: 1024
+      avg_lidar_strategy_samples: 1024
       
       # How many samples to take from sky region (uniformly)
       num_sky_samples: 50
@@ -55,8 +61,8 @@ mapper:
   optimizer:
     default_optimizer_settings:
       stage: 3
-      num_iterations: 10
-      fix_poses: False
+      num_iterations: 100
+      fix_poses: True
       fix_sigma_mlp: False
       fix_rgb_mlp: False
     sample_strategy: UNIFORM

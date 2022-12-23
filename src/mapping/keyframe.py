@@ -87,8 +87,7 @@ class KeyFrame:
         output_translations = output_translations.unsqueeze(2)
 
         # Interpolate/extrapolate rotations via axis angle
-        start_rot = self.get_start_lidar_pose(
-        ).get_transformation_matrix()[:3, :3]
+        start_rot = self.get_start_lidar_pose().get_transformation_matrix()[:3, :3]
         end_rot = self.get_end_lidar_pose().get_transformation_matrix()[:3, :3]
 
         relative_rotation = torch.linalg.inv(start_rot) @ end_rot
@@ -198,39 +197,24 @@ class KeyFrame:
                           cam_ray_directions: CameraRayDirections,
                           world_cube: WorldCube) -> torch.Tensor:
 
-        def _build_rays(camera_indices, pose):
+        first_rays, first_intensities = cam_ray_directions.build_rays(first_camera_indices,
+                                self.get_end_camera_transform(),
+                                self._frame.start_image, 
+                                world_cube,
+                                ray_range)
 
-            directions = cam_ray_directions.directions[camera_indices]
-            ray_i_grid = cam_ray_directions.i_meshgrid[camera_indices]
-            ray_j_grid = cam_ray_directions.j_meshgrid[camera_indices]
+        second_rays, second_intensities = cam_ray_directions.build_rays(second_camera_indices,
+                                self.get_end_camera_transform(),
+                                self._frame.end_image,
+                                world_cube,
+                                ray_range)
 
-            ray_directions = directions @ pose[:3, :3].T
-            # Note to self: don't use /= here. Breaks autograd.
-            ray_directions = ray_directions / \
-                torch.norm(ray_directions, dim=-1, keepdim=True)
-            ray_directions = ray_directions[:, :3]  # TODO: is needed?
+        return torch.vstack((first_rays, second_rays)), torch.vstack((first_intensities, second_intensities))
 
-            # We assume for cameras that the near plane distances are all zero
-            # TODO: Verify
-            ray_origins = torch.zeros_like(ray_directions)
-            ray_origins_homo = torch.cat(
-                [ray_origins, torch.ones_like(ray_origins[:, :1])], dim=-1)
-            ray_origins = ray_origins_homo @ pose[:3, :].T
-
-            view_directions = -ray_directions
-            near = ray_range[0] / world_cube.scale_factor * \
-                torch.ones_like(ray_origins[:, :1])
-
-            # TODO: Does no_nan cause problems here?
-            far = get_far_val(ray_origins, ray_directions, no_nan=True)
-            rays = torch.cat([ray_origins, ray_directions, view_directions,
-                              ray_i_grid, ray_j_grid, near, far], 1).float()
-
-            return rays
-
-        first_rays = _build_rays(first_camera_indices,
-                                 self.get_end_camera_transform())
-        second_rays = _build_rays(
-            second_camera_indices, self.get_end_camera_transform())
-
-        return torch.vstack((first_rays, second_rays))
+    def get_pose_state(self) -> dict:
+        return {
+            "timestamp": self.get_start_time(),
+            "start_lidar_pose": self._frame.get_start_lidar_pose().get_pose_tensor(),
+            "end_lidar_pose": self._frame.get_end_lidar_pose().get_pose_tensor(),
+            "lidar_to_camera": self._frame._lidar_to_camera.get_pose_tensor()
+        }

@@ -11,8 +11,7 @@ from common.frame import Frame
 from common.pose import Pose
 from common.settings import Settings
 from common.pose_utils import WorldCube
-from common.utils import StopSignal
-from common.signals import Signal
+from common.signals import Signal, StopSignal
 from tracking.frame_synthesis import FrameSynthesis
 
 DEBUG_POINT_CLOUDS = False

@@ -17,7 +17,6 @@ class WindowSelectionStrategy(Enum):
 class SampleAllocationStrategy(Enum):
     UNIFORM = 0
 
-
 class KeyFrameManager:
     """ The KeyFrame Manager class creates and manages KeyFrames and passes 
     data to the optimizer.
@@ -77,7 +76,7 @@ class KeyFrameManager:
                 f"Can't use unknown WindowSelectionStrategy {self._window_selection_strategy}")
 
         return self.allocate_samples(window)
-
+    
     # Given the input @p keyframes, set the correct number of samples per frame. Modifies in-place.
     # @returns The updated list of keyframes.
     def allocate_samples(self, keyframes: List[KeyFrame]) -> List[KeyFrame]:
@@ -98,3 +97,9 @@ class KeyFrameManager:
                 f"Can't use unknown SampleAllocationStrategy {self._sample_allocation_strategy}")
 
         return keyframes
+
+    def get_poses_state(self) -> List:
+        result = []
+        for kf in self._keyframes:
+            result.append(kf.get_pose_state())
+        return result

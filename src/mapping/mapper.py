@@ -1,15 +1,15 @@
 import torch
+import os
 import torch.multiprocessing as mp
 
 from common.pose_utils import WorldCube
 from common.frame import Frame
 from common.settings import Settings
-from common.signals import Signal
-from common.utils import StopSignal
+from common.signals import Signal, StopSignal
 from mapping.keyframe_manager import KeyFrameManager
 from mapping.optimizer import Optimizer
 
-DEBUG_DETECT_ANOMALY = True
+DEBUG_DETECT_ANOMALY = False
 
 class Mapper:
     """ Mapper is the top-level Mapping module which manages and optimizes the 
@@ -64,6 +64,16 @@ class Mapper:
 
                     self._optimizer.iterate_optimizer(active_window)
 
+                ckpt = {'global_step': self._optimizer._global_step,
+                        'network_state_dict': self._optimizer._model.state_dict(),
+                        'optimizer_state_dict': self._optimizer._optimizer.state_dict(),
+                        'poses': self._keyframe_manager.get_poses_state(),
+                        'occ_model_state_dict': self._optimizer._occupancy_grid_model.state_dict(),
+                        'occ_optimizer_state_dict': self._optimizer._occupancy_grid_optimizer.state_dict()}
+
+                os.makedirs(f"{self._settings.log_directory}/checkpoints", exist_ok=True)
+                torch.save(ckpt, f"{self._settings.log_directory}/checkpoints/ckpt_{self._optimizer._global_step}.tar")
+                
         self._processed_stop_signal.value = True
         print("Mapping Done. Waiting to terminate.")
         # Wait until an external terminate signal has been sent.

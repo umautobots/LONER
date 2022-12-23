@@ -1,8 +1,7 @@
 import numpy as np
-from common.signals import Slot, Signal
+from common.signals import Slot, Signal, StopSignal
 from common.frame import Frame
 from scipy.spatial.transform import Rotation as R, Slerp
-from common.utils import StopSignal
 import matplotlib.pyplot as plt
 from common.pose_utils import WorldCube
 import torch

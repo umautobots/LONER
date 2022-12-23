@@ -2,6 +2,11 @@ import torch
 from common.settings import Settings
 from kornia.geometry.calibration import undistort_points
 
+from common.pose import Pose
+from common.sensors import Image
+import numpy as np
+
+
 # For each dimension, answers the question "how many unit vectors do we need to go
 # until we exit the unit cube in this axis."
 # i.e. at (0,0) with unit vector (0.7, 0.7), the result should be (1.4, 1.4)
@@ -98,15 +103,18 @@ def get_ray_directions(H, W, newK, dist=None, K=None, sppd=1, with_indices=False
 
 
 class CameraRayDirections:
-    def __init__(self, calibration: Settings, samples_per_pixel: int = 1):
+    def __init__(self, calibration: Settings, samples_per_pixel: int = 1, device = 'cpu', chunk_size=512):
 
-        K = calibration.camera_intrinsic.k
-        distortion = calibration.camera_intrinsic.distortion
+        print(calibration)
+        K = calibration.camera_intrinsic.k.to(device)
+        distortion = calibration.camera_intrinsic.distortion.to(device)
         new_k = calibration.camera_intrinsic.new_k
 
         if new_k is None:
             print("Warning: No New K provided. Using K")
             new_k = K
+        
+        new_k = new_k.to(device)
 
         im_width = calibration.camera_intrinsic.width
         im_height = calibration.camera_intrinsic.height
@@ -114,3 +122,56 @@ class CameraRayDirections:
         self.directions, self.i_meshgrid, self.j_meshgrid = get_ray_directions(
             im_height, im_width, newK=new_k, dist=distortion,
             K=K, sppd=samples_per_pixel, with_indices=True)
+
+        self.directions = self.directions.to(device)
+        self.i_meshgrid = self.i_meshgrid.to(device)
+        self.j_meshgrid = self.j_meshgrid.to(device)
+
+        self._chunk_size = chunk_size
+        self.num_chunks = int(np.ceil(self.directions.shape[0] / self._chunk_size))
+
+    def build_rays(self, camera_indices: torch.Tensor, pose: Pose, image: Image, world_cube, ray_range):
+
+        directions = self.directions[camera_indices]
+        ray_i_grid = self.i_meshgrid[camera_indices]
+        ray_j_grid = self.j_meshgrid[camera_indices]
+
+        ray_directions = directions @ pose.get_transformation_matrix()[:3, :3].T
+        # Note to self: don't use /= here. Breaks autograd.
+        ray_directions = ray_directions / \
+            torch.norm(ray_directions, dim=-1, keepdim=True)
+        ray_directions = ray_directions[:, :3]  # TODO: is needed?
+
+        # We assume for cameras that the near plane distances are all zero
+        # TODO: Verify
+        ray_origins = torch.zeros_like(ray_directions)
+        ray_origins_homo = torch.cat(
+            [ray_origins, torch.ones_like(ray_origins[:, :1])], dim=-1)
+        ray_origins = ray_origins_homo @ pose.get_transformation_matrix()[:3, :].T
+
+        view_directions = -ray_directions
+        near = ray_range[0] / world_cube.scale_factor * \
+            torch.ones_like(ray_origins[:, :1])
+
+        # TODO: Does no_nan cause problems here?
+        far = get_far_val(ray_origins, ray_directions, no_nan=True)
+        rays = torch.cat([ray_origins, ray_directions, view_directions,
+                            ray_i_grid, ray_j_grid, near, far], 1).float()
+
+        if image is not None:
+            # Get intensities
+            img = image.image
+
+            # TODO: Handle distortion and sppd > 1
+            intensities = img.view(-1, img.shape[2])[camera_indices]
+        else:
+            intensities = None
+
+        return rays, intensities
+
+    def fetch_chunk_rays(self, chunk_idx: int, pose: Pose, world_cube, ray_range):
+        start_idx = chunk_idx*self._chunk_size
+        end_idx = min(self.directions.shape[0], (chunk_idx+1)*self._chunk_size)
+        indices = torch.arange(start_idx, end_idx, 1)
+
+        self.build_rays(indices, pose, None, world_cube, ray_range)
