@@ -57,11 +57,14 @@ class Tracker:
         self._settings = settings.tracker
 
         self._t_lidar_to_camera = Pose.from_settings(
-            settings.calibration.lidar_to_camera
-        )
+            settings.calibration.lidar_to_camera)
+        print("Lidar To Camera:", self._t_lidar_to_camera.get_transformation_matrix(), world_cube.scale_factor)
+        # self._t_lidar_to_camera.transform_world_cube(world_cube, ignore_shift=True)
+        print("Lidar To Camera transf:", self._t_lidar_to_camera.get_transformation_matrix(), world_cube.scale_factor, world_cube.shift)
+
+
         self._frame_synthesizer = FrameSynthesis(
-            self._settings.frame_synthesis, self._t_lidar_to_camera
-        )
+            self._settings.frame_synthesis, self._t_lidar_to_camera, world_cube)
 
         # Used to indicate to an external process that I've processed the stop signal
         self._processed_stop_signal = mp.Value("i", 0)
@@ -104,7 +107,7 @@ class Tracker:
                     print("Warning: Failed to track frame. Skipping.")
                     continue
                 self._frame_signal.emit(frame)
-
+            
         self._processed_stop_signal.value = True
 
         print("Tracking Done. Waiting to terminate.")
@@ -199,18 +202,15 @@ class Tracker:
         rot_start = torch.from_numpy(R.from_rotvec(rot_vec_start).as_matrix())
         trans_vec_start = start_time_interp_factor * trans_vec
         start_transformation_mat = torch.hstack(
-            (rot_start, trans_vec_start.reshape(3, 1))
-        )
+            (rot_start, trans_vec_start.reshape(3, 1)))
         start_transformation_mat = torch.vstack(
-            (start_transformation_mat, torch.Tensor([0, 0, 0, 1]))
-        ).float()
+            (start_transformation_mat, torch.Tensor([0, 0, 0, 1]))).float()
         frame._lidar_start_pose = Pose(
-            (reference_pose_mat @ start_transformation_mat).float().to(device)
-        )
+            (reference_pose_mat @ start_transformation_mat).float().to(device))
 
-        end_time_interp_factor = (frame.end_image.timestamp - self._reference_time) / (
-            new_reference_time - self._reference_time
-        )
+        end_time_interp_factor = (frame.end_image.timestamp - self._reference_time) \
+            / (new_reference_time - self._reference_time)
+
         rot_vec_end = rot_vec * end_time_interp_factor
         rot_end = torch.from_numpy(R.from_rotvec(rot_vec_end).as_matrix())
         trans_vec_end = end_time_interp_factor * trans_vec
@@ -222,18 +222,15 @@ class Tracker:
             (reference_pose_mat @ end_transformation_mat).float().to(device))
 
         if DEBUG_POINT_CLOUDS:
-            logdir = f"../outputs/frame_{self._frame_count}"
-            os.mkdir(f"../outputs/frame_{self._frame_count}")
+            logdir = f"{self._settings.log_directory}/clouds/frame_{self._frame_count}"
+            os.makedirs(logdir, exist_ok=True)
             o3d.io.write_point_cloud(
-                f"{logdir}/reference_point_cloud.pcd", self._reference_point_cloud
-            )
+                f"{logdir}/reference_point_cloud.pcd", self._reference_point_cloud)
             o3d.io.write_point_cloud(
-                f"{logdir}/frame_point_cloud.pcd", frame_point_cloud
-            )
+                f"{logdir}/frame_point_cloud.pcd", frame_point_cloud)
             o3d.io.write_point_cloud(
                 f"{logdir}/transformed_frame_cloud.pcd",
-                transform_cloud(frame_point_cloud, registration_result),
-            )
+                transform_cloud(frame_point_cloud, registration_result))
             np.savetxt(f"{logdir}/transform.txt", registration.transformation)
 
         self._reference_time = new_reference_time

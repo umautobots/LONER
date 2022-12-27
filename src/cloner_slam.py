@@ -57,16 +57,16 @@ class ClonerSLAM:
 
         self._world_cube = None
 
-        # To initialize, call precompute_world_cube
+        # To initialize, call initialize
         self._initialized = False
 
 
-    def initialize(self, all_cam_poses: torch.Tensor, all_lidar_poses: torch.Tensor,
+    def initialize(self, camera_to_lidar: torch.Tensor, all_lidar_poses: torch.Tensor,
                               K_camera: torch.Tensor, camera_range: List,
                               image_size: torch.Tensor,
                               dataset_path: str):
         self._world_cube = compute_world_cube(
-            all_cam_poses, K_camera, image_size, all_lidar_poses, camera_range)
+            camera_to_lidar, K_camera, image_size, all_lidar_poses, camera_range)
         self._initialized = True
         self._dataset_path = dataset_path
 
@@ -95,6 +95,11 @@ class ClonerSLAM:
 
         self._settings["tracker"]["experiment_name"] = self._experiment_name
         self._settings["tracker"]["log_directory"] = self._log_directory
+
+        world_cube = self._world_cube.as_dict()
+
+        with open(f"{self._log_directory}/world_cube.yaml", "w+") as f:
+            yaml.dump(world_cube, f)
 
         with open(f"{self._log_directory}/full_config.yaml", 'w+') as f:
             yaml.dump(self._settings, f)
@@ -162,7 +167,7 @@ class ClonerSLAM:
         lidar_scan.transform_world_cube(self._world_cube)
         self._lidar_signal.emit(lidar_scan)
 
-    def process_rgb(self, image: Image, gt_pose: Pose = None) -> None:
+    def process_rgb(self, image: Image, gt_pose: Pose=None) -> None:
         self._rgb_signal.emit((image, gt_pose))
 
     # Note: This is only needed when using mp.Queue instead of mp.Manager().Queue() in Slots. 

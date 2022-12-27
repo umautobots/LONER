@@ -26,6 +26,12 @@ class Pose:
         else:
             self._pose_tensor = transform_to_tensor(transformation_matrix)
 
+    def __repr__(self) -> str:
+        return str(self)
+
+    def __str__(self) -> str:
+        return str(self.get_transformation_matrix())
+
     # Tells pytorch whether to compute a gradient (and hence consider optimizing) this pose.
     def set_fixed(self, fixed: bool = True) -> None:
         self._pose_tensor.requires_grad_(not fixed)
@@ -56,16 +62,16 @@ class Pose:
             if not ignore_shift:
                 self._pose_tensor[:3] -= world_cube.shift
         else:
-            self._pose_tensor[:3] += world_cube.shift
             if not ignore_shift:
-                self._pose_tensor[:3] /= world_cube.scale_factor
+                self._pose_tensor[:3] += world_cube.shift
+            self._pose_tensor[:3] /= world_cube.scale_factor
 
         return self
 
     # @returns a copy of the current pose.
     def clone(self, fixed=None) -> "Pose":
         if fixed is None:
-            fixed = self._pose_tensor.requires_grad
+            fixed = not self._pose_tensor.requires_grad
         return Pose(pose_tensor=self._pose_tensor.clone(), fixed=fixed)
 
     # Performs matrix multiplication on matrix representations of the given poses, and returns the result
@@ -74,7 +80,10 @@ class Pose:
 
     # Inverts the transformation represented by the pose
     def inv(self) -> "Pose":
-        return Pose(torch.linalg.inv(self.get_transformation_matrix()))
+        inv_mat = self.get_transformation_matrix().inverse()
+        new_pose = Pose(inv_mat)
+
+        return new_pose
 
     # Gets the matrix representation of the pose. Only pytorch operations are used, so gradients are preserved.
     def get_transformation_matrix(self) -> torch.Tensor:

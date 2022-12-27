@@ -5,7 +5,8 @@ from typing import List, Union
 from common.frame import Frame
 from common.sensors import Image, LidarScan
 from common.settings import Settings
-from src.common.pose import Pose
+from common.pose import Pose
+from common.pose_utils import WorldCube
 
 from tracking.sky_removal import SkyRemoval
 
@@ -16,15 +17,21 @@ class FrameSynthesis:
 
     # Constructor
     # @param settings: Settings for the tracker (which includes frame synthesis)
-    def __init__(self, settings: Settings, T_lidar_to_camera: Pose) -> None:
+    def __init__(self, settings: Settings, T_lidar_to_camera: Pose, world_cube: WorldCube) -> None:
         self._settings = settings
 
         self._sky_remover = SkyRemoval(settings.sky_removal)
 
+        self._world_cube = world_cube
+
         self._t_lidar_to_camera = T_lidar_to_camera
         self._t_camera_to_lidar = self._t_lidar_to_camera.inv()
 
-        self._active_frame = Frame(T_lidar_to_camera=T_lidar_to_camera)
+        # print("World Cube:", world_cube.scale_factor)
+        # self._t_lidar_to_camera_unscaled = self._t_lidar_to_camera.clone().transform_world_cube(world_cube, reverse=True, ignore_shift=True)
+        # self._t_camera_to_lidar_unscaled = self._t_camera_to_lidar.clone().transform_world_cube(world_cube, reverse=True, ignore_shift=True)
+
+        self._active_frame = Frame(T_lidar_to_camera=self._t_lidar_to_camera)
 
         # Frames that have both images, but might still need more lidar points
         self._in_progress_frames = []
@@ -56,17 +63,13 @@ class FrameSynthesis:
             if self._active_frame.start_image is None:
                 self._active_frame.start_image = image
                 if gt_pose is not None:
-                    self._active_frame._gt_lidar_start_pose = (
-                        gt_pose * self._t_camera_to_lidar)
+                    self._active_frame._gt_lidar_start_pose =  gt_pose * self._t_camera_to_lidar
             elif self._active_frame.end_image is None:
                 self._active_frame.end_image = image
                 if gt_pose is not None:
-                    self._active_frame._gt_lidar_end_pose = (
-                        gt_pose * self._t_camera_to_lidar)
-                self._in_progress_frames.append(
-                    copy.deepcopy(self._active_frame))
-                self._active_frame = Frame(
-                    T_lidar_to_camera=self._t_lidar_to_camera)
+                    self._active_frame._gt_lidar_end_pose = gt_pose * self._t_camera_to_lidar
+                self._in_progress_frames.append(copy.deepcopy(self._active_frame))
+                self._active_frame = Frame(T_lidar_to_camera=self._t_lidar_to_camera)
                 self.dequeue_lidar_points()
             else:
                 raise RuntimeError("This should be unreachable")

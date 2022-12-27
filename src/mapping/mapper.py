@@ -31,6 +31,8 @@ class Mapper:
 
         self._keyframe_manager = KeyFrameManager(
             settings.keyframe_manager, settings.device)
+
+        settings["optimizer"]["log_directory"] = settings.log_directory
         self._optimizer = Optimizer(
             settings.optimizer, calibration, self._world_cube, settings.device)
 
@@ -42,6 +44,8 @@ class Mapper:
 
         if DEBUG_DETECT_ANOMALY:
             torch.autograd.set_detect_anomaly(True)
+        
+        torch.backends.cudnn.enabled = True
 
         self.has_written = False
         while True:
@@ -56,24 +60,24 @@ class Mapper:
                 accepted_frame = new_keyframe is not None
 
                 accepted_str = "Accepted" if accepted_frame else "Didn't accept"
-                print(
-                    f"{accepted_str} frame at time {new_frame.start_image.timestamp}")
+                # print(
+                #     f"{accepted_str} frame at time {new_frame.start_image.timestamp}")
 
-                if accepted_frame:
+                if self._settings.optimizer.enabled and accepted_frame:
                     active_window = self._keyframe_manager.get_active_window()
 
                     self._optimizer.iterate_optimizer(active_window)
 
-                ckpt = {'global_step': self._optimizer._global_step,
-                        'network_state_dict': self._optimizer._model.state_dict(),
-                        'optimizer_state_dict': self._optimizer._optimizer.state_dict(),
-                        'poses': self._keyframe_manager.get_poses_state(),
-                        'occ_model_state_dict': self._optimizer._occupancy_grid_model.state_dict(),
-                        'occ_optimizer_state_dict': self._optimizer._occupancy_grid_optimizer.state_dict()}
+                    ckpt = {'global_step': self._optimizer._global_step,
+                            'network_state_dict': self._optimizer._model.state_dict(),
+                            'optimizer_state_dict': self._optimizer._optimizer.state_dict(),
+                            'poses': self._keyframe_manager.get_poses_state(),
+                            'occ_model_state_dict': self._optimizer._occupancy_grid_model.state_dict(),
+                            'occ_optimizer_state_dict': self._optimizer._occupancy_grid_optimizer.state_dict()}
 
-                os.makedirs(f"{self._settings.log_directory}/checkpoints", exist_ok=True)
-                torch.save(ckpt, f"{self._settings.log_directory}/checkpoints/ckpt_{self._optimizer._global_step}.tar")
-                
+                    os.makedirs(f"{self._settings.log_directory}/checkpoints", exist_ok=True)
+                    torch.save(ckpt, f"{self._settings.log_directory}/checkpoints/ckpt_{self._optimizer._global_step}.tar")
+                    
         self._processed_stop_signal.value = True
         print("Mapping Done. Waiting to terminate.")
         # Wait until an external terminate signal has been sent.

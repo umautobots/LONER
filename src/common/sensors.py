@@ -2,7 +2,7 @@ import torch
 from typing import Union
 
 from common.pose_utils import WorldCube
-
+from common.pose import Pose
 
 class Image:
     """ Image class for holding images.
@@ -105,6 +105,12 @@ class LidarScan:
         self.timestamps = self.timestamps.to(device)
         return self
 
+    def transform(self, pose_transform: Pose, points_transform: Pose) -> "LidarScan":
+        self.ray_origin_offsets = self.ray_origin_offsets @ pose_transform.get_transformation_matrix()
+        self.ray_directions = points_transform.get_transformation_matrix()[:3,:3] @ self.ray_directions
+
+        return self
+
     # Add points to the current scan, with same arguments as constructor. @returns self.
     def add_points(self,
                    ray_directions: torch.Tensor,
@@ -139,7 +145,7 @@ class LidarScan:
                                                    * world_cube.scale_factor
             self.distances = self.distances * world_cube.scale_factor
         else:
-            self.ray_origin_offsets = self.ray_origin_offsets / world_cube.scale_factor
             self.ray_origin_offsets[..., :3, 3] =self.ray_origin_offsets[..., :3, 3] \
                                                  / world_cube.scale_factor
+            self.distances = self.distances / world_cube.scale_factor
         return self

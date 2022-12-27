@@ -167,7 +167,9 @@ if __name__ == "__main__":
     image_size = (settings.calibration.camera_intrinsic.height,
                   settings.calibration.camera_intrinsic.width)
 
-    cloner_slam.initialize(cam_poses, lidar_poses,  settings.calibration.camera_intrinsic.k,
+    camera_to_lidar = Pose.from_settings(lidar_to_camera, True).get_transformation_matrix().inverse()
+
+    cloner_slam.initialize(camera_to_lidar, lidar_poses,  settings.calibration.camera_intrinsic.k,
                            ray_range, image_size, args.rosbag_path)
 
     if PUB_ROS:

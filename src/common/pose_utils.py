@@ -8,7 +8,7 @@ import pytorch3d.transforms
 @dataclass
 class WorldCube:
     scale_factor: torch.Tensor
-    shift: float
+    shift: torch.Tensor
 
     def to(self, device, clone=False) -> "WorldCube":
 
@@ -29,7 +29,13 @@ class WorldCube:
         self.scale_factor = self.scale_factor.to(device)
         return self
 
-
+    def as_dict(self) -> dict:
+        shift = [float(s) for s in self.shift.cpu()]
+        return {
+            "scale_factor": float(self.scale_factor.cpu()),
+            "shift": shift
+        }
+        
 def normalize(v):
     """Normalize a vector."""
     return v/torch.linalg.norm(v)
@@ -123,7 +129,7 @@ def _get_view_frustum_corners(K, H, W, min_depth=1, max_depth=1e6):
 
 
 # TODO (seth): Update comments, this is all fake news now. we don't actually move anything
-def compute_world_cube(camera_poses, intrinsic_mats, image_sizes, lidar_poses, camera_range, padding=0.3) -> WorldCube:
+def compute_world_cube(camera_to_lidar, intrinsic_mats, image_sizes, lidar_poses, camera_range, padding=0.3) -> WorldCube:
     """
     Compute an axis aligned minimal cube encompassing sensor poses and camera view frustums with the given camera range. 
     An additional padding is added. 
@@ -154,6 +160,22 @@ def compute_world_cube(camera_poses, intrinsic_mats, image_sizes, lidar_poses, c
         scale_factor: float
     """
     assert 0 <= padding < 1
+
+    # lidar_poses = lidar_poses @ lidar_poses[0,:,:].inverse()
+    camera_poses = lidar_poses @ camera_to_lidar
+
+    T_lidar_opengl = torch.Tensor([[0, 0, -1, 0],
+                                   [-1,  0, 0, 0],
+                                   [0, 1, 0, 0],
+                                   [0, 0, 0, 1]])
+
+    T_camera_opengl = torch.Tensor([[1, 0, 0, 0],
+                                    [0, -1, 0, 0],
+                                    [0, 0, -1, 0],
+                                    [0, 0, 0, 1]])
+
+    camera_poses = camera_poses @ T_camera_opengl
+    lidar_poses = lidar_poses @ T_lidar_opengl
 
     if len(intrinsic_mats.shape) == 2:
         intrinsic_mats = torch.broadcast_to(
@@ -313,7 +335,7 @@ def tensor_to_transform(transformation_tensors):
     if N == 1:
         transformation_tensors = torch.unsqueeze(transformation_tensors, 0)
     Ts, quats = transformation_tensors[:, :3], transformation_tensors[:, 3:]
-    rotation_matrices = quaternion_to_rotation(quats)
+    rotation_matrices = pytorch3d.transforms.quaternion_to_matrix(quats)
     RT = torch.cat([rotation_matrices, Ts[:, :, None]], 2)
     if N == 1:
         RT = RT[0]

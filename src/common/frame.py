@@ -45,6 +45,32 @@ class Frame:
         self._gt_lidar_start_pose = None
         self._gt_lidar_end_pose = None
 
+    def to_opengl(self) -> "Frame":
+        assert self._lidar_start_pose is not None, "Need to track before converting to OpenGL Coordinates"
+        T_lidar_opengl = Pose(torch.Tensor([[0, 0, -1, 0],
+                                            [-1,  0, 0, 0],
+                                            [0, 1, 0, 0],
+                                            [0, 0, 0, 1]]))
+
+        T_lidar_points_opengl = Pose(torch.Tensor([[0, -1, 0, 0],
+                                                   [0,  0, 1, 0],
+                                                   [-1, 0, 0, 0],
+                                                   [0,  0, 0, 1]]))
+
+        T_camera_opengl = Pose(torch.Tensor([[1, 0, 0, 0],
+                                             [0, -1, 0, 0],
+                                             [0, 0, -1, 0],
+                                             [0, 0, 0, 1]]))
+
+        self.lidar_points.transform(Pose(), T_lidar_points_opengl)
+        # self._lidar_start_pose = self._lidar_start_pose * T_lidar_opengl
+        # self._lidar_end_pose = self._lidar_end_pose * T_lidar_opengl
+        # self._gt_lidar_start_pose = self._gt_lidar_start_pose * T_lidar_opengl
+        # self._gt_lidar_end_pose = self._gt_lidar_end_pose * T_lidar_opengl
+        # self._lidar_to_camera = T_lidar_opengl.inv() * self._lidar_to_camera * T_camera_opengl 
+
+        return self
+        
     def __str__(self):
         start_im_str = "None" if self.start_image is None else self.start_image.timestamp
         end_im_str = "None" if self.end_image is None else self.end_image.timestamp
@@ -130,11 +156,14 @@ class Frame:
         return self
 
     # @returns the Pose of the camera at the start of the frame as a transformation matrix
-    def get_start_camera_transform(self) -> torch.Tensor:
+    def get_start_camera_pose(self) -> Pose:
+        print("Lidar To Camera", self._lidar_to_camera.get_transformation_matrix())
+        print("Lidar Start Pose", self._lidar_start_pose.get_transformation_matrix())
+        print("Start Camera Pose:", (self._lidar_start_pose * self._lidar_to_camera).get_transformation_matrix())
         return self._lidar_start_pose * self._lidar_to_camera
 
     # @returns the Pose of the camera at the end of the frame as a transformation matrix
-    def get_end_camera_transform(self) -> torch.Tensor:
+    def get_end_camera_pose(self) -> Pose:
         return self._lidar_end_pose * self._lidar_to_camera
 
     # @returns the Pose of the lidar at the start of the frame as a transformation matrix

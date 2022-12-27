@@ -59,9 +59,10 @@ mapper:
       num_sky_samples: 50
 
   optimizer:
+    enabled: True
     default_optimizer_settings:
-      stage: 3
-      num_iterations: 100
+      stage: 2
+      num_iterations: 5
       fix_poses: True
       fix_sigma_mlp: False
       fix_rgb_mlp: False

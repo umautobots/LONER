@@ -4,6 +4,7 @@
 import sys
 import os
 import torch
+import tqdm
 import time
 import pathlib
 import argparse
@@ -56,7 +57,7 @@ for ckpt_id in os.listdir(f"{args.experiment_directory}/checkpoints"):
 
 checkpoint_path = pathlib.Path(f"{args.experiment_directory}/checkpoints/{checkpoint}")
 
-render_dir = f"{args.experiment_directory}/renders"
+render_dir = pathlib.Path(f"{args.experiment_directory}/renders")
 os.makedirs(render_dir, exist_ok=True)
 
 # override any params loaded from yaml
@@ -65,14 +66,10 @@ with open(f"{args.experiment_directory}/full_config.pkl", 'rb') as f:
 
 intrinsic = full_config.calibration.camera_intrinsic
 im_size = torch.Tensor([intrinsic.height, intrinsic.width])
-scale_factor = full_config.world_cube.scale_factor
-shift = full_config.world_cube.shift
-world_cube = WorldCube(scale_factor, shift)
 
 if args.debug:
     full_config['debug'] = True
 
-ray_directions = CameraRayDirections(full_config.calibration, chunk_size=CHUNK_SIZE)
 
 # TODO (Seth): Manual Seed
 # seed = cfg.seed
@@ -85,6 +82,7 @@ torch.backends.cudnn.benchmark = True
 # rng = default_rng(seed)
 _DEVICE = torch.device(full_config.mapper.device)
 
+
 torch.set_default_tensor_type('torch.cuda.FloatTensor')
 
 # Load weights checkpoint
@@ -95,7 +93,12 @@ if not checkpoint_path.exists():
 occ_model_config = full_config.mapper.optimizer.model_config.model.occ_model
 assert isinstance(occ_model_config, dict), f"OGM enabled but model.occ_model is empty"
 
-print('Using Occupancy Grid Model')
+scale_factor = full_config.world_cube.scale_factor.to(_DEVICE)
+shift = full_config.world_cube.shift
+world_cube = WorldCube(scale_factor, shift).to(_DEVICE)
+
+ray_directions = CameraRayDirections(full_config.calibration, chunk_size=CHUNK_SIZE, device=_DEVICE)
+
 # Returns the 3D logits as a 5D tensor
 occ_model = OccupancyGridModel(occ_model_config).to(_DEVICE)
 
@@ -121,16 +124,18 @@ ray_sampler.update_occ_grid(occupancy_grid.detach())
 
 def render_dataset_frame(pose: Pose):
     tic_img = time.time()
-    rgb_fine = torch.zeros(im_size[0], im_size[1],1, dtype=torch.float32).view(-1, 1)
-    depth_fine = torch.zeros(im_size[0],im_size, 1, dtype=torch.float32).view(-1, 1)
-    peak_depth_consistency = torch.zeros(im_size[0], im_size[1], 1, dtype=torch.float32).view(-1, 1)
+    print(im_size)
+    size = (int(im_size[0]), int(im_size[1]), 1)
+    rgb_size = (int(im_size[0]), int(im_size[1]), 3)
+    rgb_fine = torch.zeros(rgb_size, dtype=torch.float32).view(-1, 3)
+    depth_fine = torch.zeros(size, dtype=torch.float32).view(-1, 1)
+    peak_depth_consistency = torch.zeros(size, dtype=torch.float32).view(-1, 1)
     print("--------------------")
     print("render_dataset_frame")
     for chunk_idx in range(ray_directions.num_chunks):
-        print("chunk_idx: ", chunk_idx)
         # tic = time.time()
-        batch_eval = ray_directions.fetch_chunk_rays(chunk_idx, pose, world_cube, ray_range)
-        eval_rays = batch_eval['rays'].to(_DEVICE)
+        eval_rays = ray_directions.fetch_chunk_rays(chunk_idx, pose, world_cube, ray_range)
+        eval_rays = eval_rays.to(_DEVICE)
 
         results = model(eval_rays, ray_sampler, scale_factor, testing=True)
 
@@ -143,14 +148,10 @@ def render_dataset_frame(pose: Pose):
         s_peaks = s_vals[torch.arange(eval_rays.shape[0]), weights_pred.argmax(dim=1)].unsqueeze(1)
         peak_depth_consistency[chunk_idx * CHUNK_SIZE: (chunk_idx+1) * CHUNK_SIZE, :] = torch.abs(s_peaks - depth)
 
-    rgb_fine = rgb_fine.reshape(1, im_size[0] , im_size[1] , im_size[2]).permute(0, 3, 1, 2)
-    depth_fine = depth_fine.reshape(1, im_size[0], im_size[1] , 1).permute(0, 3, 1, 2) * scale_factor
-    peak_depth_consistency = peak_depth_consistency.reshape(1, im_size[0], im_size[1], 1).permute(0, 3, 1, 2) * scale_factor
+    rgb_fine = rgb_fine.reshape(1, rgb_size[0] , rgb_size[1], rgb_size[2]).permute(0, 3, 1, 2)
+    depth_fine = depth_fine.reshape(1, size[0], size[1] , 1).permute(0, 3, 1, 2) * scale_factor
+    peak_depth_consistency = peak_depth_consistency.reshape(1, size[0], size[1], 1).permute(0, 3, 1, 2) * scale_factor
     print(f'Took: {time.time() - tic_img} seconds for rendering an image')
-    
-    rgb_fine[..., :cfg.data.filter_top_rows, :] = 1
-    depth_fine[..., :cfg.data.filter_top_rows, :] = cfg.data.ray_range[1]
-    peak_depth_consistency[..., :cfg.data.filter_top_rows, :] = 0
     
     return rgb_fine.clamp(0, 1), depth_fine, peak_depth_consistency
 
@@ -164,32 +165,26 @@ def save_img(rgb_fine, mask, filename, equalize=False):
     out_fname = render_dir / f'{filename}'
     imageio.imwrite(str(out_fname), eq_img)
 
-def save_depth(depth_fine, i, min_depth=1, max_depth=50):
-    img = depth_fine.squeeze().detach().cpu().numpy()
+def save_depth(depth_fine, fname, min_depth=1, max_depth=50):
+    img = depth_fine.squeeze().detach()
     mask = (img >= 50)
-    img = np.clip(img, min_depth, max_depth)
+    img = torch.clip(img, min_depth, max_depth)
     # img = (img - img.min()) / (np.percentile(img, 99) - img.min())
     img = (img - min_depth) / (max_depth - min_depth)
-    img = np.clip(img, 0, 1)
+    img = torch.clip(img, 0, 1).cpu().numpy()
     cmap = plt.cm.get_cmap('turbo')
     img_colored = cmap(img)
-    out_fname = render_dir / f'predicted_depth_{i}.png'
+    out_fname = render_dir / fname
     imageio.imwrite(str(out_fname), img_colored * 255)
-
-    img = mask.astype(float)
-    out_fname = render_dir / f'predicted_mask_{i}.png'
-    imageio.imwrite(str(out_fname), img * 255)
-    return mask
 
 psnr = PeakSignalNoiseRatio()
 mssim = MultiScaleStructuralSimilarityIndexMeasure()
 lpips = LearnedPerceptualImagePatchSimilarity(net_type='vgg')
 
 with torch.no_grad():
-    print(ckpt)
     poses = ckpt["poses"]
 
-    for kf in poses:
+    for kf in tqdm.tqdm(poses):
         start_lidar_pose = Pose(pose_tensor=kf["start_lidar_pose"])
         end_lidar_pose = Pose(pose_tensor=kf["end_lidar_pose"])
         lidar_to_camera = Pose(pose_tensor=kf["lidar_to_camera"])
@@ -198,8 +193,10 @@ with torch.no_grad():
         start_camera_pose = start_lidar_pose * lidar_to_camera
         end_camera_pose = end_lidar_pose * lidar_to_camera
 
-        start_rendered, _, _ = render_dataset_frame(start_camera_pose)
-        end_rendered, _, _ = render_dataset_frame(end_camera_pose)
+        start_rendered, start_depth_rendered, _ = render_dataset_frame(start_camera_pose)
+        end_rendered, end_depth_rendered, _ = render_dataset_frame(end_camera_pose)
         
         save_img(start_rendered, [], f"predicted_img_{timestamp}_start.png")
         save_img(end_rendered, [], f"predicted_img_{timestamp}_end.png")
+        save_depth(start_depth_rendered, f"predicted_depth_{timestamp}_start.png")
+        save_depth(end_depth_rendered, f"predicted_depth_{timestamp}_end.png")

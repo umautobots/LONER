@@ -1,3 +1,4 @@
+import os
 import torch
 import wandb
 from dataclasses import dataclass
@@ -12,7 +13,7 @@ from mapping.keyframe import KeyFrame
 from models.model_tcnn import Model, OccupancyGridModel
 from models.losses import get_weights_gt, mse_to_psnr, img_to_mse, get_logits_grad
 from common.pose_utils import WorldCube
-from common.ray_utils import CameraRayDirections
+from common.ray_utils import CameraRayDirections, rays_to_pcd
 from models.ray_sampling import OccGridRaySampler
 
 
@@ -22,6 +23,7 @@ MAX_POSSIBLE_LIDAR_RAYS = int(1e7)
 ENABLE_WANDB = False
 
 DEBUG_DRAW_COMP_GRAPH = False
+DEBUG_WRITE_RAY_PCD = False
 
 class SampleStrategy(Enum):
     UNIFORM = 0
@@ -72,7 +74,7 @@ class Optimizer:
 
         # We pre-create random numbers to lookup at runtime to save runtime.
         # This kills a lot of memory, but saves a ton of runtime
-        self._lidar_shuffled_indices = torch.randperm(MAX_POSSIBLE_LIDAR_RAYS)
+        # self._lidar_shuffled_indices = torch.randperm(MAX_POSSIBLE_LIDAR_RAYS)
         self._rgb_shuffled_indices = torch.randperm(
             calibration.camera_intrinsic.width * calibration.camera_intrinsic.height)
 
@@ -138,7 +140,7 @@ class Optimizer:
             self._optimizer = torch.optim.Adam(
                 trainable_model_params, lr=self._model_config.train.lrate_mlp)
 
-        for _ in tqdm.tqdm(range(self._optimization_settings.num_iterations)):
+        for it_idx in tqdm.tqdm(range(self._optimization_settings.num_iterations)):
             uniform_lidar_rays, uniform_lidar_depths = None, None
             uniform_camera_rays, uniform_camera_intensities = None, None
             
@@ -146,25 +148,34 @@ class Optimizer:
             # TODO: Find a better solution to this.
             self._results_lidar = None
 
-            for kf in keyframe_window:
-                
+            for kf_idx, kf in enumerate(keyframe_window):                
                 if self.should_enable_lidar():
-                    lidar_start_idx = torch.randint(
-                        MAX_POSSIBLE_LIDAR_RAYS, (1,))
-                    # TODO: This addition will NOT work for non-uniform sampling
-                    lidar_end_idx = lidar_start_idx + kf.num_uniform_rgb_samples
-                    lidar_indices = self._lidar_shuffled_indices[lidar_start_idx:lidar_end_idx]
+                    # lidar_start_idx = torch.randint(
+                    #     MAX_POSSIBLE_LIDAR_RAYS, (1,))
+                    # # TODO: This addition will NOT work for non-uniform sampling
+                    # lidar_end_idx = lidar_start_idx + kf.num_uniform_lidar_samples
+                    # lidar_indices = self._lidar_shuffled_indices[lidar_start_idx:lidar_end_idx]
 
-                    if kf.num_uniform_lidar_samples > len(kf.get_lidar_scan()):
-                        print(
-                            "Warning: Dropping lidar points since too many were requested")
-                        lidar_end_idx = lidar_start_idx + \
-                            len(kf.get_lidar_scan())
+                    # if kf.num_uniform_lidar_samples > len(kf.get_lidar_scan()):
+                    #     print(
+                    #         "Warning: Dropping lidar points since too many were requested")
+                    #     lidar_end_idx = lidar_start_idx + \
+                    #         len(kf.get_lidar_scan())
 
-                    # lidar_indices was roughly estimated using some way-too-big indices
-                    lidar_indices = lidar_indices % len(kf.get_lidar_scan())
+                    # # lidar_indices was roughly estimated using some way-too-big indices
+                    # lidar_indices = lidar_indices % len(kf.get_lidar_scan())
+
+                    lidar_indices = torch.randint(len(kf.get_lidar_scan()), (kf.num_uniform_lidar_samples,))
 
                     new_rays, new_depths = kf.build_lidar_rays(lidar_indices, self._ray_range, self._world_cube)
+                
+                    if DEBUG_WRITE_RAY_PCD:
+                        os.makedirs(f"{self._settings['log_directory']}/rays/lidar/kf_{kf_idx}_rays", exist_ok=True)
+                        os.makedirs(f"{self._settings['log_directory']}/rays//lidar/kf_{kf_idx}_origins", exist_ok=True)
+                        rays_fname = f"{self._settings['log_directory']}/rays/lidar/kf_{kf_idx}_rays/rays_{self._global_step}_{it_idx}.pcd"
+                        origins_fname = f"{self._settings['log_directory']}/rays/lidar/kf_{kf_idx}_origins/origins_{self._global_step}_{it_idx}.pcd"
+                        rays_to_pcd(new_rays, new_depths, rays_fname, origins_fname)
+
                     if uniform_lidar_rays is None:
                         uniform_lidar_rays = new_rays
                         uniform_lidar_depths = new_depths
@@ -205,7 +216,12 @@ class Optimizer:
                         uniform_camera_rays = torch.vstack((uniform_camera_rays, new_cam_rays))
                         uniform_camera_intensities = torch.vstack((uniform_camera_intensities, new_cam_intensities))
 
-
+                    os.makedirs(f"{self._settings['log_directory']}/rays/camera/kf_{kf_idx}_rays", exist_ok=True)
+                    os.makedirs(f"{self._settings['log_directory']}/rays/camera/kf_{kf_idx}_origins", exist_ok=True)
+                    rays_fname = f"{self._settings['log_directory']}/rays/camera/kf_{kf_idx}_rays/rays_{self._global_step}_{it_idx}.pcd"
+                    origins_fname = f"{self._settings['log_directory']}/rays/camera/kf_{kf_idx}_origins/origins_{self._global_step}_{it_idx}.pcd"
+                    rays_to_pcd(new_cam_rays, torch.ones_like(new_cam_rays[:,0]) * .1, rays_fname, origins_fname)
+                
             lidar_samples = (uniform_lidar_rays, uniform_lidar_depths)
             camera_samples = (uniform_camera_rays, uniform_camera_intensities)
 
@@ -246,10 +262,11 @@ class Optimizer:
         loss = 0
         wandb_logs = {}
 
+        iteration_idx = self._global_step % self._optimization_settings.num_iterations
         # TODO: Update
         if self._model_config.loss.decay_depth_eps:
             depth_eps = max(self._model_config.loss.depth_eps * (self._model_config.train.decay_rate ** (
-                            self._global_step / (self._model_config.loss.depth_eps_decay_steps))), self._model_config.loss.min_depth_eps)
+                            iteration_idx / (self._model_config.loss.depth_eps_decay_steps))), self._model_config.loss.min_depth_eps)
         else:
             depth_eps = self._model_config.loss.depth_eps
 
@@ -260,8 +277,6 @@ class Optimizer:
             depth_lambda = self._model_config.loss.depth_lambda
 
         if self.should_enable_lidar():
-            
-
             assert lidar_samples is not None, "Got None lidar_samples with lidar enabled"
 
             # rays = [origin, direction, viewdir, <ignore>, near limit, far limit]
@@ -381,7 +396,7 @@ class Optimizer:
         #     wandb.log(wandb_logs, commit=False)
 
         # wandb.log({}, commit=True)
-
+        print("Loss:", loss)
         return loss
 
     # @precond: This MUST be called after compute_loss!!

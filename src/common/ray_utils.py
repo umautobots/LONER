@@ -136,7 +136,13 @@ class CameraRayDirections:
         ray_i_grid = self.i_meshgrid[camera_indices]
         ray_j_grid = self.j_meshgrid[camera_indices]
 
-        ray_directions = directions @ pose.get_transformation_matrix()[:3, :3].T
+        T_camera_opengl = torch.Tensor([[1, 0, 0],
+                                        [0, -1, 0],
+                                        [0, 0, -1]]).to(directions.device)
+
+        trans_mat = pose.get_transformation_matrix()
+
+        ray_directions = directions @ trans_mat[:3, :3].T
         # Note to self: don't use /= here. Breaks autograd.
         ray_directions = ray_directions / \
             torch.norm(ray_directions, dim=-1, keepdim=True)
@@ -147,7 +153,8 @@ class CameraRayDirections:
         ray_origins = torch.zeros_like(ray_directions)
         ray_origins_homo = torch.cat(
             [ray_origins, torch.ones_like(ray_origins[:, :1])], dim=-1)
-        ray_origins = ray_origins_homo @ pose.get_transformation_matrix()[:3, :].T
+        ray_origins = ray_origins_homo @ trans_mat[:3, :].T
+        ray_origins = ray_origins @ T_camera_opengl
 
         view_directions = -ray_directions
         near = ray_range[0] / world_cube.scale_factor * \
@@ -174,4 +181,47 @@ class CameraRayDirections:
         end_idx = min(self.directions.shape[0], (chunk_idx+1)*self._chunk_size)
         indices = torch.arange(start_idx, end_idx, 1)
 
-        self.build_rays(indices, pose, None, world_cube, ray_range)
+        return self.build_rays(indices, pose, None, world_cube, ray_range)[0]
+
+def rays_to_pcd(rays, depths, rays_fname, origins_fname):
+    origins = rays[:, :3]
+    directions = rays[:, 3:6]
+    
+    depths = depths.reshape((depths.shape[0], 1))
+    end_points = origins + directions*depths
+        
+    with open(rays_fname, 'w') as f:
+        if end_points.shape[0] <= 3:
+            end_points = end_points.T
+            assert end_points.shape[0] > 3, f"Too few points or wrong shape of pcd file."
+        f.write("# .PCD v0.7 - Point Cloud Data file format\n")
+        f.write("VERSION 0.7\n")
+        f.write("FIELDS x y z\n")
+        f.write("SIZE 4 4 4 \n")
+        f.write("TYPE F F F\n")
+        f.write("COUNT 1 1 1\n")
+        f.write(f"WIDTH {end_points.shape[0]}\n")
+        f.write("HEIGHT 1\n")
+        f.write("VIEWPOINT 0 0 0 1 0 0 0\n")
+        f.write(f"POINTS {end_points.shape[0]}\n")
+        f.write("DATA ascii\n")
+        for pt in end_points:
+            f.write(f"{pt[0]} {pt[1]} {pt[2]} \n")
+
+    with open(origins_fname, 'w') as f:
+        if origins.shape[0] <= 3:
+            origins = origins.T
+            assert origins.shape[0] > 3, f"Too few points or wrong shape of pcd file."
+        f.write("# .PCD v0.7 - Point Cloud Data file format\n")
+        f.write("VERSION 0.7\n")
+        f.write("FIELDS x y z\n")
+        f.write("SIZE 4 4 4 \n")
+        f.write("TYPE F F F\n")
+        f.write("COUNT 1 1 1\n")
+        f.write(f"WIDTH {origins.shape[0]}\n")
+        f.write("HEIGHT 1\n")
+        f.write("VIEWPOINT 0 0 0 1 0 0 0\n")
+        f.write(f"POINTS {origins.shape[0]}\n")
+        f.write("DATA ascii\n")
+        for pt in origins:
+            f.write(f"{pt[0]} {pt[1]} {pt[2]} \n")

@@ -29,6 +29,13 @@ class KeyFrame:
         self.num_uniform_lidar_samples = None
         self.num_strategy_lidar_samples = None
 
+        self._device = device
+
+    def to(self, device) -> "KeyFrame":
+        self._frame.to(device)
+        self._device = device
+        return self
+
     def detach(self) -> "KeyFrame":
         self._frame.detach()
         return self
@@ -39,11 +46,11 @@ class KeyFrame:
     def __repr__(self) -> str:
         return str(self)
 
-    def get_start_camera_transform(self) -> torch.Tensor:
-        return self._frame.get_start_camera_transform()
+    def get_start_camera_pose(self) -> Pose:
+        return self._frame.get_start_camera_pose()
 
-    def get_end_camera_transform(self) -> torch.Tensor:
-        return self._frame.get_end_camera_transform()
+    def get_end_camera_pose(self) -> Pose:
+        return self._frame.get_end_camera_pose()
 
     def get_start_lidar_pose(self) -> Pose:
         return self._frame.get_start_lidar_pose()
@@ -121,7 +128,7 @@ class KeyFrame:
 
         return output_transformations_homo
 
-    # For all the points in teh frame, create lidar rays in the format Cloner wants
+    # For all the points in the frame, create lidar rays in the format Cloner wants
     def build_lidar_rays(self,
                          lidar_indices: torch.Tensor,
                          ray_range: torch.Tensor,
@@ -129,15 +136,28 @@ class KeyFrame:
 
         lidar_scan = self.get_lidar_scan()
 
+
+        # TODO: member variables
+        rotate_lidar_points_opengl = torch.Tensor([[0, -1, 0],
+                                            [0,  0, 1],
+                                            [-1, 0, 0]]).to(self._device)
+        rotate_lidar_opengl = torch.Tensor([[0, 0, -1],
+                                            [-1,  0, 0],
+                                            [0, 1, 0]]).to(self._device)
+
         depths = lidar_scan.distances[lidar_indices]
         directions = lidar_scan.ray_directions[:, lidar_indices]
+        directions = rotate_lidar_points_opengl @ directions
         timestamps = lidar_scan.timestamps[lidar_indices]
 
-        origin = lidar_scan.ray_origin_offsets
-        assert origin.dim() == 2, "Currently there is not support for unique lidar origin offsets"
+        # 4 x 4
+        origin_offset = lidar_scan.ray_origin_offsets
+        assert origin_offset.dim() == 2, "Currently there is not support for unique lidar origin offsets"
 
         # N x 4 x 4
         lidar_poses = self.interpolate_lidar_poses(timestamps)
+
+        lidar_poses = lidar_poses @ origin_offset
 
         # N x 3 x 3 (N homogenous transformation matrices)
         lidar_rotations = lidar_poses[..., :3, :3]
@@ -158,16 +178,9 @@ class KeyFrame:
             torch.norm(ray_directions, dim=1, keepdim=True)
 
         # Nx3
-        lidar_origins = lidar_poses[..., :3, 3]
-        # Nx4
-        lidar_origins_homo = torch.hstack(
-            (lidar_origins, torch.ones_like(lidar_origins[:, :1])))
+        ray_origins = lidar_poses[..., :3, 3]
 
-        lidar_origins_homo_3d = lidar_origins_homo.unsqueeze(2)
-        # TODO: This is a bit different from how original cloner calculates it. Verify correctness.
-        ray_origins = lidar_poses @ lidar_origins_homo_3d
-        ray_origins = ray_origins.squeeze()[:, :3]
-
+        ray_origins =  ray_origins @ rotate_lidar_opengl
         view_directions = -ray_directions
 
         assert (ray_origins.abs().max(dim=1)[0] > 1).sum() == 0, \
@@ -185,6 +198,7 @@ class KeyFrame:
         rays = torch.cat([ray_origins, ray_directions, view_directions,
                           torch.zeros_like(ray_origins[:, :2]),
                           near, far], 1)
+                          
         # Only rays that have more than 1m inside world
         valid_idxs = (far > (near + 1. / world_cube.scale_factor))[..., 0]
         return rays[valid_idxs], depths[valid_idxs]
@@ -198,13 +212,13 @@ class KeyFrame:
                           world_cube: WorldCube) -> torch.Tensor:
 
         first_rays, first_intensities = cam_ray_directions.build_rays(first_camera_indices,
-                                self.get_end_camera_transform(),
+                                self.get_start_camera_pose(),
                                 self._frame.start_image, 
                                 world_cube,
                                 ray_range)
 
         second_rays, second_intensities = cam_ray_directions.build_rays(second_camera_indices,
-                                self.get_end_camera_transform(),
+                                self.get_end_camera_pose(),
                                 self._frame.end_image,
                                 world_cube,
                                 ray_range)
