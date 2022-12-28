@@ -157,9 +157,6 @@ class Frame:
 
     # @returns the Pose of the camera at the start of the frame as a transformation matrix
     def get_start_camera_pose(self) -> Pose:
-        print("Lidar To Camera", self._lidar_to_camera.get_transformation_matrix())
-        print("Lidar Start Pose", self._lidar_start_pose.get_transformation_matrix())
-        print("Start Camera Pose:", (self._lidar_start_pose * self._lidar_to_camera).get_transformation_matrix())
         return self._lidar_start_pose * self._lidar_to_camera
 
     # @returns the Pose of the camera at the end of the frame as a transformation matrix

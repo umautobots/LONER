@@ -31,7 +31,7 @@ class FrameSynthesis:
         # self._t_lidar_to_camera_unscaled = self._t_lidar_to_camera.clone().transform_world_cube(world_cube, reverse=True, ignore_shift=True)
         # self._t_camera_to_lidar_unscaled = self._t_camera_to_lidar.clone().transform_world_cube(world_cube, reverse=True, ignore_shift=True)
 
-        self._active_frame = Frame(T_lidar_to_camera=self._t_lidar_to_camera)
+        self._active_frame = Frame(T_lidar_to_camera=self._t_lidar_to_camera.clone().transform_world_cube(world_cube, ignore_shift=True))
 
         # Frames that have both images, but might still need more lidar points
         self._in_progress_frames = []
@@ -69,7 +69,7 @@ class FrameSynthesis:
                 if gt_pose is not None:
                     self._active_frame._gt_lidar_end_pose = gt_pose * self._t_camera_to_lidar
                 self._in_progress_frames.append(copy.deepcopy(self._active_frame))
-                self._active_frame = Frame(T_lidar_to_camera=self._t_lidar_to_camera)
+                self._active_frame = Frame(T_lidar_to_camera=self._t_lidar_to_camera.clone().transform_world_cube(self._world_cube, ignore_shift=True))
                 self.dequeue_lidar_points()
             else:
                 raise RuntimeError("This should be unreachable")

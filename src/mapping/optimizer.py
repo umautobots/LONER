@@ -216,11 +216,12 @@ class Optimizer:
                         uniform_camera_rays = torch.vstack((uniform_camera_rays, new_cam_rays))
                         uniform_camera_intensities = torch.vstack((uniform_camera_intensities, new_cam_intensities))
 
-                    os.makedirs(f"{self._settings['log_directory']}/rays/camera/kf_{kf_idx}_rays", exist_ok=True)
-                    os.makedirs(f"{self._settings['log_directory']}/rays/camera/kf_{kf_idx}_origins", exist_ok=True)
-                    rays_fname = f"{self._settings['log_directory']}/rays/camera/kf_{kf_idx}_rays/rays_{self._global_step}_{it_idx}.pcd"
-                    origins_fname = f"{self._settings['log_directory']}/rays/camera/kf_{kf_idx}_origins/origins_{self._global_step}_{it_idx}.pcd"
-                    rays_to_pcd(new_cam_rays, torch.ones_like(new_cam_rays[:,0]) * .1, rays_fname, origins_fname)
+                    if DEBUG_WRITE_RAY_PCD:
+                        os.makedirs(f"{self._settings['log_directory']}/rays/camera/kf_{kf_idx}_rays", exist_ok=True)
+                        os.makedirs(f"{self._settings['log_directory']}/rays/camera/kf_{kf_idx}_origins", exist_ok=True)
+                        rays_fname = f"{self._settings['log_directory']}/rays/camera/kf_{kf_idx}_rays/rays_{self._global_step}_{it_idx}.pcd"
+                        origins_fname = f"{self._settings['log_directory']}/rays/camera/kf_{kf_idx}_origins/origins_{self._global_step}_{it_idx}.pcd"
+                        rays_to_pcd(new_cam_rays, torch.ones_like(new_cam_rays[:,0]) * .1, rays_fname, origins_fname, new_cam_intensities)
                 
             lidar_samples = (uniform_lidar_rays, uniform_lidar_depths)
             camera_samples = (uniform_camera_rays, uniform_camera_intensities)
@@ -262,7 +263,7 @@ class Optimizer:
         loss = 0
         wandb_logs = {}
 
-        iteration_idx = self._global_step % self._optimization_settings.num_iterations
+        iteration_idx = (self._global_step - 1) % self._optimization_settings.num_iterations
         # TODO: Update
         if self._model_config.loss.decay_depth_eps:
             depth_eps = max(self._model_config.loss.depth_eps * (self._model_config.train.decay_rate ** (

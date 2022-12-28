@@ -61,8 +61,8 @@ mapper:
   optimizer:
     enabled: True
     default_optimizer_settings:
-      stage: 2
-      num_iterations: 5
+      stage: 3
+      num_iterations: 2500
       fix_poses: True
       fix_sigma_mlp: False
       fix_rgb_mlp: False

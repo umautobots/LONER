@@ -65,7 +65,7 @@ def tf_to_settings(tf_msg):
 
 def build_image_from_msg(image_msg, timestamp) -> Image:
     cv_img = bridge.imgmsg_to_cv2(image_msg, desired_encoding='rgb8')
-    pytorch_img = torch.from_numpy(cv_img)
+    pytorch_img = torch.from_numpy(cv_img / 255)
     return Image(pytorch_img, timestamp.to_sec())
 
 

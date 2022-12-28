@@ -1,6 +1,7 @@
 import torch
 from common.settings import Settings
 from kornia.geometry.calibration import undistort_points
+import struct
 
 from common.pose import Pose
 from common.sensors import Image
@@ -136,17 +137,23 @@ class CameraRayDirections:
         ray_i_grid = self.i_meshgrid[camera_indices]
         ray_j_grid = self.j_meshgrid[camera_indices]
 
-        T_camera_opengl = torch.Tensor([[1, 0, 0],
-                                        [0, -1, 0],
-                                        [0, 0, -1]]).to(directions.device)
+        T_camera_opengl = torch.Tensor([[1, 0, 0, 0],
+                                        [0, -1, 0, 0],
+                                        [0, 0, -1, 0],
+                                        [0, 0, 0, 1]]).to(directions.device)
 
-        trans_mat = pose.get_transformation_matrix()
+        T_camera_dirs_opengl = torch.Tensor([[0, 0, -1],
+                                             [-1, 0, 0],
+                                             [0, 1, 0]]).to(directions.device)
+
+        trans_mat = pose.get_transformation_matrix() @ T_camera_opengl
 
         ray_directions = directions @ trans_mat[:3, :3].T
         # Note to self: don't use /= here. Breaks autograd.
         ray_directions = ray_directions / \
             torch.norm(ray_directions, dim=-1, keepdim=True)
         ray_directions = ray_directions[:, :3]  # TODO: is needed?
+        ray_directions = ray_directions @ T_camera_dirs_opengl
 
         # We assume for cameras that the near plane distances are all zero
         # TODO: Verify
@@ -154,7 +161,7 @@ class CameraRayDirections:
         ray_origins_homo = torch.cat(
             [ray_origins, torch.ones_like(ray_origins[:, :1])], dim=-1)
         ray_origins = ray_origins_homo @ trans_mat[:3, :].T
-        ray_origins = ray_origins @ T_camera_opengl
+        ray_origins = ray_origins
 
         view_directions = -ray_directions
         near = ray_range[0] / world_cube.scale_factor * \
@@ -183,7 +190,22 @@ class CameraRayDirections:
 
         return self.build_rays(indices, pose, None, world_cube, ray_range)[0]
 
-def rays_to_pcd(rays, depths, rays_fname, origins_fname):
+def rays_to_pcd(rays, depths, rays_fname, origins_fname, intensities=None):
+
+    if intensities is None:
+        intensities = torch.ones_like(rays[:, :3])
+    
+
+    intensity_floats = []
+    for intensity_row in intensities:
+        red = int(intensity_row[0] * 255).to_bytes(1, 'big', signed=False)
+        green = int(intensity_row[1] * 255).to_bytes(1, 'big', signed=False)
+        blue = int(intensity_row[2] * 255).to_bytes(1, 'big', signed=False)
+
+        intensity_bytes = struct.pack("4c", red, green, blue, b"\x00")
+        intensity_floats.append(struct.unpack('f', intensity_bytes)[0])
+
+
     origins = rays[:, :3]
     directions = rays[:, 3:6]
     
@@ -196,17 +218,17 @@ def rays_to_pcd(rays, depths, rays_fname, origins_fname):
             assert end_points.shape[0] > 3, f"Too few points or wrong shape of pcd file."
         f.write("# .PCD v0.7 - Point Cloud Data file format\n")
         f.write("VERSION 0.7\n")
-        f.write("FIELDS x y z\n")
-        f.write("SIZE 4 4 4 \n")
-        f.write("TYPE F F F\n")
-        f.write("COUNT 1 1 1\n")
+        f.write("FIELDS x y z rgb\n")
+        f.write("SIZE 4 4 4 4\n")
+        f.write("TYPE F F F F\n")
+        f.write("COUNT 1 1 1 1\n")
         f.write(f"WIDTH {end_points.shape[0]}\n")
         f.write("HEIGHT 1\n")
         f.write("VIEWPOINT 0 0 0 1 0 0 0\n")
         f.write(f"POINTS {end_points.shape[0]}\n")
         f.write("DATA ascii\n")
-        for pt in end_points:
-            f.write(f"{pt[0]} {pt[1]} {pt[2]} \n")
+        for pt, intensity in zip(end_points, intensity_floats):
+            f.write(f"{pt[0]} {pt[1]} {pt[2]} {intensity}\n")
 
     with open(origins_fname, 'w') as f:
         if origins.shape[0] <= 3:
