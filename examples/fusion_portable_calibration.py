@@ -1,6 +1,7 @@
-import yaml
-import numpy as np
 import os
+
+import numpy as np
+import yaml
 
 
 class FusionPortableCalibration:
@@ -44,8 +45,8 @@ class FusionPortableCalibration:
             frame_0_quat[0], frame_0_quat[3] = frame_0_quat[3], frame_0_quat[0]
             frame_0_trans = lidar_cal["translation_sensor_frame_cam00"]
 
-            self.t_lidar_to_left_cam = {"translation": frame_0_trans,
-                                        "rotation": frame_0_quat}
+            self.t_lidar_to_left_cam = {"xyz": frame_0_trans,
+                                        "orientation": frame_0_quat}
 
         with open(f"{calibration_path}/calib/frame_cam00.yaml") as frame0_cal_file:
             frame0_cal = yaml.load(frame0_cal_file, Loader=CvMatLoader)
@@ -88,8 +89,8 @@ class FusionPortableCalibration:
             stereo_rotation[0], stereo_rotation[3] = stereo_rotation[3], stereo_rotation[0]
             frame1_cal["quaternion_stereo"]
             self.t_left_cam_to_right_cam = {
-                "translation": frame1_cal["translation_stereo"],
-                "rotation": stereo_rotation
+                "xyz": frame1_cal["translation_stereo"],
+                "orientation": stereo_rotation
             }
             self.stereo_baseline = np.linalg.norm(
                 frame1_cal["translation_stereo"])

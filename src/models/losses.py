@@ -1,13 +1,15 @@
+import numpy as np
 import torch
 import torch.nn as nn
-import numpy as np
 
 
-def img_to_mse(x, y): return torch.mean((x - y) ** 2)
+def img_to_mse(x, y):
+    return torch.mean((x - y) ** 2)
 
 
-def mse_to_psnr(x): return -10. * torch.log(x) / \
-    torch.log(torch.tensor([10.], device=x.device))
+def mse_to_psnr(x): 
+    return -10. * torch.log(x) / \
+        torch.log(torch.tensor([10.], device=x.device))
 
 
 def to_uint8(x): return (255*np.clip(x, 0, 1)).astype(np.uint8)

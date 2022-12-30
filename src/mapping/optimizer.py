@@ -1,29 +1,30 @@
 import os
-import torch
-import wandb
+import time
 from dataclasses import dataclass
-from typing import List, Tuple
 from enum import Enum
+from typing import List, Tuple
+
+import torch
 import torch.nn as nn
+import torch.profiler
 import torchviz
 import tqdm
+import wandb
+from torch.profiler import ProfilerActivity, profile
 
-from common.settings import Settings
-from mapping.keyframe import KeyFrame
-from models.model_tcnn import Model, OccupancyGridModel
-from models.losses import get_weights_gt, mse_to_psnr, img_to_mse, get_logits_grad
 from common.pose_utils import WorldCube
 from common.ray_utils import CameraRayDirections, rays_to_pcd
+from common.settings import Settings
+from mapping.keyframe import KeyFrame
+from models.losses import (get_logits_grad, get_weights_gt, img_to_mse,
+                           mse_to_psnr)
+from models.model_tcnn import Model, OccupancyGridModel
 from models.ray_sampling import OccGridRaySampler
-
 
 # Used for pre-creating random indices
 MAX_POSSIBLE_LIDAR_RAYS = int(1e7)
 
 ENABLE_WANDB = False
-
-DEBUG_DRAW_COMP_GRAPH = False
-DEBUG_WRITE_RAY_PCD = False
 
 class SampleStrategy(Enum):
     UNIFORM = 0
@@ -101,9 +102,12 @@ class Optimizer:
 
         self._ray_sampler = OccGridRaySampler()
 
-        self._global_step = 1
 
-        self._cam_ray_directions = CameraRayDirections(calibration, device=device)
+        self._cam_ray_directions = CameraRayDirections(calibration, device=self._device)
+        self._keyframe_count = 0
+        self._global_step = 0
+
+        self._iteration_schedule = [(i["num_keyframes"], i["iteration_count"]) for i in self._settings["iteration_schedule"]]
 
         # TODO: This breaks multiprocessing
         # self._wandb_mode = "online" if ENABLE_WANDB else "disabled"
@@ -112,8 +116,52 @@ class Optimizer:
 
     # Run one or more iterations of the optimizer, as specified by the stored settings
     # @param keyframe_window: The set of keyframes to use in the optimization.
+    def iterate_optimizer(self, keyframe_window: List[KeyFrame]) -> float:
+                
+        cumulative_kf_idx = 0
+        for kf_count, num_its in self._iteration_schedule:
+            cumulative_kf_idx += kf_count
+            if cumulative_kf_idx >= self._keyframe_count + 1 or kf_count == -1:
+                break
 
-    def iterate_optimizer(self, keyframe_window: List[KeyFrame]) -> float:        
+        self._optimization_settings.num_iterations = num_its
+
+        if self._settings.debug.profile:
+            prof_dir = f"{self._settings.log_directory}/profile"
+            os.makedirs(prof_dir, exist_ok=True)
+
+            prof = profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+                         profile_memory=True,
+                         record_shapes=True,
+                         with_stack=True,
+                         with_modules=True,
+                         schedule=torch.profiler.schedule(wait=1, warmup=1, active=num_its - 2),
+                         on_trace_ready=torch.profiler.tensorboard_trace_handler(f"{prof_dir}/tensorboard/"))
+            
+            prof.start()
+            start_time = time.time()
+            result = self._do_iterate_optimizer(keyframe_window, prof)
+            end_time = time.time()
+            prof.stop()
+
+            print(f"Elapsed Time: {end_time - start_time}. Per Iteration: {(end_time - start_time)/num_its}, Its/Sec: {1/((end_time - start_time)/num_its)}")
+
+            # with open(f"{prof_dir}/stats.txt", 'a+') as prof_file:
+            #     prof_file.write(f"{prof.key_averages().table(sort_by='self_cuda_time_total')}\n")
+
+            # prof.export_stacks(f"{prof_dir}/step_{self._global_step}_cuda.stacks", metric="self_cuda_time_total")
+            # prof.export_stacks(f"{prof_dir}/step_{self._global_step}_cpu.stacks", metric="self_cpu_time_total")
+            # prof.export_chrome_trace(f"{prof_dir}/step_{self._global_step}_trace.json")            
+        else:          
+            start_time = time.time()
+            result = self._do_iterate_optimizer(keyframe_window)
+            end_time = time.time()
+            print(f"Elapsed Time: {end_time - start_time}. Per Iteration: {(end_time - start_time)/num_its}, Its/Sec: {1/((end_time - start_time)/num_its)}")
+
+        self._keyframe_count += 1
+        return result
+
+    def _do_iterate_optimizer(self, keyframe_window: List[KeyFrame], profiler: profile = None) -> float:
         self._ray_sampler.update_occ_grid(self._occupancy_grid.detach())
 
         self._model.freeze_sigma_head(not self.should_enable_lidar())
@@ -123,7 +171,6 @@ class Optimizer:
             p for p in self._model.parameters() if p.requires_grad]
 
         optimize_poses = not self._optimization_settings.freeze_poses
-
 
         for kf in keyframe_window:
             kf.get_start_lidar_pose().set_fixed(not optimize_poses)
@@ -139,7 +186,7 @@ class Optimizer:
         else:
             self._optimizer = torch.optim.Adam(
                 trainable_model_params, lr=self._model_config.train.lrate_mlp)
-
+        
         for it_idx in tqdm.tqdm(range(self._optimization_settings.num_iterations)):
             uniform_lidar_rays, uniform_lidar_depths = None, None
             uniform_camera_rays, uniform_camera_intensities = None, None
@@ -169,7 +216,7 @@ class Optimizer:
 
                     new_rays, new_depths = kf.build_lidar_rays(lidar_indices, self._ray_range, self._world_cube)
                 
-                    if DEBUG_WRITE_RAY_PCD:
+                    if self._settings.debug.write_ray_point_clouds:
                         os.makedirs(f"{self._settings['log_directory']}/rays/lidar/kf_{kf_idx}_rays", exist_ok=True)
                         os.makedirs(f"{self._settings['log_directory']}/rays//lidar/kf_{kf_idx}_origins", exist_ok=True)
                         rays_fname = f"{self._settings['log_directory']}/rays/lidar/kf_{kf_idx}_rays/rays_{self._global_step}_{it_idx}.pcd"
@@ -216,19 +263,19 @@ class Optimizer:
                         uniform_camera_rays = torch.vstack((uniform_camera_rays, new_cam_rays))
                         uniform_camera_intensities = torch.vstack((uniform_camera_intensities, new_cam_intensities))
 
-                    if DEBUG_WRITE_RAY_PCD:
+                    if self._settings.debug.write_ray_point_clouds:
                         os.makedirs(f"{self._settings['log_directory']}/rays/camera/kf_{kf_idx}_rays", exist_ok=True)
                         os.makedirs(f"{self._settings['log_directory']}/rays/camera/kf_{kf_idx}_origins", exist_ok=True)
                         rays_fname = f"{self._settings['log_directory']}/rays/camera/kf_{kf_idx}_rays/rays_{self._global_step}_{it_idx}.pcd"
                         origins_fname = f"{self._settings['log_directory']}/rays/camera/kf_{kf_idx}_origins/origins_{self._global_step}_{it_idx}.pcd"
                         rays_to_pcd(new_cam_rays, torch.ones_like(new_cam_rays[:,0]) * .1, rays_fname, origins_fname, new_cam_intensities)
                 
-            lidar_samples = (uniform_lidar_rays, uniform_lidar_depths)
-            camera_samples = (uniform_camera_rays, uniform_camera_intensities)
+            lidar_samples = (uniform_lidar_rays.to(self._device).float(), uniform_lidar_depths.to(self._device).float())
+            camera_samples = (uniform_camera_rays.to(self._device).float(), uniform_camera_intensities.to(self._device).float())
 
             loss = self.compute_loss(camera_samples, lidar_samples)
 
-            if DEBUG_DRAW_COMP_GRAPH:
+            if self._settings.debug.draw_comp_graph:
                 loss_dot = torchviz.make_dot(loss)
                 loss_dot.format = "png"
                 loss_dot.render(directory="../graphs", filename=f"iteration_{self._global_step}")
@@ -245,6 +292,8 @@ class Optimizer:
                 self._step_occupancy_grid()
             self._global_step += 1
 
+            if profiler is not None:
+                profiler.step()
     # Returns whether or not the lidar should be used, as indicated by the settings
     def should_enable_lidar(self) -> bool:
         return self._optimization_settings.stage in [1, 3] \
@@ -259,11 +308,12 @@ class Optimizer:
     # For the given camera and lidar rays, compute and return the differentiable loss
     def compute_loss(self, camera_samples: Tuple[torch.Tensor, torch.Tensor], 
                            lidar_samples: Tuple[torch.Tensor, torch.Tensor]) -> torch.Tensor:
-
+        scale_factor = self._scale_factor.to(self._device).float()
+        
         loss = 0
         wandb_logs = {}
 
-        iteration_idx = (self._global_step - 1) % self._optimization_settings.num_iterations
+        iteration_idx = self._global_step % self._optimization_settings.num_iterations
         # TODO: Update
         if self._model_config.loss.decay_depth_eps:
             depth_eps = max(self._model_config.loss.depth_eps * (self._model_config.train.decay_rate ** (
@@ -273,7 +323,7 @@ class Optimizer:
 
         if self._model_config.loss.decay_depth_lambda:
             depth_lambda = max(self._model_config.loss.depth_lambda * (self._model_config.train.decay_rate ** (
-                self._global_step / (self._model_config.loss.depth_lambda_decay_steps))), self._model_config.loss.min_depth_lambda)
+                (self._global_step + 1) / (self._model_config.loss.depth_lambda_decay_steps))), self._model_config.loss.min_depth_lambda)
         else:
             depth_lambda = self._model_config.loss.depth_lambda
 
@@ -290,14 +340,14 @@ class Optimizer:
 
             # Rendering lidar rays. Results need to be in class for occ update to happen
             self._results_lidar = self._model(
-                lidar_rays, self._ray_sampler, self._scale_factor, camera=False)
+                lidar_rays, self._ray_sampler, scale_factor, camera=False)
 
             # (N_rays, N_samples)
             # Depths along ray
             self._lidar_depth_samples_fine = self._results_lidar['samples_fine'] * \
-                self._scale_factor
+                scale_factor
 
-            self._lidar_depths_gt = lidar_depths * self._scale_factor
+            self._lidar_depths_gt = lidar_depths * scale_factor
             weights_pred_lidar = self._results_lidar['weights_fine']
 
             weights_gt_lidar = get_weights_gt(
@@ -311,7 +361,7 @@ class Optimizer:
             wandb_logs['loss_lidar_los'] = depth_loss_los_fine.item()
 
             depth_euc_fine = self._results_lidar['depth_fine'].unsqueeze(
-                1) * self._scale_factor
+                1) * scale_factor
             depth_loss_fine = nn.functional.mse_loss(
                 depth_euc_fine[opaque_rays, 0], self._lidar_depths_gt[opaque_rays, 0])
 
@@ -333,10 +383,10 @@ class Optimizer:
 
             if self._model_config.loss.decay_depth_lambda:
                 depth_lambda = max(self._model_config.loss.depth_lambda * (self._model_config.train.decay_rate ** (
-                    self._global_step / (self._model_config.loss.depth_lambda_decay_steps))), self._model_config.loss.min_depth_lambda)
+                    (self._global_step + 1) / (self._model_config.loss.depth_lambda_decay_steps))), self._model_config.loss.min_depth_lambda)
             if self._model_config.loss.decay_depth_eps:
                 depth_eps = max(self._model_config.loss.depth_eps * (self._model_config.train.decay_rate ** (
-                    self._global_step / (self._model_config.loss.depth_eps_decay_steps))), self._model_config.loss.min_depth_eps)
+                    (self._global_step + 1) / (self._model_config.loss.depth_eps_decay_steps))), self._model_config.loss.min_depth_eps)
 
             wandb_logs['depth_lambda'] = depth_lambda
             wandb_logs['depth_eps'] = depth_eps
@@ -355,7 +405,7 @@ class Optimizer:
                 -1, self._model_config.model.num_colors)
 
             results_cam = self._model(
-                cam_rays, self._ray_sampler, self._scale_factor)
+                cam_rays, self._ray_sampler, scale_factor)
 
             psnr_fine = mse_to_psnr(
                 img_to_mse(results_cam['rgb_fine'], cam_intensities))
@@ -372,7 +422,7 @@ class Optimizer:
             loss += loss_opacity_cam
             wandb_logs['loss_opacity_cam'] = loss_opacity_cam.item()
 
-            cam_samples_fine = results_cam['samples_fine'] * self._scale_factor
+            cam_samples_fine = results_cam['samples_fine'] * scale_factor
             weights_pred_cam = results_cam['weights_fine']
 
             n_color = cam_intensities.shape[0]
@@ -380,7 +430,7 @@ class Optimizer:
                 n_color), weights_pred_cam.argmax(dim=1)].detach()
 
             loss_unimod_cam = nn.functional.mse_loss(
-                depths_peaks_cam, results_cam['depth_fine'] * self._scale_factor)
+                depths_peaks_cam, results_cam['depth_fine'] * scale_factor)
             wandb_logs['loss_unimod_cam'] = loss_unimod_cam.item()
 
             depths_weighted_mean = (cam_samples_fine * weights_pred_cam).sum(
@@ -397,7 +447,6 @@ class Optimizer:
         #     wandb.log(wandb_logs, commit=False)
 
         # wandb.log({}, commit=True)
-        print("Loss:", loss)
         return loss
 
     # @precond: This MUST be called after compute_loss!!

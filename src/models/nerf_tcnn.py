@@ -1,9 +1,8 @@
 # ref: https://github.com/ashawkey/torch-ngp/blob/main/nerf/network_tcnn.py
+import commentjson as json
+import tinycudann as tcnn
 import torch
 import torch.nn as nn
-
-import tinycudann as tcnn
-import commentjson as json
 
 
 class NeRF(nn.Module):
@@ -19,9 +18,9 @@ class NeRF(nn.Module):
                                                           encoding_config=self.cfg["pos_encoding_sigma"],
                                                           network_config=self.cfg["sigma_network"])
 
-        self._encoder_dir = tcnn.Encoding(
-            n_input_dims=3, encoding_config=self.cfg["dir_encoding_intensity"])
-        in_dim_intensity = self._encoder_dir.n_output_dims + 15
+        # self._encoder_dir = tcnn.Encoding(
+        #     n_input_dims=3, encoding_config=self.cfg["dir_encoding_intensity"])
+        in_dim_intensity = 15 #self._encoder_dir.n_output_dims + 15
         self._model_intensity = tcnn.Network(n_input_dims=in_dim_intensity,
                                              n_output_dims=self.num_colors,
                                              network_config=self.cfg["intensity_network"])
@@ -37,13 +36,13 @@ class NeRF(nn.Module):
         if sigma_only:
             return sigma
 
-        dir = (dir + 1) / 2
-        dir = self._encoder_dir(dir)
-        h_c = torch.cat([dir, h[..., 1:]], dim=-1)
+        # dir = (dir + 1) / 2
+        # dir = self._encoder_dir(dir)
+        # h_c = torch.cat([dir, h[..., 1:]], dim=-1)
 
         # No view dependence:
-        # h_c = h[..., 1:]
-
+        h_c = h[..., 1:]
+        
         h_c = self._model_intensity(h_c)
         color = torch.sigmoid(h_c)
 
@@ -98,7 +97,8 @@ class DecoupledNeRF(nn.Module):
         h_x = self._pos_encoding(pos)
         h_d = self._dir_encoding(dir)
         h_xd = torch.cat([h_x, h_d], dim=-1)
-        h_c = self._model_intensity(h_xd)
+
+        h_c = self._model_intensity(h_xd) #x_hd for dir view dependence
         color = torch.sigmoid(h_c)
 
         return torch.cat([color, sigma], dim=-1)

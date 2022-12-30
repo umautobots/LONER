@@ -1,21 +1,22 @@
 #!/usr/bin/env python3
 
-import rospy
-import rosbag
-from sensor_msgs.msg import Image, PointCloud2, CameraInfo
-import os
-import sys
-import torch
-import cv2
-from cv_bridge import CvBridge
-import ros_numpy
-import time
-import glob
-import shutil
-import tf2_py
-from scipy.spatial.transform import Rotation as R
 import argparse
+import glob
+import os
+import shutil
+import sys
+import time
+
+import cv2
+import ros_numpy
+import rosbag
+import rospy
+import tf2_py
+import torch
 from attrdict import AttrDict
+from cv_bridge import CvBridge
+from scipy.spatial.transform import Rotation as R
+from sensor_msgs.msg import CameraInfo, Image, PointCloud2
 
 # autopep8: off
 # Linting needs to be disabled here or it'll try to move includes before path.
@@ -28,12 +29,13 @@ sys.path.append(PROJECT_ROOT)
 sys.path.append(PROJECT_ROOT + "/src")
 
 from src.cloner_slam import ClonerSLAM
-from src.common.sensors import Image, LidarScan
-from src.visualization.draw_frames_to_ros import FrameDrawer
-from src.visualization.draw_frames_to_mpl import MplFrameDrawer
-from src.common.pose_utils import WorldCube
 from src.common.pose import Pose
+from src.common.pose_utils import WorldCube
+from src.common.sensors import Image, LidarScan
 from src.common.settings import Settings
+from src.visualization.draw_frames_to_mpl import MplFrameDrawer
+from src.visualization.draw_frames_to_ros import FrameDrawer
+
 # autopep8: on
 
 
@@ -195,7 +197,7 @@ if __name__ == "__main__":
         if start_time is None:
             start_time = t.to_sec()
 
-        if t.to_sec() - start_time > 2:
+        if t.to_sec() - start_time > 10:
             break
 
         # Wait for lidar to init

@@ -17,6 +17,13 @@ class Image:
         self.image = image
         self.timestamp = timestamp
 
+    def clone(self) -> "Image":
+        if isinstance(self.timestamp, torch.Tensor):
+            new_ts = self.timestamp.clone()
+        else:
+            new_ts = self.timestamp
+        return Image(self.image.clone(), new_ts)
+
     # Moves all items in the image to the specified device, in-place. Also returns the current image.
     # @param device: Target device, as int (GPU) or string (CPU or GPU)
     def to(self, device: Union[int, str]) -> "Image":
@@ -76,6 +83,12 @@ class LidarScan:
         self.timestamps = torch.Tensor()
         return self
 
+    def clone(self) -> "LidarScan":
+        return LidarScan(self.ray_directions.clone(),
+                         self.distances.clone(),
+                         self.ray_origin_offsets.clone(),
+                         self.timestamps.clone())
+
     # Removes the first @p num_points points from the scan. Also @returns self.
     def remove_points(self, num_points: int) -> "LidarScan":
         self.ray_directions = self.ray_directions[..., num_points:]
@@ -103,12 +116,6 @@ class LidarScan:
         self.distances = self.distances.to(device)
         self.ray_origin_offsets = self.ray_origin_offsets.to(device)
         self.timestamps = self.timestamps.to(device)
-        return self
-
-    def transform(self, pose_transform: Pose, points_transform: Pose) -> "LidarScan":
-        self.ray_origin_offsets = self.ray_origin_offsets @ pose_transform.get_transformation_matrix()
-        self.ray_directions = points_transform.get_transformation_matrix()[:3,:3] @ self.ray_directions
-
         return self
 
     # Add points to the current scan, with same arguments as constructor. @returns self.

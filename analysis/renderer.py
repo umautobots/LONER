@@ -1,20 +1,23 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-import sys
+import argparse
 import os
+import pathlib
+import pickle
+import re
+import sys
+import time
+
+import imageio
+import matplotlib.pyplot as plt
+import numpy as np
 import torch
 import tqdm
-import time
-import pathlib
-import argparse
-import imageio
-import numpy as np
-import matplotlib.pyplot as plt
 from skimage.exposure import equalize_adapthist
-from torchmetrics import PeakSignalNoiseRatio, MultiScaleStructuralSimilarityIndexMeasure
+from torchmetrics import (MultiScaleStructuralSimilarityIndexMeasure,
+                          PeakSignalNoiseRatio)
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
-import pickle 
 
 # autopep8: off
 # Linting needs to be disabled here or it'll try to move includes before path.
@@ -27,13 +30,14 @@ sys.path.append(PROJECT_ROOT)
 sys.path.append(PROJECT_ROOT + "/src")
 
 
-from src.models.model_tcnn import Model, OccupancyGridModel
-from src.common.ray_utils import CameraRayDirections
-from src.models.ray_sampling import OccGridRaySampler
-from src.models.losses import *
+from render_utils import *
+
 from src.common.pose import Pose
 from src.common.pose_utils import WorldCube
-from render_utils import *
+from src.common.ray_utils import CameraRayDirections
+from src.models.losses import *
+from src.models.model_tcnn import Model, OccupancyGridModel
+from src.models.ray_sampling import OccGridRaySampler
 
 # autopep8: on
 
@@ -51,9 +55,12 @@ parser.add_argument("--eval", default=False, dest="eval", action="store_true")
 
 args = parser.parse_args()
 
-checkpoint = ""
-for ckpt_id in os.listdir(f"{args.experiment_directory}/checkpoints"):
-    checkpoint = max(checkpoint, ckpt_id)
+checkpoints = os.listdir(f"{args.experiment_directory}/checkpoints")
+
+#https://stackoverflow.com/a/2669120
+convert = lambda text: int(text) if text.isdigit() else text 
+alphanum_key = lambda key: [ convert(c) for c in re.split('([0-9]+)', key) ] 
+checkpoint = sorted(checkpoints, key = alphanum_key)[-1]
 
 checkpoint_path = pathlib.Path(f"{args.experiment_directory}/checkpoints/{checkpoint}")
 

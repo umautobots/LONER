@@ -9,12 +9,10 @@ from scipy.spatial.transform import Rotation as R
 
 from common.frame import Frame
 from common.pose import Pose
-from common.settings import Settings
 from common.pose_utils import WorldCube
+from common.settings import Settings
 from common.signals import Signal, StopSignal
 from tracking.frame_synthesis import FrameSynthesis
-
-DEBUG_POINT_CLOUDS = False
 
 
 # Yanked from http://www.open3d.org/docs/release/python_example/pipelines/index.html#icp-registration-py
@@ -141,8 +139,8 @@ class Tracker:
 
         # First Iteration: No reference pose, we fix this as the origin of the coordinate system.
         if self._reference_point_cloud is None:
-            frame._lidar_start_pose = self._reference_pose.clone(fixed=True)
-            frame._lidar_end_pose = self._reference_pose.clone(fixed=True)
+            frame._lidar_start_pose = self._reference_pose.clone(fixed=True, requires_tensor=True)
+            frame._lidar_end_pose = self._reference_pose.clone(fixed=True, requires_tensor=True)
             self._reference_point_cloud = frame_point_cloud
             self._reference_time = (
                 frame.start_image.timestamp + frame.end_image.timestamp) / 2
@@ -206,7 +204,7 @@ class Tracker:
         start_transformation_mat = torch.vstack(
             (start_transformation_mat, torch.Tensor([0, 0, 0, 1]))).float()
         frame._lidar_start_pose = Pose(
-            (reference_pose_mat @ start_transformation_mat).float().to(device))
+            (reference_pose_mat @ start_transformation_mat).float().to(device), requires_tensor=True)
 
         end_time_interp_factor = (frame.end_image.timestamp - self._reference_time) \
             / (new_reference_time - self._reference_time)
@@ -219,9 +217,9 @@ class Tracker:
         end_transformation_mat = torch.vstack(
             (end_transformation_mat, torch.Tensor([0, 0, 0, 1]))).float()
         frame._lidar_end_pose = Pose(
-            (reference_pose_mat @ end_transformation_mat).float().to(device))
+            (reference_pose_mat @ end_transformation_mat).float().to(device), requires_tensor=True)
 
-        if DEBUG_POINT_CLOUDS:
+        if self._settings.debug.write_icp_point_clouds:
             logdir = f"{self._settings.log_directory}/clouds/frame_{self._frame_count}"
             os.makedirs(logdir, exist_ok=True)
             o3d.io.write_point_cloud(

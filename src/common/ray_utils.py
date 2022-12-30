@@ -1,11 +1,12 @@
-import torch
-from common.settings import Settings
-from kornia.geometry.calibration import undistort_points
 import struct
+
+import numpy as np
+import torch
+from kornia.geometry.calibration import undistort_points
 
 from common.pose import Pose
 from common.sensors import Image
-import numpy as np
+from common.settings import Settings
 
 
 # For each dimension, answers the question "how many unit vectors do we need to go
@@ -155,13 +156,11 @@ class CameraRayDirections:
         ray_directions = ray_directions[:, :3]  # TODO: is needed?
         ray_directions = ray_directions @ T_camera_dirs_opengl
 
-        # We assume for cameras that the near plane distances are all zero
-        # TODO: Verify
         ray_origins = torch.zeros_like(ray_directions)
         ray_origins_homo = torch.cat(
             [ray_origins, torch.ones_like(ray_origins[:, :1])], dim=-1)
         ray_origins = ray_origins_homo @ trans_mat[:3, :].T
-        ray_origins = ray_origins
+        ray_origins = ray_origins @ T_camera_dirs_opengl # TODO: Why is this needed?
 
         view_directions = -ray_directions
         near = ray_range[0] / world_cube.scale_factor * \

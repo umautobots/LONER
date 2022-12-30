@@ -3,7 +3,7 @@ from collections import defaultdict
 import torch
 import torch.nn as nn
 
-from models.nerf_tcnn import NeRF, DecoupledNeRF
+from models.nerf_tcnn import DecoupledNeRF, NeRF
 from models.rendering_tcnn import render_rays, render_rays_cf
 
 

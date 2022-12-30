@@ -11,7 +11,7 @@ model:
     ray_range: *ray_range
 
     render:
-        N_samples_train: 2048          # number of samples per ray
+        N_samples_train: 32          # number of samples per ray
         N_samples_test: 2048      # number of samples per ray during testing
         retraw: True
         lindisp: False          # sampling linearly in disparity rather than depth
@@ -30,7 +30,7 @@ model:
 train:
     lrate_mlp: 0.05             # learning rate
     lrate_pose: 0.05
-    decay_rate: 0.1
+    decay_rate: 0.001
      
 loss:
     decay_depth_lambda: False          # boolean to enable decay

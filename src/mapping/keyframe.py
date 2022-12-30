@@ -1,12 +1,13 @@
-import torch
 from typing import Tuple
+
 import pytorch3d.transforms
+import torch
 
 from common.frame import Frame
 from common.pose import Pose
-from common.sensors import LidarScan, Image
 from common.pose_utils import WorldCube
-from common.ray_utils import get_far_val, CameraRayDirections
+from common.ray_utils import CameraRayDirections, get_far_val
+from common.sensors import Image, LidarScan
 
 NUMERIC_TOLERANCE = 1e-9
 
@@ -97,6 +98,7 @@ class KeyFrame:
         start_rot = self.get_start_lidar_pose().get_transformation_matrix()[:3, :3]
         end_rot = self.get_end_lidar_pose().get_transformation_matrix()[:3, :3]
 
+        # TODO: this can be optimized
         relative_rotation = torch.linalg.inv(start_rot) @ end_rot
 
         rotation_axis_angle = pytorch3d.transforms.matrix_to_axis_angle(
@@ -141,6 +143,7 @@ class KeyFrame:
         rotate_lidar_points_opengl = torch.Tensor([[0, -1, 0],
                                             [0,  0, 1],
                                             [-1, 0, 0]]).to(self._device)
+
         rotate_lidar_opengl = torch.Tensor([[0, 0, -1],
                                             [-1,  0, 0],
                                             [0, 1, 0]]).to(self._device)

@@ -12,12 +12,26 @@ calibration:
     width: NULL
     height: NULL
 
-ros_names:
-  camera: "ego_vehicle/rgb_front"
-  lidar: "ego_vehicle/lidar"
-  camera_suffix: "image"
-  topic_prefix: "/carla"
+debug:
+  global_enabled: True
+  flags:
+    pytorch_detect_anomaly: False
+    draw_comp_graph: False
+    write_ray_point_clouds: False
+    write_icp_point_clouds: False
+    profile: False
 
+# ros_names:
+#   camera: "ego_vehicle/rgb_front"
+#   lidar: "ego_vehicle/lidar"
+#   camera_suffix: "image"
+#   topic_prefix: "/carla"
+ros_names:
+  camera: "stereo/frame_left"
+  lidar: "os_cloud_node/points"
+  camera_suffix: "image_raw/compressed"
+  topic_prefix: "/"
+  
 tracker:
   frame_synthesis:
     strategy: NULL
@@ -45,15 +59,16 @@ mapper:
     sample_allocation:
       strategy: UNIFORM
 
-      # How many samples to take uniformly across non-sky regions
+      # How many samples to take uniformly across non-sky regions. 
+      # Remember 2 images per frame, so this is doubled.
       num_rgb_uniform_samples: 1024
       
       # How many to use strategy to choose. This is an average since it may vary by image. 
-      avg_rgb_strategy_samples: 1024
+      avg_rgb_strategy_samples: 256
 
       # Same, for lidar
       num_lidar_uniform_samples: 1024
-      avg_lidar_strategy_samples: 1024
+      avg_lidar_strategy_samples: 256
       
       # How many samples to take from sky region (uniformly)
       num_sky_samples: 50
@@ -62,11 +77,18 @@ mapper:
     enabled: True
     default_optimizer_settings:
       stage: 3
-      num_iterations: 2500
+      num_iterations: 1500
       fix_poses: True
       fix_sigma_mlp: False
       fix_rgb_mlp: False
     sample_strategy: UNIFORM
+    iteration_schedule:
+      - 
+        num_keyframes: 1
+        iteration_count: 1500
+      -
+        num_keyframes: -1
+        iteration_count: 60
 
     model_config: !include model_config/decoupled_carla_halfres.yaml
   

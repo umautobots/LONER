@@ -1,8 +1,9 @@
 # Several functions have been adapted from: https://github.com/kwea123/nerf_pl/blob/master/datasets/llff.py
 from dataclasses import dataclass
+
 import numpy as np
-import torch
 import pytorch3d.transforms
+import torch
 
 
 @dataclass

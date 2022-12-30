@@ -1,14 +1,15 @@
-import torch
 from typing import Union
+
 import numpy as np
 import pytorch3d.transforms
+import torch
 
-
-from common.pose_utils import transform_to_tensor, tensor_to_transform, WorldCube
+from common.pose_utils import (WorldCube, tensor_to_transform,
+                               transform_to_tensor)
 
 
 class Pose:
-    """ Class to define an optimizable pose.
+    """ Class to define a possibly optimizable pose.
     Poses are represented as a 7-tuple [x,y,z,q_x,q_y,q_z,q_w]
     """
 
@@ -17,15 +18,34 @@ class Pose:
     # @param pose_tensor: An alternate argument to @p transformation matrix, allows you to
     #                 specify the 7-tuple representation directly
     # @param fixed: Specifies whether or not a gradient should be computed.
+    # TODO: Make note of when transformation_matrix needs to be detached if needs_tensor
     def __init__(self, transformation_matrix: torch.Tensor = torch.eye(4),
                  pose_tensor: torch.Tensor = None,
-                 fixed: bool = False):
+                 fixed: bool = None,
+                 requires_tensor: bool = False):
 
+        if fixed is None:
+            if transformation_matrix is None:
+                fixed = not pose_tensor.requires_grad
+            else:
+                fixed = not transformation_matrix.requires_grad
+        
         if pose_tensor is not None:
             self._pose_tensor = pose_tensor
+            self._transformation_matrix = tensor_to_transform(self._pose_tensor).float()
+        elif requires_tensor:
+                # TODO: this is what note is about, making copy back/forth not totally stupid
+                self._pose_tensor = transform_to_tensor(transformation_matrix).float()
+                self._transformation_matrix = tensor_to_transform(self._pose_tensor).float()
         else:
-            self._pose_tensor = transform_to_tensor(transformation_matrix)
+            self._pose_tensor = None
+            self._transformation_matrix = transformation_matrix.float()
 
+        if not fixed:
+            if self._pose_tensor is not None:
+                self._pose_tensor.requires_grad_(True)
+            self._transformation_matrix.requires_grad_(True)
+        
     def __repr__(self) -> str:
         return str(self)
 
@@ -38,14 +58,13 @@ class Pose:
 
     # Moves the pose in-place to the specified device, and returns self.
     def to(self, device: Union[str, int]) -> "Pose":
-        self._pose_tensor = self._pose_tensor.to(device)
+        if self._pose_tensor is not None:
+            self._pose_tensor = self._pose_tensor.to(device)
+        self._transformation_matrix = self._transformation_matrix.to(device)
         return self
 
-    def detach(self) -> "Pose":
-        self._pose_tensor = self._pose_tensor.detach()
-
     # Load in a setting dict of form {xyz: [x,y,z], "orientation": [x,y,z,w]} to a Pose
-    def from_settings(pose_dict: dict, fixed: bool = False) -> "Pose":
+    def from_settings(pose_dict: dict, fixed: bool = True) -> "Pose":
         xyz = torch.Tensor(pose_dict['xyz'])
         quat = torch.Tensor(pose_dict['orientation'])
 
@@ -58,24 +77,24 @@ class Pose:
     # @returns self
     def transform_world_cube(self, world_cube: WorldCube, reverse=False, ignore_shift=False) -> "Pose":
         if reverse:
-            self._pose_tensor[:3] *= world_cube.scale_factor
+            self._transformation_matrix[:3,3] *= world_cube.scale_factor
             if not ignore_shift:
-                self._pose_tensor[:3] -= world_cube.shift
+                self._transformation_matrix[:3,3] -= world_cube.shift
         else:
             if not ignore_shift:
-                self._pose_tensor[:3] += world_cube.shift
-            self._pose_tensor[:3] /= world_cube.scale_factor
+                self._transformation_matrix[:3,3] += world_cube.shift
+            self._transformation_matrix[:3,3] /= world_cube.scale_factor
 
         return self
 
     # @returns a copy of the current pose.
-    def clone(self, fixed=None) -> "Pose":
+    def clone(self, fixed=None, requires_tensor=False) -> "Pose":
         if fixed is None:
-            fixed = not self._pose_tensor.requires_grad
-        return Pose(pose_tensor=self._pose_tensor.clone(), fixed=fixed)
+            fixed = not self._transformation_matrix.requires_grad
+        return Pose(self._transformation_matrix.clone(), fixed=fixed, requires_tensor=requires_tensor)
 
     # Performs matrix multiplication on matrix representations of the given poses, and returns the result
-    def __mul__(self, other) -> "Pose":
+    def __mul__(self, other: "Pose") -> "Pose":
         return Pose(self.get_transformation_matrix() @ other.get_transformation_matrix())
 
     # Inverts the transformation represented by the pose
@@ -87,22 +106,21 @@ class Pose:
 
     # Gets the matrix representation of the pose. Only pytorch operations are used, so gradients are preserved.
     def get_transformation_matrix(self) -> torch.Tensor:
-        return tensor_to_transform(self._pose_tensor)
+        return self._transformation_matrix
 
-    # Gets the underlying 7-tensor
+    # Gets the underlying 7-tensor. Should basically never be used.
     def get_pose_tensor(self) -> torch.Tensor:
+        if self._pose_tensor is None:
+            self._pose_tensor = transform_to_tensor(self._transformation_matrix)
         return self._pose_tensor
 
     def get_translation(self) -> torch.Tensor:
-        return self._pose_tensor[:3]
+        return self._transformation_matrix[:3, 3]
 
-    # Returns the rotation.
-    # @param real_first: If set, returns a quaternion [w,x,y,z] instead of [x,y,z,w] (which is the default)
-    def get_rotation(self, real_first=False) -> torch.Tensor:
-        if real_first:
-            return torch.cat([self._pose_tensor[-1], self._pose_tensor[3:6]])
-        return self._pose_tensor[3:]
+    # Returns the rotation as a rotation matrix
+    def get_rotation(self) -> torch.Tensor:
+        return self._transformation_matrix[:3,:3]
 
     # Converts the rotation to an axis-angle representation for interpolation
     def get_axis_angle(self) -> torch.Tensor:
-        pytorch3d.transforms.quaternion_to_axis_angle(self.get_rotation(True))
+        pytorch3d.transforms.matrix_to_axis_angle(self.get_rotation())

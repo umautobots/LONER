@@ -1,13 +1,12 @@
-import copy
-import torch
 from typing import List, Union
 
+import torch
+
 from common.frame import Frame
-from common.sensors import Image, LidarScan
-from common.settings import Settings
 from common.pose import Pose
 from common.pose_utils import WorldCube
-
+from common.sensors import Image, LidarScan
+from common.settings import Settings
 from tracking.sky_removal import SkyRemoval
 
 
@@ -68,7 +67,7 @@ class FrameSynthesis:
                 self._active_frame.end_image = image
                 if gt_pose is not None:
                     self._active_frame._gt_lidar_end_pose = gt_pose * self._t_camera_to_lidar
-                self._in_progress_frames.append(copy.deepcopy(self._active_frame))
+                self._in_progress_frames.append(self._active_frame.clone())
                 self._active_frame = Frame(T_lidar_to_camera=self._t_lidar_to_camera.clone().transform_world_cube(self._world_cube, ignore_shift=True))
                 self.dequeue_lidar_points()
             else:

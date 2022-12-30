@@ -1,9 +1,10 @@
 from typing import Union
+
+import open3d as o3d
 import torch
 
 from common.sensors import Image, LidarScan
 from src.common.pose import Pose
-import open3d as o3d
 
 
 class Frame:
@@ -45,31 +46,20 @@ class Frame:
         self._gt_lidar_start_pose = None
         self._gt_lidar_end_pose = None
 
-    def to_opengl(self) -> "Frame":
-        assert self._lidar_start_pose is not None, "Need to track before converting to OpenGL Coordinates"
-        T_lidar_opengl = Pose(torch.Tensor([[0, 0, -1, 0],
-                                            [-1,  0, 0, 0],
-                                            [0, 1, 0, 0],
-                                            [0, 0, 0, 1]]))
+    def clone(self) -> "Frame":
+        
+        attrs = ["start_image", "end_image", "lidar_points", "_lidar_to_camera", "start_sky_mask",
+                 "end_sky_mask", "_lidar_start_pose", "_lidar_end_pose", "_gt_lidar_start_pose",
+                 "_gt_lidar_end_pose"]
 
-        T_lidar_points_opengl = Pose(torch.Tensor([[0, -1, 0, 0],
-                                                   [0,  0, 1, 0],
-                                                   [-1, 0, 0, 0],
-                                                   [0,  0, 0, 1]]))
+        new_frame = Frame()
+        for attr in attrs:
+            old_attr = getattr(self, attr)
+            new_attr = None if old_attr is None else old_attr.clone()
+            setattr(new_frame, attr, new_attr)
 
-        T_camera_opengl = Pose(torch.Tensor([[1, 0, 0, 0],
-                                             [0, -1, 0, 0],
-                                             [0, 0, -1, 0],
-                                             [0, 0, 0, 1]]))
+        return new_frame
 
-        self.lidar_points.transform(Pose(), T_lidar_points_opengl)
-        # self._lidar_start_pose = self._lidar_start_pose * T_lidar_opengl
-        # self._lidar_end_pose = self._lidar_end_pose * T_lidar_opengl
-        # self._gt_lidar_start_pose = self._gt_lidar_start_pose * T_lidar_opengl
-        # self._gt_lidar_end_pose = self._gt_lidar_end_pose * T_lidar_opengl
-        # self._lidar_to_camera = T_lidar_opengl.inv() * self._lidar_to_camera * T_camera_opengl 
-
-        return self
         
     def __str__(self):
         start_im_str = "None" if self.start_image is None else self.start_image.timestamp

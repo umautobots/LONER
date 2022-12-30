@@ -9,7 +9,6 @@ from common.signals import Signal, StopSignal
 from mapping.keyframe_manager import KeyFrameManager
 from mapping.optimizer import Optimizer
 
-DEBUG_DETECT_ANOMALY = False
 
 class Mapper:
     """ Mapper is the top-level Mapping module which manages and optimizes the 
@@ -32,6 +31,7 @@ class Mapper:
         self._keyframe_manager = KeyFrameManager(
             settings.keyframe_manager, settings.device)
 
+        settings["optimizer"]["debug"] = settings.debug
         settings["optimizer"]["log_directory"] = settings.log_directory
         self._optimizer = Optimizer(
             settings.optimizer, calibration, self._world_cube, settings.device)
@@ -42,11 +42,10 @@ class Mapper:
     # Spins by reading frames from the @m frame_slot as inputs.
     def run(self) -> None:
 
-        if DEBUG_DETECT_ANOMALY:
+        print(self._settings.debug)
+        if self._settings.debug.pytorch_detect_anomaly:
             torch.autograd.set_detect_anomaly(True)
         
-        torch.backends.cudnn.enabled = True
-
         self.has_written = False
         while True:
             if self._frame_slot.has_value():

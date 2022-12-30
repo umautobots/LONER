@@ -96,6 +96,13 @@ class ClonerSLAM:
         self._settings["tracker"]["experiment_name"] = self._experiment_name
         self._settings["tracker"]["log_directory"] = self._log_directory
 
+        # Pass debug settings through
+        for key in self._settings.debug.flags:
+            self._settings["debug"][key] = self._settings.debug.flags[key] and self._settings.debug.global_enabled
+
+        self._settings["mapper"]["debug"] = self._settings.debug
+        self._settings["tracker"]["debug"] = self._settings.debug
+
         world_cube = self._world_cube.as_dict()
 
         with open(f"{self._log_directory}/world_cube.yaml", "w+") as f:

@@ -24,7 +24,7 @@ class KeyFrameManager:
 
     # Constructor
     # @param settings: Settings object for the KeyFrame Manager
-    def __init__(self, settings: Settings, device: int = -1) -> None:
+    def __init__(self, settings: Settings, device: int = 'cpu') -> None:
         self._settings = settings
         self._keyframe_selection_strategy = KeyFrameSelectionStrategy[
             settings.keyframe_selection.strategy]
