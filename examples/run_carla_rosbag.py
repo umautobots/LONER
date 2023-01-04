@@ -197,7 +197,7 @@ if __name__ == "__main__":
         if start_time is None:
             start_time = t.to_sec()
 
-        if t.to_sec() - start_time > 10:
+        if t.to_sec() - start_time > 2:
             break
 
         # Wait for lidar to init

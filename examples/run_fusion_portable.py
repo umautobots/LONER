@@ -17,7 +17,7 @@ from cv_bridge import CvBridge
 from geometry_msgs.msg import TransformStamped
 from pathlib import Path
 from scipy.spatial.transform import Rotation as R
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import Image, PointCloud2
 
 # autopep8: off
 # Linting needs to be disabled here or it'll try to move includes before path.
@@ -41,20 +41,29 @@ from src.visualization.draw_frames_to_ros import FrameDrawer
 
 # autopep8: on
 
+LIDAR_MIN_RANGE = 0.3 #http://www.oxts.com/wp-content/uploads/2021/01/Ouster-datasheet-revc-v2p0-os0.pdf
 
 bridge = CvBridge()
 
-def build_scan_from_msg(lidar_msg, timestamp) -> LidarScan:
-    xyz = ros_numpy.point_cloud2.pointcloud2_to_xyz_array(
-        lidar_msg).transpose()
+def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time) -> LidarScan:
+    lidar_data = ros_numpy.point_cloud2.pointcloud2_to_array(
+        lidar_msg)
 
-    xyz = torch.from_numpy(xyz).float()
+    lidar_data = torch.from_numpy(pd.DataFrame(lidar_data).to_numpy())
+    xyz = lidar_data[:, :3]
+    
+    dists = torch.linalg.norm(xyz, dim=1)
+    valid_ranges = dists > LIDAR_MIN_RANGE
 
-    dists = torch.linalg.norm(xyz, axis=0)
+
+    xyz = xyz[valid_ranges].T
+    timestamps = lidar_data[valid_ranges, -1] + timestamp.to_sec()
+    print(f"Timestamps: {timestamps.min()}->{timestamps.max()}")
+    dists = dists[valid_ranges]
+
     directions = xyz / dists
-    timestamps = torch.tile(torch.Tensor(
-        [timestamp.to_sec()]), (directions.shape[1],))
-    return LidarScan(directions, dists, torch.eye(4), timestamps)
+    
+    return LidarScan(directions.float(), dists.float(), torch.eye(4).float(), timestamps.float())
 
 
 def tf_to_settings(tf_msg):
@@ -82,7 +91,7 @@ def msg_to_transformation_mat(tf_msg):
 
     T = torch.hstack((rotmat, xyz))
     T = torch.vstack((T, torch.Tensor([0, 0, 0, 1])))
-    return T
+    return T.float()
 
 def build_buffer_from_df(df: pd.DataFrame):
     tf_buffer = tf2_py.BufferCore(rospy.Duration(10000))
@@ -109,12 +118,12 @@ def build_buffer_from_df(df: pd.DataFrame):
 
     return tf_buffer, timestamps
 
-def build_poses_from_buffer(tf_buffer, timestamps):
+def build_poses_from_buffer(tf_buffer, timestamps, cam_to_lidar):
     lidar_poses = []
     for t in timestamps:
         try:
             lidar_tf = tf_buffer.lookup_transform_core('map', "lidar", t)
-            lidar_poses.append(msg_to_transformation_mat(lidar_tf))
+            lidar_poses.append(msg_to_transformation_mat(lidar_tf))# @ cam_to_lidar)
         except Exception as e:
             print("Skipping invalid tf")
 
@@ -152,10 +161,10 @@ if __name__ == "__main__":
 
     settings["calibration"]["lidar_to_camera"] = calibration.t_lidar_to_left_cam
     settings["calibration"]["camera_intrinsic"]["k"] = \
-        torch.from_numpy(calibration.left_cam_intrinsic["K"])
+        torch.from_numpy(calibration.left_cam_intrinsic["K"]).float()
 
     settings["calibration"]["camera_intrinsic"]["distortion"] = \
-        torch.from_numpy(calibration.left_cam_intrinsic["distortion_coeffs"])
+        torch.from_numpy(calibration.left_cam_intrinsic["distortion_coeffs"]).float()
 
     settings["calibration"]["camera_intrinsic"]["width"] = calibration.left_cam_intrinsic["width"]
     
@@ -166,7 +175,8 @@ if __name__ == "__main__":
     image_size = (settings.calibration.camera_intrinsic.height,
                   settings.calibration.camera_intrinsic.width)
 
-    camera_to_lidar = Pose.from_settings(calibration.t_lidar_to_left_cam, True).get_transformation_matrix().inverse()
+
+    camera_to_lidar = Pose.from_settings(calibration.t_lidar_to_left_cam).get_transformation_matrix().inverse()
 
 
     # Get ground truth trajectory
@@ -174,7 +184,7 @@ if __name__ == "__main__":
     ground_truth_file = rosbag_path.parent / "ground_truth_traj.txt"
     ground_truth_df = pd.read_csv(ground_truth_file, names=["timestamp","x","y","z","q_x","q_y","q_z","q_w"], delimiter=" ")
     tf_buffer, timestamps = build_buffer_from_df(ground_truth_df)
-    lidar_poses = build_poses_from_buffer(tf_buffer, timestamps)
+    lidar_poses = build_poses_from_buffer(tf_buffer, timestamps, camera_to_lidar)
 
     cloner_slam.initialize(camera_to_lidar, lidar_poses, settings.calibration.camera_intrinsic.k,
                            ray_range, image_size, args.rosbag_path)
@@ -197,36 +207,39 @@ if __name__ == "__main__":
     cloner_slam.start()
 
     start_time = None
-    for topic, msg, t in bag.read_messages(topics=[lidar_topic, image_topic]):
+    start_timestamp = None
+
+    for topic, msg, timestamp in bag.read_messages(topics=[lidar_topic, image_topic]):
         
-        if start_time is None:
-            start_time = t.to_sec()
-
-        if t.to_sec() - start_time > 10:
-            break
-
         # Wait for lidar to init
         if topic == lidar_topic and not init:
             init = True
-            start_time = t.to_sec()
-            prev_time = start_time
+            start_time = timestamp
         if not init:
             continue
 
+        timestamp -= start_time
+
+        if timestamp.to_sec() > 10:
+            break
+
         if topic == image_topic:
-            image = build_image_from_msg(msg, t)
+            image = build_image_from_msg(msg, timestamp)
 
             try:
-                camera_tf = tf_buffer.lookup_transform_core('map', camera, t)
+                lidar_tf = tf_buffer.lookup_transform_core('map', "lidar", timestamp + start_time)
             except tf2_py.ExtrapolationException as e:
+                print("Skipping camera message: No valid TF")
                 continue
 
-            T = msg_to_transformation_mat(camera_tf)
+            T_lidar = msg_to_transformation_mat(lidar_tf)
+            T_camera = T_lidar @ camera_to_lidar.inverse()
 
-            camera_pose = Pose(T)
+            camera_pose = Pose(T_camera)
             cloner_slam.process_rgb(image, camera_pose)
         elif topic == lidar_topic:
-            lidar_scan = build_scan_from_msg(msg, t)
+            lidar_scan = build_scan_from_msg(msg, timestamp)
+            print("New scan:", len(lidar_scan))
             cloner_slam.process_lidar(lidar_scan)
         else:
             raise Exception("Should be unreachable")
