@@ -17,6 +17,8 @@ class Image:
         self.image = image
         self.timestamp = timestamp
 
+        self.shape = self.image.shape
+
     def clone(self) -> "Image":
         if isinstance(self.timestamp, torch.Tensor):
             new_ts = self.timestamp.clone()
@@ -53,6 +55,7 @@ class LidarScan:
     # @param ray_origin_offsets: Offset from the origin of the lidar frame to the
     #        origin of each lidar ray. Either 4x4 tensor (constant offset) or 4x4xn tensor
     # @param timestamps: The time at which each laser fired. Used for motion compensation.
+    # @precond: timestamps are sorted. You will have mysterious problems if this isn't true.
     def __init__(self,
                  ray_directions: torch.Tensor = torch.Tensor(),
                  distances: torch.Tensor = torch.Tensor(),
@@ -146,13 +149,14 @@ class LidarScan:
     # @param world_cube specifies the transformation
     # @param reverse specifies whether to invert the transformation
     # @returns self
-    def transform_world_cube(self, world_cube: WorldCube, reverse=False) -> "LidarScan":
-        if reverse:
-            self.ray_origin_offsets[..., :3, 3] = self.ray_origin_offsets[..., :3, 3]\
-                                                   * world_cube.scale_factor
-            self.distances = self.distances * world_cube.scale_factor
-        else:
-            self.ray_origin_offsets[..., :3, 3] =self.ray_origin_offsets[..., :3, 3] \
-                                                 / world_cube.scale_factor
-            self.distances = self.distances / world_cube.scale_factor
-        return self
+    # Commented out because it's probably a terrible idea to ever use this
+    # def transform_world_cube(self, world_cube: WorldCube, reverse=False) -> "LidarScan":
+    #     if reverse:
+    #         self.ray_origin_offsets[..., :3, 3] = self.ray_origin_offsets[..., :3, 3]\
+    #                                                * world_cube.scale_factor
+    #         self.distances = self.distances * world_cube.scale_factor
+    #     else:
+    #         self.ray_origin_offsets[..., :3, 3] =self.ray_origin_offsets[..., :3, 3] \
+    #                                              / world_cube.scale_factor
+    #         self.distances = self.distances / world_cube.scale_factor
+    #     return self

@@ -162,8 +162,8 @@ def compute_world_cube(camera_to_lidar, intrinsic_mats, image_sizes, lidar_poses
     """
     assert 0 <= padding < 1
 
-    # lidar_poses = lidar_poses @ lidar_poses[0,:,:].inverse()
-    camera_poses = lidar_poses @ camera_to_lidar
+    lidar_poses = lidar_poses @ lidar_poses[0,:,:].inverse()
+    camera_poses = lidar_poses @ camera_to_lidar.inverse()
 
     T_lidar_opengl = torch.Tensor([[0, 0, -1, 0],
                                    [-1,  0, 0, 0],
@@ -175,8 +175,8 @@ def compute_world_cube(camera_to_lidar, intrinsic_mats, image_sizes, lidar_poses
                                     [0, 0, -1, 0],
                                     [0, 0, 0, 1]])
 
-    camera_poses = camera_poses @ T_camera_opengl
-    lidar_poses = lidar_poses @ T_lidar_opengl
+    # camera_poses = camera_poses @ T_camera_opengl
+    # lidar_poses = lidar_poses @ T_lidar_opengl
 
     if len(intrinsic_mats.shape) == 2:
         intrinsic_mats = torch.broadcast_to(
@@ -226,7 +226,7 @@ def compute_world_cube(camera_to_lidar, intrinsic_mats, image_sizes, lidar_poses
     return WorldCube(scale_factor, -origin)
 
 
-def create_spiral_poses(radii, focus_depth, n_poses=60):
+def create_spiral_poses(radii, focus_depth, n_poses=60, homogenous=False):
     """
     Computes poses that follow a spiral path for rendering purpose.
     See https://github.com/Fyusion/LLFF/issues/19
@@ -253,7 +253,10 @@ def create_spiral_poses(radii, focus_depth, n_poses=60):
         y_ = torch.Tensor([0, 1, 0])  # (3)
         x = normalize(torch.cross(y_, z))  # (3)
         y = torch.cross(z, x)  # (3)#
-        poses_spiral += [torch.stack([x, y, z, center], 1)]  # (3, 4)#
+        new_pose = torch.stack([x, y, z, center], 1)
+        if homogenous:
+            new_pose = torch.vstack((new_pose, torch.Tensor([0,0,0,1])))
+        poses_spiral.append(new_pose)  # (3, 4)#
     return torch.stack(poses_spiral, 0)  # (n_poses, 3, 4)
 
 

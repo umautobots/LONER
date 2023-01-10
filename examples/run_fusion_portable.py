@@ -6,6 +6,7 @@ import os
 import shutil
 import sys
 
+import cv2
 import pandas as pd
 import ros_numpy
 import rosbag
@@ -22,6 +23,8 @@ from sensor_msgs.msg import Image, PointCloud2
 # autopep8: off
 # Linting needs to be disabled here or it'll try to move includes before path.
 PUB_ROS = False
+
+IM_SCALE_FACTOR = 0.5
 
 PROJECT_ROOT = os.path.abspath(os.path.join(
     os.path.dirname(__file__),
@@ -43,6 +46,7 @@ from src.visualization.draw_frames_to_ros import FrameDrawer
 
 LIDAR_MIN_RANGE = 0.3 #http://www.oxts.com/wp-content/uploads/2021/01/Ouster-datasheet-revc-v2p0-os0.pdf
 
+
 bridge = CvBridge()
 
 def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time) -> LidarScan:
@@ -57,12 +61,16 @@ def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time) -> LidarS
 
 
     xyz = xyz[valid_ranges].T
-    timestamps = lidar_data[valid_ranges, -1] + timestamp.to_sec()
-    print(f"Timestamps: {timestamps.min()}->{timestamps.max()}")
-    dists = dists[valid_ranges]
+    timestamps = (lidar_data[valid_ranges, -1] + timestamp.to_sec()).float()
 
-    directions = xyz / dists
+    dists = dists[valid_ranges].float()
+    directions = (xyz / dists).float()
+
+    timestamps, indices = torch.sort(timestamps)
     
+    dists = dists[indices]
+    directions = directions[:, indices]
+
     return LidarScan(directions.float(), dists.float(), torch.eye(4).float(), timestamps.float())
 
 
@@ -78,6 +86,7 @@ def tf_to_settings(tf_msg):
 
 def build_image_from_msg(image_msg, timestamp) -> Image:
     cv_img = bridge.imgmsg_to_cv2(image_msg, desired_encoding='rgb8')
+    cv_img = cv2.resize(cv_img, (0,0), fx=IM_SCALE_FACTOR, fy=IM_SCALE_FACTOR)
     pytorch_img = torch.from_numpy(cv_img / 255)
     return Image(pytorch_img, timestamp.to_sec())
 
@@ -135,6 +144,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser("Run ClonerSLAM on RosBag")
     parser.add_argument("rosbag_path")
     parser.add_argument("calibration_path")
+    parser.add_argument("experiment_name")
     args = parser.parse_args()
 
     calibration = FusionPortableCalibration(args.calibration_path)
@@ -159,25 +169,29 @@ if __name__ == "__main__":
     lidar_topic = f"{topic_prefix}/{lidar}"
 
 
-    settings["calibration"]["lidar_to_camera"] = calibration.t_lidar_to_left_cam
-    settings["calibration"]["camera_intrinsic"]["k"] = \
-        torch.from_numpy(calibration.left_cam_intrinsic["K"]).float()
+    K = torch.from_numpy(calibration.left_cam_intrinsic["K"]).float()
+    K[:2, :] *= IM_SCALE_FACTOR
+
+    settings["calibration"]["camera_intrinsic"]["k"] = K
 
     settings["calibration"]["camera_intrinsic"]["distortion"] = \
         torch.from_numpy(calibration.left_cam_intrinsic["distortion_coeffs"]).float()
 
-    settings["calibration"]["camera_intrinsic"]["width"] = calibration.left_cam_intrinsic["width"]
+    settings["calibration"]["camera_intrinsic"]["width"] = int(calibration.left_cam_intrinsic["width"] // (1/IM_SCALE_FACTOR))
     
-    settings["calibration"]["camera_intrinsic"]["height"] = calibration.left_cam_intrinsic["height"]
+    settings["calibration"]["camera_intrinsic"]["height"] = int(calibration.left_cam_intrinsic["height"] // (1/IM_SCALE_FACTOR))
 
-    cloner_slam = ClonerSLAM(settings)
     ray_range = settings.mapper.optimizer.model_config.data.ray_range
     image_size = (settings.calibration.camera_intrinsic.height,
                   settings.calibration.camera_intrinsic.width)
 
+    lidar_to_camera = Pose.from_settings(calibration.t_lidar_to_left_cam).get_transformation_matrix()
+    camera_to_lidar = lidar_to_camera.inverse()
 
-    camera_to_lidar = Pose.from_settings(calibration.t_lidar_to_left_cam).get_transformation_matrix().inverse()
+    settings["calibration"]["lidar_to_camera"] = Pose(lidar_to_camera).to_settings()
+    settings["experiment_name"] = args.experiment_name
 
+    cloner_slam = ClonerSLAM(settings)
 
     # Get ground truth trajectory
     rosbag_path = Path(args.rosbag_path)
@@ -196,7 +210,8 @@ if __name__ == "__main__":
                              cloner_slam.get_world_cube())
     else:
         drawer = MplFrameDrawer(cloner_slam._frame_signal,
-                                cloner_slam.get_world_cube())
+                                cloner_slam.get_world_cube(),
+                                settings.calibration)
 
     for f in glob.glob("../outputs/frame*"):
         shutil.rmtree(f)
@@ -209,8 +224,7 @@ if __name__ == "__main__":
     start_time = None
     start_timestamp = None
 
-    for topic, msg, timestamp in bag.read_messages(topics=[lidar_topic, image_topic]):
-        
+    for topic, msg, timestamp in bag.read_messages(topics=[lidar_topic, image_topic]):        
         # Wait for lidar to init
         if topic == lidar_topic and not init:
             init = True
@@ -220,7 +234,7 @@ if __name__ == "__main__":
 
         timestamp -= start_time
 
-        if timestamp.to_sec() > 10:
+        if timestamp.to_sec() > 60:
             break
 
         if topic == image_topic:
@@ -239,7 +253,6 @@ if __name__ == "__main__":
             cloner_slam.process_rgb(image, camera_pose)
         elif topic == lidar_topic:
             lidar_scan = build_scan_from_msg(msg, timestamp)
-            print("New scan:", len(lidar_scan))
             cloner_slam.process_lidar(lidar_scan)
         else:
             raise Exception("Should be unreachable")

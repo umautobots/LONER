@@ -150,7 +150,8 @@ if __name__ == "__main__":
             settings["calibration"]["camera_intrinsic"]["height"] = msg.height
             settings["calibration"]["camera_intrinsic"]["width"] = msg.width
             settings["calibration"]["camera_intrinsic"]["distortion"] = torch.Tensor(msg.D)
-
+    
+    
     bag.close()
 
     # Build the camera poses and lidar poses
@@ -181,7 +182,8 @@ if __name__ == "__main__":
                              cloner_slam.get_world_cube())
     else:
         drawer = MplFrameDrawer(cloner_slam._frame_signal,
-                                cloner_slam.get_world_cube())
+                                cloner_slam.get_world_cube(),
+                                settings.calibration)
 
     for f in glob.glob("../outputs/frame*"):
         shutil.rmtree(f)
@@ -197,8 +199,8 @@ if __name__ == "__main__":
         if start_time is None:
             start_time = t.to_sec()
 
-        if t.to_sec() - start_time > 2:
-            break
+        # if t.to_sec() - start_time > 2:
+        #     break
 
         # Wait for lidar to init
         if topic == lidar_topic and not init:

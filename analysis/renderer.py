@@ -38,6 +38,7 @@ from src.common.ray_utils import CameraRayDirections
 from src.models.losses import *
 from src.models.model_tcnn import Model, OccupancyGridModel
 from src.models.ray_sampling import OccGridRaySampler
+from src.common.pose_utils import create_spiral_poses
 
 # autopep8: on
 
@@ -72,7 +73,9 @@ with open(f"{args.experiment_directory}/full_config.pkl", 'rb') as f:
     full_config = pickle.load(f)
 
 intrinsic = full_config.calibration.camera_intrinsic
-im_size = torch.Tensor([intrinsic.height, intrinsic.width])
+im_size = torch.Tensor([intrinsic.height, intrinsic.width]) #/ 2
+# full_config["calibration"]["camera_intrinsic"]["height"] = int(im_size[0])
+# full_config["calibration"]["camera_intrinsic"]["width"] = int(im_size[1])
 
 if args.debug:
     full_config['debug'] = True
@@ -162,48 +165,59 @@ def render_dataset_frame(pose: Pose):
     
     return rgb_fine.clamp(0, 1), depth_fine, peak_depth_consistency
 
-def save_img(rgb_fine, mask, filename, equalize=False):
-    img = rgb_fine.squeeze().permute(1, 2, 0).detach().cpu().numpy()
-    if equalize:
-        eq_img = equalize_adapthist(img, clip_limit=1.0) * 255
-    else:
-        eq_img = img * 255
-    eq_img[mask, :] = 255
-    out_fname = render_dir / f'{filename}'
-    imageio.imwrite(str(out_fname), eq_img)
 
-def save_depth(depth_fine, fname, min_depth=1, max_depth=50):
-    img = depth_fine.squeeze().detach()
-    mask = (img >= 50)
-    img = torch.clip(img, min_depth, max_depth)
-    # img = (img - img.min()) / (np.percentile(img, 99) - img.min())
-    img = (img - min_depth) / (max_depth - min_depth)
-    img = torch.clip(img, 0, 1).cpu().numpy()
-    cmap = plt.cm.get_cmap('turbo')
-    img_colored = cmap(img)
-    out_fname = render_dir / fname
-    imageio.imwrite(str(out_fname), img_colored * 255)
 
-psnr = PeakSignalNoiseRatio()
-mssim = MultiScaleStructuralSimilarityIndexMeasure()
-lpips = LearnedPerceptualImagePatchSimilarity(net_type='vgg')
+def render_spiral(center_pose: Pose):
+    rgbs = []
+    depths = []
+
+    focus_depth = 3.5 # hardcoded, this is numerically close to the formula
+                    # given in the original repo. Mathematically if near=1
+                    # and far=infinity, then this number will converge to 4
+
+    radii = torch.Tensor([1, 1, 1]) * scale_factor
+    spiral_poses = create_spiral_poses(radii, focus_depth, n_poses=5, homogenous=True)
+
+    render_poses = (center_pose.get_transformation_matrix() @ spiral_poses)[...,:3,:]
+
+    for pose in tqdm.tqdm(render_poses):
+        rgb, depth, _ = render_dataset_frame(Pose(pose))
+
+        rgbs.append(rgb.detach().cpu().numpy().reshape((int(im_size[0]), int(im_size[1]), 3)) * 255)
+        depths.append(depth.detach().squeeze().cpu().numpy())
+    
+    return rgbs, depths
 
 with torch.no_grad():
     poses = ckpt["poses"]
 
-    for kf in tqdm.tqdm(poses):
+    all_poses = []
+    for kf in tqdm(poses):
+        start_lidar_pose = Pose(pose_tensor=kf["start_lidar_pose"])
+
+    for kf in tqdm(poses):
         start_lidar_pose = Pose(pose_tensor=kf["start_lidar_pose"])
         end_lidar_pose = Pose(pose_tensor=kf["end_lidar_pose"])
         lidar_to_camera = Pose(pose_tensor=kf["lidar_to_camera"])
         timestamp = kf["timestamp"]
+
+        timestamp = str(timestamp.item()).replace('.','_')[:5]
         
         start_camera_pose = start_lidar_pose * lidar_to_camera
         end_camera_pose = end_lidar_pose * lidar_to_camera
 
-        start_rendered, start_depth_rendered, _ = render_dataset_frame(start_camera_pose)
-        end_rendered, end_depth_rendered, _ = render_dataset_frame(end_camera_pose)
+        start_rendered, start_depth_rendered, _ = render_dataset_frame(start_camera_pose.to(_DEVICE))
+        end_rendered, end_depth_rendered, _ = render_dataset_frame(end_camera_pose.to(_DEVICE))
+        # rgbs, depths = render_spiral(start_camera_pose)
+
+        # rgbs = [torch.from_numpy(rgb) for rgb in rgbs]
+        # depths = [torch.from_numpy(depth) for depth in depths]
+
         
-        save_img(start_rendered, [], f"predicted_img_{timestamp}_start.png")
-        save_img(end_rendered, [], f"predicted_img_{timestamp}_end.png")
-        save_depth(start_depth_rendered, f"predicted_depth_{timestamp}_start.png")
-        save_depth(end_depth_rendered, f"predicted_depth_{timestamp}_end.png")
+        save_img(start_rendered, [], f"predicted_img_{timestamp}_start.png", render_dir)
+        save_img(end_rendered, [], f"predicted_img_{timestamp}_end.png", render_dir)
+        save_depth(start_depth_rendered, f"predicted_depth_{timestamp}_start.png", render_dir)
+        save_depth(end_depth_rendered, f"predicted_depth_{timestamp}_end.png", render_dir)
+        # save_video(f"{render_dir}/spiral_rgb_{timestamp}.gif", rgbs, (int(im_size[0]), int(im_size[1]), 3), rescale=False, clahe=False, isdepth=False, fps=5)
+        # save_video(f"{render_dir}/spiral_depth_{timestamp}.gif", depths, (int(im_size[0]), int(im_size[1])), rescale=False, clahe=False, isdepth=True, fps=5)
+        

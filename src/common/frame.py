@@ -77,7 +77,7 @@ class Frame:
     # Moves all items in the frame to the specified device, in-place. Also returns the current frame.
     # @param device: Target device, as int (GPU) or string (CPU or GPU)
     def to(self, device: Union[int, str]) -> "Frame":
-
+        print("Putting im on device", device)
         self.start_image.to(device)
         self.end_image.to(device)
         self.lidar_points.to(device)
@@ -94,6 +94,12 @@ class Frame:
         self._lidar_end_pose.detach()
 
         return self
+
+    def get_start_time(self):
+        return self.lidar_points.get_start_time()
+
+    def get_end_time(self):
+        return self.lidar_points.get_end_time()
 
     # Builds a point cloud from the lidar scan.
     # @p time_per_scan: The maximum time to allow in a scan. This prevents aliasing without motion compensation.

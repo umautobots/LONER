@@ -71,6 +71,19 @@ class Pose:
         tensor = torch.cat((xyz, quat))
         return Pose(pose_tensor=tensor, fixed=fixed)
 
+    def to_settings(self) -> dict:
+        translation = self.get_translation().detach().cpu()
+        xyz = [translation[i].item() for i in range(3)]
+
+        quat = pytorch3d.transforms.matrix_to_quaternion(self.get_rotation().detach().cpu())
+        quat = [quat[i].item() for i in [1,2,3,0]]
+
+        return {
+            "xyz": xyz,
+            "orientation": quat
+        }
+
+
     # Transforms the pose according to the transformation represented by @p world_cube.
     # @param reverse specifies whether to invert the transformation
     # @param ignore_shift: If set, scale only and don't shift.

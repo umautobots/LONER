@@ -57,10 +57,13 @@ class Optimizer:
     # @param calibration: Calibration-related settings. See the example settings for details
     # @param world_cube: The world cube pre-computed that is used to scale the world.
     # @param device: Which device to put the data on and run the optimizer on
-    def __init__(self, settings: Settings, calibration: Settings, world_cube: WorldCube, device: int):
+    def __init__(self, settings: Settings, calibration: Settings, world_cube: WorldCube, device: int,
+                 use_gt_poses: bool = False):
         self._settings = settings
         self._calibration = calibration
         self._device = device
+        
+        self._use_gt_poses = use_gt_poses
 
         opt_settings = settings.default_optimizer_settings
         self._optimization_settings = OptimizationSettings(
@@ -85,7 +88,7 @@ class Optimizer:
         self._world_cube = world_cube
 
         self._ray_range = torch.Tensor(
-            self._model_config.model.ray_range).to(self._device)
+            self._model_config.model.ray_range) #.to(self._device)
 
         # Main Model
         self._model = Model(self._model_config.model)
@@ -103,7 +106,7 @@ class Optimizer:
         self._ray_sampler = OccGridRaySampler()
 
 
-        self._cam_ray_directions = CameraRayDirections(calibration, device=self._device)
+        self._cam_ray_directions = CameraRayDirections(calibration, device='cpu')
         self._keyframe_count = 0
         self._global_step = 0
 
@@ -214,7 +217,7 @@ class Optimizer:
 
                     lidar_indices = torch.randint(len(kf.get_lidar_scan()), (kf.num_uniform_lidar_samples,))
 
-                    new_rays, new_depths = kf.build_lidar_rays(lidar_indices, self._ray_range, self._world_cube)
+                    new_rays, new_depths = kf.build_lidar_rays(lidar_indices, self._ray_range, self._world_cube, self._use_gt_poses)
                 
                     if self._settings.debug.write_ray_point_clouds:
                         os.makedirs(f"{self._settings['log_directory']}/rays/lidar/kf_{kf_idx}_rays", exist_ok=True)
@@ -255,7 +258,8 @@ class Optimizer:
 
                     new_cam_rays, new_cam_intensities = kf.build_camera_rays(
                         first_im_indices, second_im_indices, self._ray_range,
-                        self._cam_ray_directions, self._world_cube)
+                        self._cam_ray_directions, self._world_cube,
+                        self._use_gt_poses)
 
                     if uniform_camera_rays is None:
                         uniform_camera_rays, uniform_camera_intensities = new_cam_rays, new_cam_intensities
@@ -280,9 +284,10 @@ class Optimizer:
                 loss_dot.format = "png"
                 loss_dot.render(directory="../graphs", filename=f"iteration_{self._global_step}")
 
-            self._optimizer.zero_grad()
             loss.backward(retain_graph=False)
             self._optimizer.step()
+
+            self._optimizer.zero_grad(set_to_none=True)
 
             # TODO: Active Sampling
 

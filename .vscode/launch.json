@@ -16,10 +16,42 @@
       "name": "ClonerSLAM: Carla Loops",
       "type": "python",
       "request": "launch",
-      "program": "${workspaceFolder}/examples/run_rosbag.py",
+      "program": "${workspaceFolder}/examples/run_carla_rosbag.py",
+      "console": "integratedTerminal",
+      "args": ["${workspaceFolder}/../data/cloner_carla_dataset.bag"],
+      "cwd": "${workspaceFolder}/examples",
+      "subProcess": true
+    },
+    {
+      "name": "ClonerSLAM: Carla Forward",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/examples/run_carla_rosbag.py",
       "console": "integratedTerminal",
       "args": ["${workspaceFolder}/../data/carla_forward_no_sky.bag"],
       "cwd": "${workspaceFolder}/examples",
+      "subProcess": true
+    },
+    {
+      "name": "ClonerSLAM: Fusion Portable",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/examples/run_fusion_portable.py",
+      "console": "integratedTerminal",
+      "args": ["${workspaceFolder}/../data/fusion_portable/20220216_canteen_day/20220216_canteen_day_ref.bag",
+               "${workspaceFolder}/../data/fusion_portable/calibration/20220209_calib/"],
+      "cwd": "${workspaceFolder}/examples",
+      "subProcess": true
+    },
+    {
+      "name": "Test Ray Logic",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/test/ray_logic_test.py",
+      "console": "integratedTerminal",
+      "args": ["${workspaceFolder}/../data/fusion_portable/20220216_canteen_day/20220216_canteen_day_ref.bag",
+               "${workspaceFolder}/../data/fusion_portable/calibration/20220209_calib/"],
+      "cwd": "${workspaceFolder}/test",
       "subProcess": true
     }
   ]

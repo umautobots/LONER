@@ -45,10 +45,8 @@ class Tracker:
             settings: Settings,
             rgb_signal: Signal,
             lidar_signal: Signal,
-            frame_signal: Signal,
-            world_cube: WorldCube) -> None:
+            frame_signal: Signal) -> None:
 
-        self._world_cube = world_cube
         self._rgb_slot = rgb_signal.register()
         self._lidar_slot = lidar_signal.register()
         self._frame_signal = frame_signal
@@ -56,13 +54,10 @@ class Tracker:
 
         self._t_lidar_to_camera = Pose.from_settings(
             settings.calibration.lidar_to_camera)
-        print("Lidar To Camera:", self._t_lidar_to_camera.get_transformation_matrix(), world_cube.scale_factor)
-        # self._t_lidar_to_camera.transform_world_cube(world_cube, ignore_shift=True)
-        print("Lidar To Camera transf:", self._t_lidar_to_camera.get_transformation_matrix(), world_cube.scale_factor, world_cube.shift)
 
 
         self._frame_synthesizer = FrameSynthesis(
-            self._settings.frame_synthesis, self._t_lidar_to_camera, world_cube)
+            self._settings.frame_synthesis, self._t_lidar_to_camera)
 
         # Used to indicate to an external process that I've processed the stop signal
         self._processed_stop_signal = mp.Value("i", 0)
@@ -104,6 +99,15 @@ class Tracker:
                 if not tracked:
                     print("Warning: Failed to track frame. Skipping.")
                     continue
+                
+                print(frame.get_start_time(), frame.get_end_time())
+                if self._settings.debug.write_frame_point_clouds:
+                    pcd = frame.build_point_cloud()
+                    logdir = f"{self._settings.log_directory}/frames/"
+                    os.makedirs(logdir, exist_ok=True)
+                    o3d.io.write_point_cloud(
+                        f"{logdir}/cloud_{self._frame_count}.pcd", pcd)
+
                 self._frame_signal.emit(frame)
             
         self._processed_stop_signal.value = True
@@ -169,7 +173,7 @@ class Tracker:
         registration = o3d.pipelines.registration.registration_icp(
             frame_point_cloud,
             self._reference_point_cloud,
-            self._settings.icp.threshold / self._world_cube.scale_factor,
+            self._settings.icp.threshold,
             initial_guess,
             o3d.pipelines.registration.TransformationEstimationPointToPlane(),
             criteria=convergence_criteria,

@@ -26,15 +26,16 @@ class Mapper:
         self._frame_slot = frame_signal.register()
         self._settings = settings
 
-        self._world_cube = world_cube.to(settings.device, clone=True)
+        self._world_cube = world_cube #.to('device', clone=True)
 
         self._keyframe_manager = KeyFrameManager(
-            settings.keyframe_manager, settings.device)
+            settings.keyframe_manager, 'cpu')
 
         settings["optimizer"]["debug"] = settings.debug
         settings["optimizer"]["log_directory"] = settings.log_directory
         self._optimizer = Optimizer(
-            settings.optimizer, calibration, self._world_cube, settings.device)
+            settings.optimizer, calibration, self._world_cube, settings.device,
+            settings.debug.use_groundtruth_poses)
 
         self._term_signal = mp.Value('i', 0)
         self._processed_stop_signal = mp.Value('i', 0)

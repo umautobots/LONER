@@ -81,7 +81,13 @@ class ClonerSLAM:
 
         now = datetime.datetime.now()
         now_str = now.strftime("%m%d%y_%H%M%S")
-        self._experiment_name = f"experiment_{now_str}"
+
+        if "experiment_name" in self._settings:
+            expname = self._settings.experiment_name
+        else:
+            expname = "experiment"
+            
+        self._experiment_name = f"{expname}_{now_str}"
         self._log_directory = os.path.expanduser(f"~/ClonerSLAM/outputs/{self._experiment_name}/")
         os.makedirs(self._log_directory, exist_ok=True)
 
@@ -121,8 +127,7 @@ class ClonerSLAM:
         self._tracker = Tracker(self._settings,
                                 self._rgb_signal,
                                 self._lidar_signal,
-                                self._frame_signal,
-                                self._world_cube)
+                                self._frame_signal)
 
         print("Starting Cloner SLAM")
         # Start the children
@@ -171,7 +176,8 @@ class ClonerSLAM:
         print("Sub-processes Exited")
 
     def process_lidar(self, lidar_scan: LidarScan) -> None:
-        lidar_scan.transform_world_cube(self._world_cube)
+        assert torch.all(torch.diff(lidar_scan.timestamps) >= 0), "sort your points by timestamps!"
+
         self._lidar_signal.emit(lidar_scan)
 
     def process_rgb(self, image: Image, gt_pose: Pose=None) -> None:

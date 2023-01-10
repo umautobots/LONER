@@ -17,9 +17,11 @@ debug:
   flags:
     pytorch_detect_anomaly: False
     draw_comp_graph: False
-    write_ray_point_clouds: False
+    write_ray_point_clouds: True
+    write_frame_point_clouds: False
     write_icp_point_clouds: False
     profile: False
+    use_groundtruth_poses: True
 
 # ros_names:
 #   camera: "ego_vehicle/rgb_front"
@@ -29,16 +31,22 @@ debug:
 ros_names:
   camera: "stereo/frame_left"
   lidar: "os_cloud_node/points"
-  camera_suffix: "image_raw/compressed"
-  topic_prefix: "/"
-  
+  camera_suffix: "image_raw"
+  topic_prefix: ""
+# ros_names:
+#   camera: "ego_vehicle/camera/rgb"
+#   lidar: "ego_vehicle/lidar/center"
+#   camera_suffix: "image"
+#   topic_prefix: "/carla"
+
 tracker:
   frame_synthesis:
     strategy: NULL
     sky_removal: NULL
     frame_decimation_rate_hz: 10
+    eps_t_over_delta_t: 0.5 # epsilon_t = <this number> * (1/frame_decimation_rate_hz). Maximum/Default 0.5.
   icp:
-    threshold: 0.125
+    threshold: 0.25
     max_iterations: 20
     relative_fitness: 1.e-10
     relative_rmse: 1.e-10
@@ -61,13 +69,13 @@ mapper:
 
       # How many samples to take uniformly across non-sky regions. 
       # Remember 2 images per frame, so this is doubled.
-      num_rgb_uniform_samples: 1024
+      num_rgb_uniform_samples: 512
       
       # How many to use strategy to choose. This is an average since it may vary by image. 
       avg_rgb_strategy_samples: 256
 
       # Same, for lidar
-      num_lidar_uniform_samples: 1024
+      num_lidar_uniform_samples: 512
       avg_lidar_strategy_samples: 256
       
       # How many samples to take from sky region (uniformly)
@@ -77,7 +85,7 @@ mapper:
     enabled: True
     default_optimizer_settings:
       stage: 3
-      num_iterations: 1500
+      num_iterations: 5
       fix_poses: True
       fix_sigma_mlp: False
       fix_rgb_mlp: False
@@ -85,10 +93,10 @@ mapper:
     iteration_schedule:
       - 
         num_keyframes: 1
-        iteration_count: 1500
+        iteration_count: 5
       -
         num_keyframes: -1
-        iteration_count: 60
+        iteration_count: 5
 
     model_config: !include model_config/decoupled_carla_halfres.yaml
   

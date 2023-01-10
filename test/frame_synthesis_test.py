@@ -1,7 +1,3 @@
-from src.common.pose import Pose
-from src.common.settings import Settings
-from src.common.sensors import Image, LidarScan
-from src.tracking.frame_synthesis import FrameSynthesis
 import os
 import sys
 import torch
@@ -14,6 +10,10 @@ PROJECT_ROOT = os.path.abspath(os.path.join(
 sys.path.append(PROJECT_ROOT)
 sys.path.append(PROJECT_ROOT + "/src")
 
+from src.common.pose import Pose
+from src.common.settings import Settings
+from src.common.sensors import Image, LidarScan
+from src.tracking.frame_synthesis import FrameSynthesis
 
 def BuildLidarScan(start_time, end_time, num_steps):
     timestamps = torch.linspace(start_time, end_time, num_steps)

@@ -5,7 +5,9 @@ from scipy.spatial.transform import Rotation as R, Slerp
 import matplotlib.pyplot as plt
 from common.pose_utils import WorldCube
 from common.pose import Pose
+from common.settings import Settings
 import torch
+import cv2
 
 """
 Listens to data on the given signals, and creates matplotlib plots. 
@@ -13,7 +15,7 @@ Listens to data on the given signals, and creates matplotlib plots.
 
 
 class MplFrameDrawer:
-    def __init__(self, frame_signal: Signal, world_cube: WorldCube):
+    def __init__(self, frame_signal: Signal, world_cube: WorldCube, calibration: Settings):
         self._world_cube = world_cube
         self._frame_slot = frame_signal.register()
 
@@ -23,6 +25,8 @@ class MplFrameDrawer:
         self._done = False
         self._gt_pose_offset = None
 
+        self._calibration = calibration        
+
     def update(self):
         if self._done:
             while self._frame_slot.has_value():
@@ -30,10 +34,12 @@ class MplFrameDrawer:
             return
 
         while self._frame_slot.has_value():
-            frame = self._frame_slot.get_value()
+            frame: Frame = self._frame_slot.get_value()
             if isinstance(frame, StopSignal):
                 self._done = True
                 break
+
+            print(f"Frame goes {frame.lidar_points.get_start_time()} -> {frame.lidar_points.get_end_time()}")
 
             if self._gt_pose_offset is None:
                 start_pose = frame._gt_lidar_end_pose
@@ -41,12 +47,9 @@ class MplFrameDrawer:
                 self._gt_pose_offset = start_pose.inv()
 
             new_pose = frame.get_end_lidar_pose()
-            # new_pose = new_pose.transform_world_cube(
-            #     self._world_cube, reverse=True, ignore_shift=True)
-
             new_pose = new_pose.get_translation()
 
-            gt_pose = (self._gt_pose_offset * frame._gt_lidar_end_pose).transform_world_cube(self._world_cube, ignore_shift=True)
+            gt_pose = self._gt_pose_offset * frame._gt_lidar_end_pose
             # print("lidar gt", frame._gt_lidar_end_pose.get_transformation_matrix())
             # print("gt offset", self._gt_pose_offset.get_transformation_matrix())
             # print("lidar gt transformed", gt_pose.get_transformation_matrix())
@@ -55,6 +58,30 @@ class MplFrameDrawer:
 
             self._path.append(new_pose)
             self._gt_path.append(gt_pose)
+
+            # image = frame.start_image.image.detach().cpu().numpy() * 255
+
+            # points = frame.get_end_lidar_pose().get_translation().reshape((3,1)) + frame.lidar_points.ray_directions * frame.lidar_points.distances
+            # points = points.detach().cpu().numpy()
+
+            # rotmat = frame.get_start_camera_pose().get_rotation().detach().cpu().numpy()
+            # rotvec = cv2.Rodrigues(rotmat)[0]
+            # transvec = frame.get_start_camera_pose().get_translation().detach().cpu().numpy()
+            # K = self._calibration.camera_intrinsic.k.detach().cpu().numpy()
+            # d = self._calibration.camera_intrinsic.distortion.detach().cpu().numpy()
+            # im_pts = cv2.projectPoints(points, rotvec, transvec, K, d)[0]
+
+            # for i in range(im_pts.shape[0]):
+            #     pt = im_pts[i][0].astype(int)
+            #     pt[0], pt[1] = pt[1], pt[0]
+            #     if not np.all(pt > 0):
+            #         continue
+            #     if pt[0] >= image.shape[1] or pt[1] >= image.shape[0]:
+            #         continue
+            #     image = cv2.circle(image, pt, 1, (0,0,255), 2)
+
+            # cv2.imwrite("test_image.png", image)            
+            
 
     def finish(self):
         self.update()

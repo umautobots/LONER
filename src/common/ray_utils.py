@@ -2,11 +2,13 @@ import struct
 
 import numpy as np
 import torch
+import open3d as o3d
 from kornia.geometry.calibration import undistort_points
 
 from common.pose import Pose
 from common.sensors import Image
 from common.settings import Settings
+from common.pose_utils import WorldCube
 
 
 # For each dimension, answers the question "how many unit vectors do we need to go
@@ -132,7 +134,7 @@ class CameraRayDirections:
         self._chunk_size = chunk_size
         self.num_chunks = int(np.ceil(self.directions.shape[0] / self._chunk_size))
 
-    def build_rays(self, camera_indices: torch.Tensor, pose: Pose, image: Image, world_cube, ray_range):
+    def build_rays(self, camera_indices: torch.Tensor, pose: Pose, image: Image, world_cube: WorldCube, ray_range):
 
         directions = self.directions[camera_indices]
         ray_i_grid = self.i_meshgrid[camera_indices]
@@ -143,24 +145,25 @@ class CameraRayDirections:
                                         [0, 0, -1, 0],
                                         [0, 0, 0, 1]]).to(directions.device)
 
-        T_camera_dirs_opengl = torch.Tensor([[0, 0, -1],
-                                             [-1, 0, 0],
-                                             [0, 1, 0]]).to(directions.device)
+                
+        world_to_camera_opengl = pose.get_transformation_matrix()# @ T_camera_opengl
 
-        trans_mat = pose.get_transformation_matrix() @ T_camera_opengl
-
-        ray_directions = directions @ trans_mat[:3, :3].T
+        # Now that we're in OpenGL frame, we can apply world cube transformation
+        world_to_camera_opengl[:3, 3] = world_to_camera_opengl[:3, 3] + world_cube.shift
+        world_to_camera_opengl[:3, 3] = world_to_camera_opengl[:3, 3] / world_cube.scale_factor
+        
+        
+        ray_directions = directions @ world_to_camera_opengl[:3, :3].T
         # Note to self: don't use /= here. Breaks autograd.
         ray_directions = ray_directions / \
             torch.norm(ray_directions, dim=-1, keepdim=True)
-        ray_directions = ray_directions[:, :3]  # TODO: is needed?
-        ray_directions = ray_directions @ T_camera_dirs_opengl
+        ray_directions = ray_directions[:, :3]
 
         ray_origins = torch.zeros_like(ray_directions)
         ray_origins_homo = torch.cat(
             [ray_origins, torch.ones_like(ray_origins[:, :1])], dim=-1)
-        ray_origins = ray_origins_homo @ trans_mat[:3, :].T
-        ray_origins = ray_origins @ T_camera_dirs_opengl # TODO: Why is this needed?
+        ray_origins = ray_origins_homo @ world_to_camera_opengl[:3, :].T
+        ray_origins = ray_origins
 
         view_directions = -ray_directions
         near = ray_range[0] / world_cube.scale_factor * \
@@ -188,6 +191,25 @@ class CameraRayDirections:
         indices = torch.arange(start_idx, end_idx, 1)
 
         return self.build_rays(indices, pose, None, world_cube, ray_range)[0]
+
+def rays_to_o3d(rays, depths, intensities=None):
+    origins = rays[:, :3]
+    directions = rays[:, 3:6]
+    
+    depths = depths.reshape((depths.shape[0], 1))
+    end_points = origins + directions*depths
+
+    end_points = end_points.detach().cpu().numpy()
+
+    pcd = o3d.cuda.pybind.geometry.PointCloud()
+
+    pcd.points = o3d.utility.Vector3dVector(end_points)
+
+    if intensities is not None:
+        intensities = intensities.detach().cpu().numpy()
+        pcd.colors = o3d.utility.Vector3dVector(intensities)
+
+    return pcd
 
 def rays_to_pcd(rays, depths, rays_fname, origins_fname, intensities=None):
 

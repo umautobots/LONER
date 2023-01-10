@@ -9,6 +9,7 @@ from common.sensors import Image, LidarScan
 from common.settings import Settings
 from tracking.sky_removal import SkyRemoval
 
+FRAME_TOLERANCE = 0.01
 
 class FrameSynthesis:
     """ FrameSynthesis class to process streams of data and create frames.
@@ -16,21 +17,15 @@ class FrameSynthesis:
 
     # Constructor
     # @param settings: Settings for the tracker (which includes frame synthesis)
-    def __init__(self, settings: Settings, T_lidar_to_camera: Pose, world_cube: WorldCube) -> None:
+    def __init__(self, settings: Settings, T_lidar_to_camera: Pose) -> None:
         self._settings = settings
 
         self._sky_remover = SkyRemoval(settings.sky_removal)
 
-        self._world_cube = world_cube
-
         self._t_lidar_to_camera = T_lidar_to_camera
         self._t_camera_to_lidar = self._t_lidar_to_camera.inv()
 
-        # print("World Cube:", world_cube.scale_factor)
-        # self._t_lidar_to_camera_unscaled = self._t_lidar_to_camera.clone().transform_world_cube(world_cube, reverse=True, ignore_shift=True)
-        # self._t_camera_to_lidar_unscaled = self._t_camera_to_lidar.clone().transform_world_cube(world_cube, reverse=True, ignore_shift=True)
-
-        self._active_frame = Frame(T_lidar_to_camera=self._t_lidar_to_camera.clone().transform_world_cube(world_cube, ignore_shift=True))
+        self._active_frame = Frame(T_lidar_to_camera=self._t_lidar_to_camera)
 
         # Frames that have both images, but might still need more lidar points
         self._in_progress_frames = []
@@ -43,6 +38,7 @@ class FrameSynthesis:
 
         # Minimum dt between frames
         self._frame_delta_t_sec = 1/self._settings.frame_decimation_rate_hz
+        self._frame_epislon_t_sec = self._settings.eps_t_over_delta_t * self._frame_delta_t_sec
 
         # This is used to queue up all the lidar points before they're assigned to frames
         self._lidar_queue = LidarScan()
@@ -56,7 +52,7 @@ class FrameSynthesis:
     # Enqueues image from @p image.
     # @precond incoming images are in monotonically increasing order (in timestamp)
     def process_image(self, image: Image, gt_pose: Pose = None) -> None:
-        if image.timestamp - self._prev_accepted_timestamp >= self._frame_delta_t_sec:
+        if image.timestamp - self._prev_accepted_timestamp >= self._frame_delta_t_sec - FRAME_TOLERANCE:
             self._prev_accepted_timestamp = image.timestamp
 
             if self._active_frame.start_image is None:
@@ -68,7 +64,7 @@ class FrameSynthesis:
                 if gt_pose is not None:
                     self._active_frame._gt_lidar_end_pose = gt_pose * self._t_camera_to_lidar
                 self._in_progress_frames.append(self._active_frame.clone())
-                self._active_frame = Frame(T_lidar_to_camera=self._t_lidar_to_camera.clone().transform_world_cube(self._world_cube, ignore_shift=True))
+                self._active_frame = Frame(T_lidar_to_camera=self._t_lidar_to_camera)
                 self.dequeue_lidar_points()
             else:
                 raise RuntimeError("This should be unreachable")
@@ -77,8 +73,8 @@ class FrameSynthesis:
     def dequeue_lidar_points(self):
         completed_frames = 0
         for frame in self._in_progress_frames:
-            start_time = frame.start_image.timestamp - self._frame_delta_t_sec/2
-            end_time = frame.end_image.timestamp + self._frame_delta_t_sec/2
+            start_time = frame.start_image.timestamp - self._frame_epislon_t_sec
+            end_time = frame.end_image.timestamp + self._frame_epislon_t_sec
 
             # If there aren't lidar points to process, skip
             if len(self._lidar_queue) == 0:
@@ -115,7 +111,7 @@ class FrameSynthesis:
                 last_valid_idx = len(self._lidar_queue)
 
             # Get the points from the queue that need to be moved to the current frame
-            new_ray_directions = self._lidar_queue.ray_directions[first_valid_idx:last_valid_idx]
+            new_ray_directions = self._lidar_queue.ray_directions[..., first_valid_idx:last_valid_idx]
             new_distances = self._lidar_queue.distances[first_valid_idx:last_valid_idx]
             new_timestamps = self._lidar_queue.timestamps[first_valid_idx:last_valid_idx]
 
