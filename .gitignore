@@ -9,3 +9,5 @@ docs/latex
 outputs/
 graphs/
 *.png
+
+test/outputs/

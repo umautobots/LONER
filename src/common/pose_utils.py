@@ -165,18 +165,21 @@ def compute_world_cube(camera_to_lidar, intrinsic_mats, image_sizes, lidar_poses
     lidar_poses = lidar_poses @ lidar_poses[0,:,:].inverse()
     camera_poses = lidar_poses @ camera_to_lidar.inverse()
 
-    T_lidar_opengl = torch.Tensor([[0, 0, -1, 0],
-                                   [-1,  0, 0, 0],
-                                   [0, 1, 0, 0],
-                                   [0, 0, 0, 1]])
+    # T_lidar_opengl = torch.Tensor([[0, 0, -1, 0],
+    #                                [-1,  0, 0, 0],
+    #                                [0, 1, 0, 0],
+    #                                [0, 0, 0, 1]])
 
-    T_camera_opengl = torch.Tensor([[1, 0, 0, 0],
-                                    [0, -1, 0, 0],
-                                    [0, 0, -1, 0],
-                                    [0, 0, 0, 1]])
+    # T_camera_opengl = torch.Tensor([[1, 0, 0, 0],
+    #                                 [0, -1, 0, 0],
+    #                                 [0, 0, -1, 0],
+    #                                 [0, 0, 0, 1]])
 
-    # camera_poses = camera_poses @ T_camera_opengl
-    # lidar_poses = lidar_poses @ T_lidar_opengl
+
+    T_lidar_opengl = T_camera_opengl = torch.eye(4) 
+    
+    camera_poses = camera_poses @ T_camera_opengl
+    lidar_poses = lidar_poses @ T_lidar_opengl
 
     if len(intrinsic_mats.shape) == 2:
         intrinsic_mats = torch.broadcast_to(
@@ -294,38 +297,6 @@ def transform_to_tensor(transformation_matrix, device=None):
     elif gpu_id != -1:
         tensor = tensor.to(gpu_id)
     return tensor
-
-
-def quaternion_to_rotation(quaternion_tensors):
-    """
-    Converts a quaternion to a tensor using purely pytorch operations, thus preserving gradients.
-
-    Taken from Nice-SLAM implementation.
-    https://github.com/cvg/nice-slam/blob/7af15cc33729aa5a8ca052908d96f495e34ab34c/src/common.py#L137
-    """
-
-    bs = quaternion_tensors.shape[0]
-
-    if len(quaternion_tensors.shape) == 1:
-        quaternion_tensors = torch.unsqueeze(quaternion_tensors, 0)
-        bs = quaternion_tensors.shape[0]
-
-    qi, qj, qk, qr = quaternion_tensors[:, 0], quaternion_tensors[:,
-                                                                  1], quaternion_tensors[:, 2], quaternion_tensors[:, 3]
-    two_s = 2.0 / (quaternion_tensors * quaternion_tensors).sum(-1)
-    rotation_matrix = torch.zeros(bs, 3, 3)
-    if quaternion_tensors.get_device() != -1:
-        rotation_matrix = rotation_matrix.to(quaternion_tensors.get_device())
-    rotation_matrix[:, 0, 0] = 1 - two_s * (qj ** 2 + qk ** 2)
-    rotation_matrix[:, 0, 1] = two_s * (qi * qj - qk * qr)
-    rotation_matrix[:, 0, 2] = two_s * (qi * qk + qj * qr)
-    rotation_matrix[:, 1, 0] = two_s * (qi * qj + qk * qr)
-    rotation_matrix[:, 1, 1] = 1 - two_s * (qi ** 2 + qk ** 2)
-    rotation_matrix[:, 1, 2] = two_s * (qj * qk - qi * qr)
-    rotation_matrix[:, 2, 0] = two_s * (qi * qk - qj * qr)
-    rotation_matrix[:, 2, 1] = two_s * (qj * qk + qi * qr)
-    rotation_matrix[:, 2, 2] = 1 - two_s * (qi ** 2 + qj ** 2)
-    return rotation_matrix
 
 
 def tensor_to_transform(transformation_tensors):

@@ -77,7 +77,6 @@ class Frame:
     # Moves all items in the frame to the specified device, in-place. Also returns the current frame.
     # @param device: Target device, as int (GPU) or string (CPU or GPU)
     def to(self, device: Union[int, str]) -> "Frame":
-        print("Putting im on device", device)
         self.start_image.to(device)
         self.end_image.to(device)
         self.lidar_points.to(device)

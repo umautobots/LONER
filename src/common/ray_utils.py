@@ -134,19 +134,23 @@ class CameraRayDirections:
         self._chunk_size = chunk_size
         self.num_chunks = int(np.ceil(self.directions.shape[0] / self._chunk_size))
 
+    def __len__(self):
+        return self.directions.shape[0]
+
     def build_rays(self, camera_indices: torch.Tensor, pose: Pose, image: Image, world_cube: WorldCube, ray_range):
 
         directions = self.directions[camera_indices]
         ray_i_grid = self.i_meshgrid[camera_indices]
         ray_j_grid = self.j_meshgrid[camera_indices]
 
-        T_camera_opengl = torch.Tensor([[1, 0, 0, 0],
-                                        [0, -1, 0, 0],
-                                        [0, 0, -1, 0],
-                                        [0, 0, 0, 1]]).to(directions.device)
+        # T_camera_opengl = torch.Tensor([[1, 0, 0, 0],
+        #                                 [0, -1, 0, 0],
+        #                                 [0, 0, -1, 0],
+        #                                 [0, 0, 0, 1]]).to(directions.device)
 
+        T_camera_opengl = torch.eye(4).to(directions.device)
                 
-        world_to_camera_opengl = pose.get_transformation_matrix()# @ T_camera_opengl
+        world_to_camera_opengl = pose.get_transformation_matrix() @ T_camera_opengl
 
         # Now that we're in OpenGL frame, we can apply world cube transformation
         world_to_camera_opengl[:3, 3] = world_to_camera_opengl[:3, 3] + world_cube.shift

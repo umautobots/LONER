@@ -92,7 +92,7 @@ mapper:
     sample_strategy: UNIFORM
     iteration_schedule:
       - 
-        num_keyframes: 1
+        num_keyframes: 2
         iteration_count: 5
       -
         num_keyframes: -1

@@ -19,7 +19,8 @@
               "--net=host",
               "--runtime=nvidia",
               "-e SDL_VIDEODRIVER=x11",
-              "--shm-size=16G"
+              "--shm-size=16G",
+              "--ipc=host"
             ],
   "postStartCommand": "sudo ldconfig"
 }

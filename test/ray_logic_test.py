@@ -21,7 +21,7 @@ from src.common.settings import Settings
 from src.common.sensors import LidarScan, Image
 from src.common.frame import Frame
 from src.mapping.keyframe import KeyFrame
-from src.common.ray_utils import rays_to_pcd, rays_to_o3d
+from src.common.ray_utils import rays_to_pcd, rays_to_o3d, CameraRayDirections
 
 import argparse
 import os
@@ -44,8 +44,9 @@ from examples.fusion_portable_calibration import FusionPortableCalibration
 
 
 LIDAR_MIN_RANGE = 0.3 #http://www.oxts.com/wp-content/uploads/2021/01/Ouster-datasheet-revc-v2p0-os0.pdf
-IM_SCALE_FACTOR = 0.5
+IM_SCALE_FACTOR = 1
 LIDAR_TOPIC = "/os_cloud_node/points"
+CAMERA_TOPIC = "/stereo/frame_left/image_raw"
 
 bridge = CvBridge()
 
@@ -134,10 +135,24 @@ if __name__ == "__main__":
     parser.add_argument("calibration_path")
     args = parser.parse_args()
 
+    cv_bridge = CvBridge()
+
     calibration = FusionPortableCalibration(args.calibration_path)
     lidar_to_camera = Pose.from_settings(calibration.t_lidar_to_left_cam)
     
     settings = Settings.load_from_file("../cfg/default_settings.yaml")
+
+    K = torch.from_numpy(calibration.left_cam_intrinsic["K"]).float()
+    K[:2, :] *= IM_SCALE_FACTOR
+
+    settings["calibration"]["camera_intrinsic"]["k"] = K
+
+    settings["calibration"]["camera_intrinsic"]["distortion"] = \
+        torch.from_numpy(calibration.left_cam_intrinsic["distortion_coeffs"]).float()
+
+    settings["calibration"]["camera_intrinsic"]["width"] = int(calibration.left_cam_intrinsic["width"] // (1/IM_SCALE_FACTOR))
+    
+    settings["calibration"]["camera_intrinsic"]["height"] = int(calibration.left_cam_intrinsic["height"] // (1/IM_SCALE_FACTOR))
 
     # Get ground truth trajectory
     rosbag_path = Path(args.rosbag_path)
@@ -181,7 +196,24 @@ if __name__ == "__main__":
             end_cloud = build_o3d_from_msg(msg)
             end_scan = build_scan_from_msg(msg, timestamp)
             break
+    bag.close()
 
+    bag = rosbag.Bag(args.rosbag_path, 'r')
+    prev_time = rospy.Duration.from_sec(0)
+
+    for topic, msg, timestamp in bag.read_messages(topics=[CAMERA_TOPIC]):        
+        timestamp -= init_time
+        
+        if prev_time <= start_time and timestamp >= start_time:
+            start_image = msg
+        elif prev_time <= end_time and timestamp >= end_time:
+            end_image = msg
+        
+        prev_time = timestamp
+    bag.close()
+    
+    start_image = torch.from_numpy(cv_bridge.imgmsg_to_cv2(start_image))
+    end_image = torch.from_numpy(cv_bridge.imgmsg_to_cv2(end_image))
 
     start_start_lidar_pose = tf_buffer.lookup_transform_core('map', "lidar", init_time + rospy.Duration.from_sec(start_scan.timestamps[0]))
     start_start_lidar_pose = msg_to_transformation_mat(start_start_lidar_pose).numpy()
@@ -201,19 +233,21 @@ if __name__ == "__main__":
     end_cloud.transform(end_start_lidar_pose)
     end_cloud.paint_uniform_color([0, 0.651, 0.929])
 
-
+    print(lidar_to_camera.get_transformation_matrix())
     start_frame = Frame(None, None, start_scan, lidar_to_camera)
     start_frame._lidar_start_pose = Pose(torch.from_numpy(start_start_lidar_pose))
     start_frame._lidar_end_pose = Pose(torch.from_numpy(start_end_lidar_pose))
-    start_frame.start_image = Image(torch.zeros(1), start_time.to_sec())
-    start_frame.end_image = Image(torch.zeros(1), start_time.to_sec() + start_scan.timestamps[-1].item())
+    start_frame.start_image = Image(start_image, start_time.to_sec())
+    delta_t = start_scan.timestamps[-1] - start_scan.timestamps[0]
+    start_frame.end_image = Image(start_image, start_time.to_sec() + delta_t.item())
     start_kf = KeyFrame(start_frame, 'cpu')
 
     end_frame = Frame(None, None, end_scan, lidar_to_camera)
     end_frame._lidar_start_pose = Pose(torch.from_numpy(end_start_lidar_pose))
     end_frame._lidar_end_pose = Pose(torch.from_numpy(end_end_lidar_pose))
-    end_frame.start_image = Image(torch.zeros(1), end_time.to_sec())
-    end_frame.end_image = Image(torch.zeros(1), end_time.to_sec() + end_scan.timestamps[-1].item())
+    end_frame.start_image = Image(end_image, end_time.to_sec())
+    delta_t = end_scan.timestamps[-1] - end_scan.timestamps[0]
+    end_frame.end_image = Image(end_image, end_time.to_sec() + delta_t.item())
     end_kf = KeyFrame(end_frame, 'cpu')
 
     ray_range = torch.Tensor(settings.mapper.optimizer.model_config.model.ray_range)
@@ -226,6 +260,33 @@ if __name__ == "__main__":
 
     end_rays, end_depths = end_kf.build_lidar_rays(lidar_indices, ray_range, world_cube, False, True)
     end_o3d_from_rays = rays_to_o3d(end_rays, end_depths).paint_uniform_color([0,0,1])
+    
+    os.makedirs("outputs/rays", exist_ok=True)
+    rays_to_pcd(start_rays, start_depths, "outputs/rays/start_rays.pcd", "outputs/rays/start_origins.pcd")
+    rays_to_pcd(end_rays, end_depths, "outputs/rays/end_rays.pcd", "outputs/rays/end_origins.pcd")
 
+    ray_dirs = CameraRayDirections(settings.calibration)
 
-    o3d.visualization.draw_geometries([start_cloud, end_cloud, start_o3d_from_rays, end_o3d_from_rays])
+    camera_indices = torch.arange(0, len(ray_dirs), 10)
+    start_cam_rays, start_cam_intensities = start_kf.build_camera_rays(camera_indices, camera_indices, ray_range, ray_dirs, world_cube, False)
+    end_cam_rays, end_cam_intensities = end_kf.build_camera_rays(camera_indices, camera_indices, ray_range, ray_dirs, world_cube, False)
+
+    start_cam_intensities = start_cam_intensities.float() / 255.
+    end_cam_intensities = end_cam_intensities.float() / 255.
+
+    start_cam_o3d = rays_to_o3d(start_cam_rays, torch.ones_like(start_cam_rays[:,0])*2, start_cam_intensities)
+    end_cam_o3d = rays_to_o3d(end_cam_rays, torch.ones_like(end_cam_rays[:,0])*2, end_cam_intensities)
+    rays_to_pcd(start_cam_rays, torch.ones_like(start_cam_rays[:,0])*2, "outputs/rays/start_cam_rays.pcd", "outputs/rays/start_cam_origins.pcd", start_cam_intensities)
+    rays_to_pcd(end_cam_rays, torch.ones_like(end_cam_rays[:,0])*2, "outputs/rays/end_cam_rays.pcd", "outputs/rays/end_cam_origins.pcd", end_cam_intensities)
+
+    # viewer = o3d.visualization.Visualizer()
+    # viewer.create_window()
+    # for geometry in [start_o3d_from_rays, end_o3d_from_rays, start_cam_o3d, end_cam_o3d]:
+    #     viewer.add_geometry(geometry)
+    # opt = viewer.get_render_option()
+    # opt.show_coordinate_frame = True
+    # # opt.background_color = np.asarray([0.5, 0.5, 0.5])
+    # viewer.run()
+    # viewer.destroy_window()
+
+    # o3d.visualization.draw_geometries([start_o3d_from_rays, end_o3d_from_rays, start_cam_o3d, end_cam_o3d])#, start_o3d_from_rays, end_o3d_from_rays])

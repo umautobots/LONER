@@ -76,14 +76,12 @@ class KeyFrame:
     def interpolate_lidar_poses(self, timestamps: torch.Tensor, use_groundtruth: bool = False) -> torch.Tensor:
         assert timestamps.dim() == 1
 
-        timestamps = torch.zeros_like(timestamps)
-
         N = timestamps.shape[0]
 
         start_time = self.get_start_time()
         end_time = self.get_end_time()
 
-        if end_time - start_time == 0 or True:
+        if end_time - start_time == 0:
             interp_factors = torch.zeros_like(timestamps)
         else:
             interp_factors = (timestamps - start_time)/(end_time - start_time)
@@ -145,13 +143,12 @@ class KeyFrame:
                          ray_range: torch.Tensor,
                          world_cube: WorldCube,
                          use_gt_poses: bool = False,
-                         ignore_world_cube: bool = False,
-                         motion_compensate: bool = True) -> torch.Tensor:
+                         ignore_world_cube: bool = False) -> torch.Tensor:
 
         lidar_scan = self.get_lidar_scan()
 
 
-        # # TODO: member variables
+        # TODO: member variables
         # rotate_lidar_points_opengl = torch.Tensor([[0, -1, 0],
         #                                            [0,  0, 1],
         #                                            [-1, 0, 0]]).to(self._device)
@@ -160,6 +157,9 @@ class KeyFrame:
         #                                     [-1,0, 0, 0],
         #                                     [0, 1, 0, 0],
         #                                     [0, 0, 0, 1]]).to(self._device)
+
+        rotate_lidar_opengl = torch.eye(4).to(self._device)
+        rotate_lidar_points_opengl = torch.eye(3).to(self._device)
 
         depths = lidar_scan.distances[lidar_indices] / world_cube.scale_factor
         directions = lidar_scan.ray_directions[:, lidar_indices]
@@ -172,12 +172,13 @@ class KeyFrame:
         # N x 4 x 4
         interpolated_poses = self.interpolate_lidar_poses(timestamps, use_gt_poses) @ origin_offset 
 
-        lidar_poses = interpolated_poses# @ rotate_lidar_opengl
+        lidar_poses = interpolated_poses
 
         # Now that we're in OpenGL frame, we can apply world cube transformation
         ray_origins = lidar_poses[:, :3, 3]
         ray_origins = ray_origins + world_cube.shift
         ray_origins = ray_origins / world_cube.scale_factor
+        ray_origins = ray_origins @ rotate_lidar_opengl[:3,:3]
 
         # N x 3 x 3 (N homogenous transformation matrices)
         lidar_rotations = lidar_poses[..., :3, :3]
@@ -192,7 +193,7 @@ class KeyFrame:
         # ray_directions is now Nx3x1, we want Nx3.
         ray_directions = ray_directions.squeeze()
         # Only now we swap it to opengl coordinates
-        ray_directions = ray_directions #@ rotate_lidar_points_opengl.T
+        ray_directions = ray_directions @ rotate_lidar_points_opengl.T
 
         # Note to self: don't use /= here. Breaks autograd.
         ray_directions = ray_directions / \
@@ -218,8 +219,11 @@ class KeyFrame:
                           near, far], 1)
                           
         # Only rays that have more than 1m inside world
-        valid_idxs = (far > (near + 1. / world_cube.scale_factor))[..., 0]
-        return rays[valid_idxs], depths[valid_idxs]
+        if ignore_world_cube:
+            return rays, depths
+        else:
+            valid_idxs = (far > (near + 1. / world_cube.scale_factor))[..., 0]
+            return rays[valid_idxs], depths[valid_idxs]
     
     # Given the images, create camera rays in Cloner's format
     def build_camera_rays(self,
@@ -234,8 +238,8 @@ class KeyFrame:
             start_pose = self._frame._gt_lidar_start_pose * self._frame._lidar_to_camera
             end_pose = self._frame._gt_lidar_end_pose * self._frame._lidar_to_camera
         else:
-            start_pose = self.get_start_lidar_pose()
-            end_pose = self.get_end_lidar_pose()
+            start_pose = self.get_start_camera_pose()
+            end_pose = self.get_end_camera_pose()
 
         first_rays, first_intensities = cam_ray_directions.build_rays(first_camera_indices,
                                 start_pose,
@@ -256,5 +260,7 @@ class KeyFrame:
             "timestamp": self.get_start_time(),
             "start_lidar_pose": self._frame.get_start_lidar_pose().get_pose_tensor(),
             "end_lidar_pose": self._frame.get_end_lidar_pose().get_pose_tensor(),
+            "gt_start_lidar_pose": self._frame._gt_lidar_start_pose.get_pose_tensor(),
+            "gt_end_lidar_pose": self._frame._gt_lidar_end_pose.get_pose_tensor(),
             "lidar_to_camera": self._frame._lidar_to_camera.get_pose_tensor()
         }

@@ -17,8 +17,8 @@ from attrdict import AttrDict
 from cv_bridge import CvBridge
 from geometry_msgs.msg import TransformStamped
 from pathlib import Path
-from scipy.spatial.transform import Rotation as R
 from sensor_msgs.msg import Image, PointCloud2
+import pytorch3d.transforms
 
 # autopep8: off
 # Linting needs to be disabled here or it'll try to move includes before path.
@@ -79,7 +79,7 @@ def tf_to_settings(tf_msg):
     rot = tf_msg.transform.rotation
 
     xyz = [trans.x, trans.y, trans.z]
-    quat = [rot.x, rot.y, rot.z, rot.w]
+    quat = [rot.w, rot.x, rot.y, rot.z]
 
     return AttrDict({"xyz": xyz, "orientation": quat})
 
@@ -95,9 +95,9 @@ def msg_to_transformation_mat(tf_msg):
     trans = tf_msg.transform.translation
     rot = tf_msg.transform.rotation
     xyz = torch.Tensor([trans.x, trans.y, trans.z]).reshape(3, 1)
-    rotmat = torch.from_numpy(R.from_quat(
-        [rot.x, rot.y, rot.z, rot.w]).as_matrix())
-
+    quat = torch.Tensor([rot.w, rot.x, rot.y, rot.z])
+    rotmat = pytorch3d.transforms.quaternion_to_matrix(quat)
+    
     T = torch.hstack((rotmat, xyz))
     T = torch.vstack((T, torch.Tensor([0, 0, 0, 1])))
     return T.float()
@@ -144,7 +144,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser("Run ClonerSLAM on RosBag")
     parser.add_argument("rosbag_path")
     parser.add_argument("calibration_path")
-    parser.add_argument("experiment_name")
+    parser.add_argument("experiment_name", nargs="?", default="experiment")
     args = parser.parse_args()
 
     calibration = FusionPortableCalibration(args.calibration_path)
@@ -224,6 +224,7 @@ if __name__ == "__main__":
     start_time = None
     start_timestamp = None
 
+    start_lidar_pose = None
     for topic, msg, timestamp in bag.read_messages(topics=[lidar_topic, image_topic]):        
         # Wait for lidar to init
         if topic == lidar_topic and not init:
@@ -247,10 +248,14 @@ if __name__ == "__main__":
                 continue
 
             T_lidar = msg_to_transformation_mat(lidar_tf)
-            T_camera = T_lidar @ camera_to_lidar.inverse()
 
-            camera_pose = Pose(T_camera)
-            cloner_slam.process_rgb(image, camera_pose)
+            if start_lidar_pose is None:
+                start_lidar_pose = T_lidar
+
+            gt_lidar_pose = start_lidar_pose.inverse() @ T_lidar
+            gt_cam_pose = Pose(gt_lidar_pose @ camera_to_lidar.inverse())
+
+            cloner_slam.process_rgb(image, gt_cam_pose)
         elif topic == lidar_topic:
             lidar_scan = build_scan_from_msg(msg, timestamp)
             cloner_slam.process_lidar(lidar_scan)

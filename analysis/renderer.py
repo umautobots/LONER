@@ -49,19 +49,24 @@ CHUNK_SIZE=512
 
 print("START")
 parser = argparse.ArgumentParser(description="Render ground truth maps using trained nerf models")
-parser.add_argument("--experiment_directory", type=str, help="folder in outputs with all results", required=True)
+parser.add_argument("experiment_directory", type=str, help="folder in outputs with all results")
 
 parser.add_argument("--debug", default=False, dest="debug", action="store_true")
 parser.add_argument("--eval", default=False, dest="eval", action="store_true")
+parser.add_argument("--ckpt_id", type=str, default=None)
+parser.add_argument("--use_gt_poses", default=False, dest="use_gt_poses", action="store_true")
 
 args = parser.parse_args()
 
 checkpoints = os.listdir(f"{args.experiment_directory}/checkpoints")
 
-#https://stackoverflow.com/a/2669120
-convert = lambda text: int(text) if text.isdigit() else text 
-alphanum_key = lambda key: [ convert(c) for c in re.split('([0-9]+)', key) ] 
-checkpoint = sorted(checkpoints, key = alphanum_key)[-1]
+if args.ckpt_id is None:
+    #https://stackoverflow.com/a/2669120
+    convert = lambda text: int(text) if text.isdigit() else text 
+    alphanum_key = lambda key: [ convert(c) for c in re.split('([0-9]+)', key) ] 
+    checkpoint = sorted(checkpoints, key = alphanum_key)[-1]
+else:
+    checkpoint = f"ckpt_{args.ckpt_id}.tar"
 
 checkpoint_path = pathlib.Path(f"{args.experiment_directory}/checkpoints/{checkpoint}")
 
@@ -142,6 +147,7 @@ def render_dataset_frame(pose: Pose):
     peak_depth_consistency = torch.zeros(size, dtype=torch.float32).view(-1, 1)
     print("--------------------")
     print("render_dataset_frame")
+
     for chunk_idx in range(ray_directions.num_chunks):
         # tic = time.time()
         eval_rays = ray_directions.fetch_chunk_rays(chunk_idx, pose, world_cube, ray_range)
@@ -192,12 +198,16 @@ with torch.no_grad():
     poses = ckpt["poses"]
 
     all_poses = []
-    for kf in tqdm(poses):
-        start_lidar_pose = Pose(pose_tensor=kf["start_lidar_pose"])
+    if args.use_gt_poses:
+        start_key = "gt_start_lidar_pose"
+        end_key = "gt_end_lidar_pose"
+    else:
+        start_key = "start_lidar_pose"
+        end_key = "end_lidar_pose"
 
     for kf in tqdm(poses):
-        start_lidar_pose = Pose(pose_tensor=kf["start_lidar_pose"])
-        end_lidar_pose = Pose(pose_tensor=kf["end_lidar_pose"])
+        start_lidar_pose = Pose(pose_tensor=kf[start_key])
+        end_lidar_pose = Pose(pose_tensor=kf[end_key])
         lidar_to_camera = Pose(pose_tensor=kf["lidar_to_camera"])
         timestamp = kf["timestamp"]
 

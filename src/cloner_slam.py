@@ -41,7 +41,7 @@ class ClonerSLAM:
                 f"Can't load settings of type {type(settings).__name__}")
 
         mp.set_start_method('spawn')
-
+        
         # The top-level module inserts RGB frames/Lidar, and the tracker reads them
         self._rgb_signal = Signal()
         self._lidar_signal = Signal()

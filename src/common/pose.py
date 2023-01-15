@@ -76,7 +76,6 @@ class Pose:
         xyz = [translation[i].item() for i in range(3)]
 
         quat = pytorch3d.transforms.matrix_to_quaternion(self.get_rotation().detach().cpu())
-        quat = [quat[i].item() for i in [1,2,3,0]]
 
         return {
             "xyz": xyz,

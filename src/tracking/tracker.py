@@ -55,6 +55,7 @@ class Tracker:
         self._t_lidar_to_camera = Pose.from_settings(
             settings.calibration.lidar_to_camera)
 
+        print("IN Tracker:", self._t_lidar_to_camera.get_transformation_matrix(), settings.calibration.lidar_to_camera)
 
         self._frame_synthesizer = FrameSynthesis(
             self._settings.frame_synthesis, self._t_lidar_to_camera)

@@ -78,12 +78,18 @@ RUN python3 -m pip install -r /tmp/requirements.txt \
      && pip3 install open3d \
      && pip3 install autopep8 \
      && pip3 install torch_tb_profiler \
+     && pip3 install torchviz \
      && rm /tmp/requirements.txt
 
 # Install tiny-cuda-nn
 RUN ldconfig && pip3 install git+https://github.com/NVlabs/tiny-cuda-nn/#subdirectory=bindings/torch || \
     (echo "Note: Unable find Cuda. See the README Build Section for details on fixing" && false)
     
+
+RUN wget https://github.com/facebookresearch/pytorch3d/archive/refs/tags/v0.7.2.tar.gz -O pytorch3d \
+  && tar -xvf pytorch3d \
+  && cd pytorch3d-0.7.2 \
+  
 
 # Install PCL and python bindings
 # WORKDIR /tmp
