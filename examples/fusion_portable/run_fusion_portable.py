@@ -5,6 +5,8 @@ import glob
 import os
 import shutil
 import sys
+import re
+import pathlib
 
 import cv2
 import pandas as pd
@@ -28,7 +30,9 @@ IM_SCALE_FACTOR = 0.5
 
 PROJECT_ROOT = os.path.abspath(os.path.join(
     os.path.dirname(__file__),
+    os.pardir,
     os.pardir))
+
 sys.path.append(PROJECT_ROOT)
 sys.path.append(PROJECT_ROOT + "/src")
 
@@ -149,13 +153,12 @@ if __name__ == "__main__":
 
     calibration = FusionPortableCalibration(args.calibration_path)
 
-    settings = Settings.load_from_file("../cfg/default_settings.yaml")
+    settings = Settings.load_from_file(os.path.expanduser("~/ClonerSLAM/cfg/settings_schedule.yaml"))
 
     init = False
     prev_time = None
 
     tf_buffer = tf2_py.BufferCore(rospy.Duration(10000))
-
 
     ego_pose_timestamps = []
 
@@ -235,7 +238,7 @@ if __name__ == "__main__":
 
         timestamp -= start_time
 
-        if timestamp.to_sec() > 60:
+        if timestamp.to_sec() > 90:
             break
 
         if topic == image_topic:
@@ -256,10 +259,42 @@ if __name__ == "__main__":
             gt_cam_pose = Pose(gt_lidar_pose @ camera_to_lidar.inverse())
 
             cloner_slam.process_rgb(image, gt_cam_pose)
+            drawer.update()
         elif topic == lidar_topic:
             lidar_scan = build_scan_from_msg(msg, timestamp)
             cloner_slam.process_lidar(lidar_scan)
+            drawer.update()
         else:
             raise Exception("Should be unreachable")
 
     cloner_slam.stop(drawer.update, drawer.finish)
+
+    logdir = cloner_slam._log_directory
+    checkpoints = os.listdir(f"{logdir}/checkpoints")
+    #https://stackoverflow.com/a/2669120
+    convert = lambda text: int(text) if text.isdigit() else text 
+    alphanum_key = lambda key: [ convert(c) for c in re.split('([0-9]+)', key) ] 
+    checkpoint = sorted(checkpoints, key = alphanum_key)[-1]
+    checkpoint_path = pathlib.Path(f"{logdir}/checkpoints/{checkpoint}")
+    ckpt = torch.load(str(checkpoint_path))
+
+    kfs = ckpt["poses"]
+
+    gt = []
+    est = []
+
+    for kf in kfs:
+        gt_pose = Pose(pose_tensor = kf["gt_start_lidar_pose"])
+        est_pose = Pose(pose_tensor = kf["start_lidar_pose"])
+
+        gt.append(gt_pose.get_translation())
+        est.append(est_pose.get_translation())
+
+    gt = torch.stack(gt).detach().cpu()
+    est = torch.stack(est).detach().cpu()
+
+    diff = gt - est
+    dist = torch.linalg.norm(diff, dim=1)
+    rmse = torch.sqrt(torch.mean(dist**2))
+
+    print(f"RMSE: {rmse:.3f}")

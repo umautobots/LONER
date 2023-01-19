@@ -28,6 +28,9 @@ class Mapper:
 
         self._world_cube = world_cube #.to('device', clone=True)
 
+        settings["keyframe_manager"]["debug"] = settings.debug
+        settings["keyframe_manager"]["log_directory"] = settings.log_directory
+
         self._keyframe_manager = KeyFrameManager(
             settings.keyframe_manager, 'cpu')
 
@@ -35,7 +38,8 @@ class Mapper:
         settings["optimizer"]["log_directory"] = settings.log_directory
         self._optimizer = Optimizer(
             settings.optimizer, calibration, self._world_cube, settings.device,
-            settings.debug.use_groundtruth_poses)
+            settings.debug.use_groundtruth_poses,
+            settings.keyframe_manager.sample_allocation.strategy)
 
         self._term_signal = mp.Value('i', 0)
         self._processed_stop_signal = mp.Value('i', 0)
@@ -62,9 +66,11 @@ class Mapper:
                 accepted_str = "Accepted" if accepted_frame else "Didn't accept"
                 # print(
                 #     f"{accepted_str} frame at time {new_frame.start_image.timestamp}")
+            
 
                 if self._settings.optimizer.enabled and accepted_frame:
-                    active_window = self._keyframe_manager.get_active_window()
+
+                    active_window = self._keyframe_manager.get_active_window(self._optimizer)
 
                     self._optimizer.iterate_optimizer(active_window)
 

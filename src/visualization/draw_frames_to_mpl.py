@@ -39,49 +39,19 @@ class MplFrameDrawer:
                 self._done = True
                 break
 
-            print(f"Frame goes {frame.lidar_points.get_start_time()} -> {frame.lidar_points.get_end_time()}")
-
             if self._gt_pose_offset is None:
                 start_pose = frame._gt_lidar_end_pose
-                print("Start Pose:", start_pose.get_transformation_matrix())
                 self._gt_pose_offset = start_pose.inv()
 
             new_pose = frame.get_end_lidar_pose()
             new_pose = new_pose.get_translation()
 
             gt_pose = self._gt_pose_offset * frame._gt_lidar_end_pose
-            # print("lidar gt", frame._gt_lidar_end_pose.get_transformation_matrix())
-            # print("gt offset", self._gt_pose_offset.get_transformation_matrix())
-            # print("lidar gt transformed", gt_pose.get_transformation_matrix())
-
             gt_pose = gt_pose.get_translation()
 
             self._path.append(new_pose)
             self._gt_path.append(gt_pose)
 
-            # image = frame.start_image.image.detach().cpu().numpy() * 255
-
-            # points = frame.get_end_lidar_pose().get_translation().reshape((3,1)) + frame.lidar_points.ray_directions * frame.lidar_points.distances
-            # points = points.detach().cpu().numpy()
-
-            # rotmat = frame.get_start_camera_pose().get_rotation().detach().cpu().numpy()
-            # rotvec = cv2.Rodrigues(rotmat)[0]
-            # transvec = frame.get_start_camera_pose().get_translation().detach().cpu().numpy()
-            # K = self._calibration.camera_intrinsic.k.detach().cpu().numpy()
-            # d = self._calibration.camera_intrinsic.distortion.detach().cpu().numpy()
-            # im_pts = cv2.projectPoints(points, rotvec, transvec, K, d)[0]
-
-            # for i in range(im_pts.shape[0]):
-            #     pt = im_pts[i][0].astype(int)
-            #     pt[0], pt[1] = pt[1], pt[0]
-            #     if not np.all(pt > 0):
-            #         continue
-            #     if pt[0] >= image.shape[1] or pt[1] >= image.shape[0]:
-            #         continue
-            #     image = cv2.circle(image, pt, 1, (0,0,255), 2)
-
-            # cv2.imwrite("test_image.png", image)            
-            
 
     def finish(self):
         self.update()

@@ -233,7 +233,6 @@ if __name__ == "__main__":
     end_cloud.transform(end_start_lidar_pose)
     end_cloud.paint_uniform_color([0, 0.651, 0.929])
 
-    print(lidar_to_camera.get_transformation_matrix())
     start_frame = Frame(None, None, start_scan, lidar_to_camera)
     start_frame._lidar_start_pose = Pose(torch.from_numpy(start_start_lidar_pose))
     start_frame._lidar_end_pose = Pose(torch.from_numpy(start_end_lidar_pose))

@@ -8,16 +8,8 @@ import pickle
 import re
 import sys
 import time
-
-import imageio
-import matplotlib.pyplot as plt
-import numpy as np
 import torch
 import tqdm
-from skimage.exposure import equalize_adapthist
-from torchmetrics import (MultiScaleStructuralSimilarityIndexMeasure,
-                          PeakSignalNoiseRatio)
-from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 
 # autopep8: off
 # Linting needs to be disabled here or it'll try to move includes before path.
@@ -47,7 +39,6 @@ assert torch.cuda.is_available(), 'Unable to find GPU'
 
 CHUNK_SIZE=512
 
-print("START")
 parser = argparse.ArgumentParser(description="Render ground truth maps using trained nerf models")
 parser.add_argument("experiment_directory", type=str, help="folder in outputs with all results")
 
@@ -100,7 +91,6 @@ _DEVICE = torch.device(full_config.mapper.device)
 
 torch.set_default_tensor_type('torch.cuda.FloatTensor')
 
-# Load weights checkpoint
 if not checkpoint_path.exists():
     print(f'Checkpoint {checkpoint_path} does not exist. Quitting.')
     exit()
@@ -139,7 +129,6 @@ ray_sampler.update_occ_grid(occupancy_grid.detach())
 
 def render_dataset_frame(pose: Pose):
     tic_img = time.time()
-    print(im_size)
     size = (int(im_size[0]), int(im_size[1]), 1)
     rgb_size = (int(im_size[0]), int(im_size[1]), 3)
     rgb_fine = torch.zeros(rgb_size, dtype=torch.float32).view(-1, 3)

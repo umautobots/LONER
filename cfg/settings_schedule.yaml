@@ -89,13 +89,30 @@ mapper:
       fix_poses: False
       fix_sigma_mlp: False
       fix_rgb_mlp: False
-    iteration_schedule:
+    detach_rgb_from_poses: True
+    keyframe_schedule:
       - 
         num_keyframes: 1
-        iteration_count: 500
+        iteration_schedule:
+          - num_iterations: 10
+            stage: 3
+            fix_poses: True
+            fix_sigma_mlp: False
+            fix_rgb_mlp: False
       -
         num_keyframes: -1
-        iteration_count: 150
+        iteration_schedule:
+          - stage: 1
+            num_iterations: 5
+            fix_poses: False
+            latest_kf_only: True
+            fix_sigma_mlp: True
+            fix_rgb_mlp: True
+          - stage: 3
+            num_iterations: 5
+            fix_poses: False
+            fix_sigma_mlp: False
+            fix_rgb_mlp: False
 
     model_config: !include model_config/decoupled_carla_halfres.yaml
   

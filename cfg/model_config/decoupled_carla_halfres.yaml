@@ -11,7 +11,7 @@ model:
     ray_range: *ray_range
 
     render:
-        N_samples_train: 1024          # number of samples per ray
+        N_samples_train: 512          # number of samples per ray
         N_samples_test: 2048      # number of samples per ray during testing
         retraw: True
         lindisp: False          # sampling linearly in disparity rather than depth
@@ -28,8 +28,9 @@ model:
         N_iters_acc: 10    # number of iters to accumulate gradients before stepping optimizer
 
 train:
-    lrate_mlp: 0.05             # learning rate
-    lrate_pose: 0.05
+    lrate_mlp: 0.1             # learning rate
+    lrate_pose: 0.005
+    lrate_gamma: 0.95 
     decay_rate: 0.001
      
 loss:

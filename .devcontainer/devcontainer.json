@@ -7,10 +7,10 @@
     "huizhou.githd"
   ],
   "mounts":[
-    "source=/home/${env:USERNAME}/Documents/ClonerSlamData/,target=/home/${env:USERNAME}/data,type=bind"
+    "source=/home/${env:USER}/Documents/ClonerSlamData/,target=/home/${env:USER}/data,type=bind"
   ],
-  "workspaceMount": "source=${localWorkspaceFolder},target=/home/${env:USERNAME}/ClonerSLAM,type=bind",
-  "workspaceFolder": "/home/${env:USERNAME}/ClonerSLAM",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/home/${env:USER}/ClonerSLAM,type=bind",
+  "workspaceFolder": "/home/${env:USER}/ClonerSLAM",
   "containerEnv": {"DISPLAY":"${env:DISPLAY}"},
   "runArgs": [
               "--privileged",
@@ -19,7 +19,7 @@
               "--net=host",
               "--runtime=nvidia",
               "-e SDL_VIDEODRIVER=x11",
-              "--shm-size=16G",
+              "--shm-size=64G",
               "--ipc=host"
             ],
   "postStartCommand": "sudo ldconfig"

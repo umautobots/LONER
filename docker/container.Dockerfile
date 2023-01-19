@@ -86,9 +86,7 @@ RUN ldconfig && pip3 install git+https://github.com/NVlabs/tiny-cuda-nn/#subdire
     (echo "Note: Unable find Cuda. See the README Build Section for details on fixing" && false)
     
 
-RUN wget https://github.com/facebookresearch/pytorch3d/archive/refs/tags/v0.7.2.tar.gz -O pytorch3d \
-  && tar -xvf pytorch3d \
-  && cd pytorch3d-0.7.2 \
+RUN ldconfig && pip3 install "git+https://github.com/facebookresearch/pytorch3d.git@v0.7.2"
   
 
 # Install PCL and python bindings

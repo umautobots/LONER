@@ -20,11 +20,6 @@ import datetime
 class ClonerSLAM:
     """ Top-level SLAM module.
 
-    Options for running synchronously (all in one thread) or asynchronously.
-
-    To run asynchronously, call Run with synchronous=false, then pass in measurements
-    from another thread (i.e. using ROS callbacks)
-
     To run sychronously, call Start with sychronous=true, then pass in measurements in the
     same or a different thread. When you're done, call Stop()
     """
@@ -43,8 +38,8 @@ class ClonerSLAM:
         mp.set_start_method('spawn')
         
         # The top-level module inserts RGB frames/Lidar, and the tracker reads them
-        self._rgb_signal = Signal()
-        self._lidar_signal = Signal()
+        self._rgb_signal = Signal(synchronous=True)
+        self._lidar_signal = Signal(synchronous=True)
 
         # The tracker inserts Frames, and the mapper reads them
         self._frame_signal = Signal()
@@ -74,7 +69,7 @@ class ClonerSLAM:
     def get_world_cube(self) -> WorldCube:
         return self._world_cube
 
-    def start(self, synchronous: bool = True) -> None:
+    def start(self) -> None:
         if not self._initialized:
             raise RuntimeError(
                 "Can't Start: System Uninitialized. You must call initialize first.")
@@ -137,10 +132,6 @@ class ClonerSLAM:
         self._mapping_process.daemon = True
         self._tracking_process.start()
         self._mapping_process.start()
-
-        if not synchronous:
-            self._tracking_process.join()
-            self._mapping_process.join()
 
     # Stop the processes running the mapping and tracking
     def stop(self, waiting_action=None, finish_action=None):

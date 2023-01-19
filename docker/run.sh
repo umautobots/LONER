@@ -22,7 +22,7 @@ DOCKER_OPTIONS+="--runtime=nvidia "
 DOCKER_OPTIONS+="-e SDL_VIDEODRIVER=x11 "
 DOCKER_OPTIONS+="-v /etc/passwd:/etc/passwd:ro -v /etc/group:/etc/group:ro "
 DOCKER_OPTIONS+="-u $(id -u) "
-DOCKER_OPTIONS+="--shm-size 16G "
+DOCKER_OPTIONS+="--shm-size 32G "
 DOCKER_OPTIONS+="$(id --groups | sed 's/\(\b\w\)/--group-add \1/g') "
 
 for cam in /dev/video*; do

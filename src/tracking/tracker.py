@@ -1,3 +1,4 @@
+import cProfile
 import copy
 import os
 
@@ -55,8 +56,6 @@ class Tracker:
         self._t_lidar_to_camera = Pose.from_settings(
             settings.calibration.lidar_to_camera)
 
-        print("IN Tracker:", self._t_lidar_to_camera.get_transformation_matrix(), settings.calibration.lidar_to_camera)
-
         self._frame_synthesizer = FrameSynthesis(
             self._settings.frame_synthesis, self._t_lidar_to_camera)
 
@@ -101,7 +100,6 @@ class Tracker:
                     print("Warning: Failed to track frame. Skipping.")
                     continue
                 
-                print(frame.get_start_time(), frame.get_end_time())
                 if self._settings.debug.write_frame_point_clouds:
                     pcd = frame.build_point_cloud()
                     logdir = f"{self._settings.log_directory}/frames/"
@@ -110,7 +108,7 @@ class Tracker:
                         f"{logdir}/cloud_{self._frame_count}.pcd", pcd)
 
                 self._frame_signal.emit(frame)
-            
+
         self._processed_stop_signal.value = True
 
         print("Tracking Done. Waiting to terminate.")

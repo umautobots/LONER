@@ -36,7 +36,7 @@
       "name": "ClonerSLAM: Fusion Portable",
       "type": "python",
       "request": "launch",
-      "program": "${workspaceFolder}/examples/run_fusion_portable.py",
+      "program": "${workspaceFolder}/examples/fusion_portable/run_fusion_portable.py",
       "console": "integratedTerminal",
       "args": ["${workspaceFolder}/../data/fusion_portable/20220216_canteen_day/20220216_canteen_day_ref.bag",
                "${workspaceFolder}/../data/fusion_portable/calibration/20220209_calib/"],

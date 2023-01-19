@@ -5,6 +5,19 @@ import torch
 import torch.nn as nn
 
 
+class CoupledNeRF(nn.Module):
+    def __init__(self, cfg, num_colors=3):
+        super().__init__()
+
+        self.num_colors = num_colors
+        self.cfg = cfg
+
+        self._model = tcnn.NetworkWithInputEncoding(
+            n_input_dims=6,
+            n_output_dims=4
+        )
+
+
 class NeRF(nn.Module):
     def __init__(self, cfg, num_colors=3):
         super(NeRF, self).__init__()

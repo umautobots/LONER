@@ -2,6 +2,10 @@ from typing import Tuple
 
 import pytorch3d.transforms as transf
 import torch
+import numpy as np
+from pathlib import Path
+import cv2
+import os
 
 from common.frame import Frame
 from common.pose import Pose
@@ -31,6 +35,13 @@ class KeyFrame:
         self.num_strategy_lidar_samples = None
 
         self._device = device
+
+        self._tracked_start_lidar_pose = frame.get_start_lidar_pose().clone()
+        self._tracked_end_lidar_pose = frame.get_end_lidar_pose().clone()
+
+        self.is_anchored = False
+
+        self.loss_distribution = None
 
     def to(self, device) -> "KeyFrame":
         self._frame.to(device)
@@ -232,7 +243,8 @@ class KeyFrame:
                           ray_range: torch.Tensor,
                           cam_ray_directions: CameraRayDirections,
                           world_cube: WorldCube,
-                          use_gt_poses: bool = False) -> torch.Tensor:
+                          use_gt_poses: bool = False,
+                          detach_rgb_from_poses: bool = False) -> torch.Tensor:
 
         if use_gt_poses:
             start_pose = self._frame._gt_lidar_start_pose * self._frame._lidar_to_camera
@@ -241,17 +253,27 @@ class KeyFrame:
             start_pose = self.get_start_camera_pose()
             end_pose = self.get_end_camera_pose()
 
-        first_rays, first_intensities = cam_ray_directions.build_rays(first_camera_indices,
-                                start_pose,
-                                self._frame.start_image, 
-                                world_cube,
-                                ray_range)
+        if detach_rgb_from_poses:
+            start_pose = start_pose.detach()
+            end_pose = end_pose.detach()
 
-        second_rays, second_intensities = cam_ray_directions.build_rays(second_camera_indices,
-                                end_pose,
-                                self._frame.end_image,
-                                world_cube,
-                                ray_range)
+        if first_camera_indices is not None:
+            first_rays, first_intensities = cam_ray_directions.build_rays(first_camera_indices,
+                                    start_pose,
+                                    self._frame.start_image, 
+                                    world_cube,
+                                    ray_range)
+            if second_camera_indices is None:
+                return first_rays, first_intensities
+
+        if second_camera_indices is not None:
+            second_rays, second_intensities = cam_ray_directions.build_rays(second_camera_indices,
+                                    end_pose,
+                                    self._frame.end_image,
+                                    world_cube,
+                                    ray_range)
+            if first_camera_indices is None:
+                return second_rays, second_intensities
 
         return torch.vstack((first_rays, second_rays)), torch.vstack((first_intensities, second_intensities))
 
@@ -260,7 +282,60 @@ class KeyFrame:
             "timestamp": self.get_start_time(),
             "start_lidar_pose": self._frame.get_start_lidar_pose().get_pose_tensor(),
             "end_lidar_pose": self._frame.get_end_lidar_pose().get_pose_tensor(),
+            "tracked_start_lidar_pose": self._tracked_start_lidar_pose.get_pose_tensor(),
+            "tracked_end_lidar_pose": self._tracked_end_lidar_pose.get_pose_tensor(),
             "gt_start_lidar_pose": self._frame._gt_lidar_start_pose.get_pose_tensor(),
             "gt_end_lidar_pose": self._frame._gt_lidar_end_pose.get_pose_tensor(),
             "lidar_to_camera": self._frame._lidar_to_camera.get_pose_tensor()
         }
+
+
+    def draw_loss_distribution(self, output_path, total_loss: float = None, kept: bool = None) -> None:
+        image = self._frame.start_image.image.detach().cpu().numpy()*255
+
+        
+        # https://stackoverflow.com/a/69097578
+        h, w, _ = image.shape
+        rows, cols = (8,8)
+        dy, dx = h / rows, w / cols
+        # draw vertical lines
+        for x in np.linspace(start=dx, stop=w-dx, num=cols-1):
+            x = int(round(x))
+            cv2.line(image, (x, 0), (x, h), color=(255,255,255), thickness=1)
+        # draw horizontal lines
+        for y in np.linspace(start=dy, stop=h-dy, num=rows-1):
+            y = int(round(y))
+            cv2.line(image, (0, y), (w, y), color=(255,255,255), thickness=1)
+        
+        font = cv2.FONT_HERSHEY_SIMPLEX
+
+        # Draw Text
+        for row in range(8):
+            for col in range(8):
+                idx = row * 8 + col
+                val = self.loss_distribution[idx]
+
+                top_left = (int(col*dx), int(row*dy))
+                bottom_right = (int(col*dx + 35), int(row*dy + 20))
+
+                cv2.rectangle(image, top_left, bottom_right, (0,0,0), -1)
+        
+                loc = (int(col*dx), int(row*dy + 10))
+                cv2.putText(image, f"{val:.3f}", loc, font, 0.35, (255,255,255))
+
+
+        if total_loss is not None:
+            top_left = (0, int(h - 18))
+            bottom_right = (150, h)
+            
+            cv2.rectangle(image, top_left, bottom_right, (0,0,0), -1)
+            if kept is not None:
+                kept_str = "kept" if kept else "del"
+                loss_str = f"{total_loss:.3f}:{kept_str}"
+            else:
+                loss_str = f"{total_loss:.3f}"
+
+        cv2.putText(image, loss_str, (0, int(h-5)), font, 0.5, (255,255,255))
+        output_path_dir = str(Path(output_path).parent)
+        os.makedirs(output_path_dir, exist_ok=True) 
+        cv2.imwrite(output_path, image)

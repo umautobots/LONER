@@ -3,6 +3,7 @@ Extremely simple signals/slots implementation for multiprocessing
 information sharing
 """
 
+import time
 import torch.multiprocessing as mp
 
 class StopSignal:
@@ -51,10 +52,13 @@ class Signal:
     """
 
     # Constructor: An empty signal is just an empty list of slots
-    def __init__(self):
+    # If @p synchronous is True, then emit will block until each item has been removed
+    def __init__(self, synchronous = False):
 
         # Stores Slot objects to write to when data is emitted
         self._slots = []
+
+        self._synchronous = synchronous
 
     # Removes all leftover items from the queue.
     # This is important if you want your code to terminate properly.
@@ -69,6 +73,7 @@ class Signal:
                 s._queue.get()
 
     # Creates and returns a Slot which listens on the Signal
+    # If synchronous is True, this 
     def register(self) -> Slot:
         self._slots.append(Slot())
         return self._slots[-1]
@@ -76,4 +81,6 @@ class Signal:
     # Sends the given value to all the registered Slots
     def emit(self, value) -> None:
         for s in self._slots:
+            while self._synchronous and s.has_value():
+                time.sleep(1e-5)
             s._insert(value)

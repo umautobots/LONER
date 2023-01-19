@@ -130,7 +130,7 @@ def _get_view_frustum_corners(K, H, W, min_depth=1, max_depth=1e6):
 
 
 # TODO (seth): Update comments, this is all fake news now. we don't actually move anything
-def compute_world_cube(camera_to_lidar, intrinsic_mats, image_sizes, lidar_poses, camera_range, padding=0.3) -> WorldCube:
+def compute_world_cube(camera_to_lidar, intrinsic_mats, image_sizes, lidar_poses, camera_range, padding=0.9) -> WorldCube:
     """
     Compute an axis aligned minimal cube encompassing sensor poses and camera view frustums with the given camera range. 
     An additional padding is added. 

@@ -52,6 +52,7 @@ class FrameSynthesis:
     # Enqueues image from @p image.
     # @precond incoming images are in monotonically increasing order (in timestamp)
     def process_image(self, image: Image, gt_pose: Pose = None) -> None:
+        
         if image.timestamp - self._prev_accepted_timestamp >= self._frame_delta_t_sec - FRAME_TOLERANCE:
             self._prev_accepted_timestamp = image.timestamp
 
@@ -111,16 +112,16 @@ class FrameSynthesis:
                 last_valid_idx = len(self._lidar_queue)
 
             # Get the points from the queue that need to be moved to the current frame
-            new_ray_directions = self._lidar_queue.ray_directions[..., first_valid_idx:last_valid_idx]
-            new_distances = self._lidar_queue.distances[first_valid_idx:last_valid_idx]
-            new_timestamps = self._lidar_queue.timestamps[first_valid_idx:last_valid_idx]
+            new_ray_directions = self._lidar_queue.ray_directions[..., first_valid_idx:last_valid_idx:10]
+            new_distances = self._lidar_queue.distances[first_valid_idx:last_valid_idx:10]
+            new_timestamps = self._lidar_queue.timestamps[first_valid_idx:last_valid_idx:10]
 
             single_origin = self._lidar_queue.ray_origin_offsets.dim() == 2
             if single_origin:
                 new_ray_origins = self._lidar_queue.ray_origin_offsets
             else:
                 new_ray_origins = self._lidar_queue.ray_origin_offsets[...,
-                                                                       first_valid_idx:last_valid_idx]
+                                                                       first_valid_idx:last_valid_idx:10]
 
             frame.lidar_points.add_points(
                 new_ray_directions, new_distances, new_ray_origins, new_timestamps)
@@ -153,5 +154,4 @@ class FrameSynthesis:
         if len(self._completed_frames) == 0:
             return None
 
-        new_frame = self._completed_frames.pop(0)
-        return new_frame
+        return self._completed_frames.pop(0)
