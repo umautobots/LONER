@@ -40,7 +40,7 @@
       "console": "integratedTerminal",
       "args": ["${workspaceFolder}/../data/fusion_portable/20220216_canteen_day/20220216_canteen_day_ref.bag",
                "${workspaceFolder}/../data/fusion_portable/calibration/20220209_calib/"],
-      "cwd": "${workspaceFolder}/examples",
+      "cwd": "${workspaceFolder}/examples/fusion_portable",
       "subProcess": true
     },
     {
@@ -52,6 +52,18 @@
       "args": ["${workspaceFolder}/../data/fusion_portable/20220216_canteen_day/20220216_canteen_day_ref.bag",
                "${workspaceFolder}/../data/fusion_portable/calibration/20220209_calib/"],
       "cwd": "${workspaceFolder}/test",
+      "subProcess": true
+    },
+    {
+      "name": "Stereo To RGBD",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/examples/fusion_portable/stereo_to_rgbd.py",
+      "console": "integratedTerminal",
+      "args": ["${workspaceFolder}/../data/fusion_portable/20220216_canteen_day/20220216_canteen_day_ref.bag",
+               "${workspaceFolder}/../data/fusion_portable/calibration/20220209_calib/",
+              "--gui"],
+      "cwd": "${workspaceFolder}/examples/fusion_portable",
       "subProcess": true
     }
   ]

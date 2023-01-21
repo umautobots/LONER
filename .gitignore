@@ -9,5 +9,7 @@ docs/latex
 outputs/
 graphs/
 *.png
+*.pcd
+*.ply
 
 test/outputs/

@@ -55,7 +55,7 @@ class FusionPortableCalibration:
             distortion_model = frame0_cal["distortion_model"]
             rectification_matrix = frame0_cal["rectification_matrix"]
             projection_matrix = frame0_cal["projection_matrix"]
-
+ 
             self.left_cam_intrinsic = {
                 "K": K,
                 "distortion_model": distortion_model,
@@ -94,3 +94,11 @@ class FusionPortableCalibration:
             }
             self.stereo_baseline = np.linalg.norm(
                 frame1_cal["translation_stereo"])
+
+
+            # by observation cx1 == cx2 in the provided calibration files
+            assert self.left_cam_intrinsic["projection_matrix"][0, 2] == self.right_cam_intrinsic["projection_matrix"][0, 2], f"cx1 is not equal to cx2 in the rectified projection matrices"
+            self.stereo_disp_to_depth_matrix = np.array([[1., 0., 0., -projection_matrix[0, 2]],
+                                                         [0., 1., 0., -projection_matrix[1, 2]],
+                                                         [0., 0., 0.,  projection_matrix[0, 0]],
+                                                         [0., 0., 1/self.stereo_baseline, 0.]])

@@ -278,14 +278,14 @@ if __name__ == "__main__":
     rays_to_pcd(start_cam_rays, torch.ones_like(start_cam_rays[:,0])*2, "outputs/rays/start_cam_rays.pcd", "outputs/rays/start_cam_origins.pcd", start_cam_intensities)
     rays_to_pcd(end_cam_rays, torch.ones_like(end_cam_rays[:,0])*2, "outputs/rays/end_cam_rays.pcd", "outputs/rays/end_cam_origins.pcd", end_cam_intensities)
 
-    # viewer = o3d.visualization.Visualizer()
-    # viewer.create_window()
-    # for geometry in [start_o3d_from_rays, end_o3d_from_rays, start_cam_o3d, end_cam_o3d]:
-    #     viewer.add_geometry(geometry)
-    # opt = viewer.get_render_option()
-    # opt.show_coordinate_frame = True
-    # # opt.background_color = np.asarray([0.5, 0.5, 0.5])
-    # viewer.run()
-    # viewer.destroy_window()
+    viewer = o3d.visualization.Visualizer()
+    viewer.create_window()
+    for geometry in [start_o3d_from_rays, end_o3d_from_rays, start_cam_o3d, end_cam_o3d]:
+        viewer.add_geometry(geometry)
+    opt = viewer.get_render_option()
+    opt.show_coordinate_frame = True
+    # opt.background_color = np.asarray([0.5, 0.5, 0.5])
+    viewer.run()
+    viewer.destroy_window()
 
     # o3d.visualization.draw_geometries([start_o3d_from_rays, end_o3d_from_rays, start_cam_o3d, end_cam_o3d])#, start_o3d_from_rays, end_o3d_from_rays])
