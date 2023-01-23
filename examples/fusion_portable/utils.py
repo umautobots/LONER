@@ -29,7 +29,6 @@ def build_buffer_from_df(df: pd.DataFrame):
         new_transform.transform.rotation.w = row["q_w"]
 
         tf_buffer.set_transform(new_transform, "default_authority")
-
     return tf_buffer, timestamps
 
 
