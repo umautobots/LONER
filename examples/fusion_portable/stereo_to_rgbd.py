@@ -4,13 +4,13 @@ import cv2
 from fusion_portable_calibration import FusionPortableCalibration
 import argparse
 import rosbag
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import CameraInfo
 from cv_bridge import CvBridge
 from bayes_opt import BayesianOptimization
 from geometry_msgs.msg import TransformStamped
 from bayes_opt.logger import JSONLogger
 from bayes_opt.event import Events
-import tf2_py
+import tf2_msgs.msg
 import tqdm
 import rospy
 import ros_numpy
@@ -24,6 +24,8 @@ from torchvision.models.optical_flow import raft_large
 import torchvision.transforms.functional as F
 import torch
 from torchvision.utils import flow_to_image
+from more_itertools import peekable
+import numpy.lib.recfunctions as rf
 
 MIN_DISPARITY = 0
 NUM_DISPARITIES = 3
@@ -97,6 +99,10 @@ rosbag_path = Path(args.rosbag_path)
 ground_truth_file = rosbag_path.parent / "ground_truth_traj.txt"
 ground_truth_df = pd.read_csv(ground_truth_file, names=["timestamp","x","y","z","q_x","q_y","q_z","q_w"], delimiter=" ")
 tf_buffer, _ = build_buffer_from_df(ground_truth_df)
+
+if args.raft:
+    calibration.stereo_disp_to_depth_matrix[3,2] *= -1
+
 
 if args.gui:
     ### Extract data from rosbag
@@ -535,7 +541,7 @@ elif args.build_rosbag:
 
         lidar_to_cam_msg = TransformStamped()
         lidar_to_cam_msg.header.frame_id = "lidar"
-        lidar_to_cam_msg.child_frame_id = "/stereo/frame_left"
+        lidar_to_cam_msg.child_frame_id = "/camera/depth"
         
         lidar_to_cam_msg.transform.translation.x = t_lc[0]
         lidar_to_cam_msg.transform.translation.y = t_lc[1]
@@ -546,16 +552,42 @@ elif args.build_rosbag:
         lidar_to_cam_msg.transform.rotation.z = quat_lc[2]
         lidar_to_cam_msg.transform.rotation.w = quat_lc[3]
 
+    cam_info_msg = CameraInfo()
+    cam_info_msg.header.frame_id = "/camera/depth"
+    cam_info_msg.width = size_left[0]
+    cam_info_msg.height = size_left[1]
+    cam_info_msg.distortion_model = "plumb_bob"
+    cam_info_msg.D = distortion_left.tolist()
+    cam_info_msg.K = K_left.flatten().tolist()
+    cam_info_msg.R = rect_left.flatten().tolist()
+    cam_info_msg.P = proj_left.flatten().tolist()
+    
 
-    bag_it = bag.read_messages(topics=["/stereo/frame_left/image_raw", "/stereo/frame_right/image_raw"])
+    bag_it = peekable(bag.read_messages(topics=["/stereo/frame_left/image_raw", "/stereo/frame_right/image_raw", "/os_cloud_node/points"]))
+    
     output_bag = rosbag.Bag("canteen_rgbd.bag", 'w')
-
+    
     for idx in tqdm.trange(bag.get_message_count(["/stereo/frame_left/image_raw", "/stereo/frame_right/image_raw"])//2):
         # if idx > 100:
         #     break
         try:
+            # This relies on the fact the the bags are very well-ordered: 1 lidar, then 4 cameras, forever.
+            
+            while bag_it.peek()[0] == "/os_cloud_node/points":
+                lidar_topic, lidar_msg, lidar_ts = next(bag_it)
+                lidar_msg.header.frame_id = "lidar"
+            
             topic1, msg1, timestamp1 = next(bag_it)
+
+            while bag_it.peek()[0] == "/os_cloud_node/points":
+                lidar_topic, lidar_msg, lidar_ts = next(bag_it)
+                lidar_msg.header.frame_id = "lidar"
+            
             _, msg2, timestamp2 = next(bag_it)
+
+            if bag_it.peek()[0] == "/os_cloud_node/points":
+                lidar_topic, lidar_msg, lidar_ts = next(bag_it)
+                lidar_msg.header.frame_id = "lidar"
         except StopIteration:
             break
 
@@ -618,14 +650,24 @@ elif args.build_rosbag:
 
         if args.log_tf2:
             lidar_to_cam_msg.header.stamp = left_ts
+            lidar_to_cam_msg.header.seq = idx
+            tf_message = tf2_msgs.msg.TFMessage()
 
-            output_bag.write("/tf_static", lidar_to_cam_msg)
-
+            tf_message.transforms.append(lidar_to_cam_msg)
             try:
-                world_to_lidar_msg = tf_buffer.lookup_transform_core("map","lidar",left_ts)
-                output_bag.write("/tf", world_to_lidar_msg)
+                if args.log_lidar:
+                    lidar_bag_ts = lidar_ts
+                else:
+                    lidar_bag_ts = left_ts
+                world_to_lidar_msg = tf_buffer.lookup_transform_core("map","lidar",lidar_bag_ts)
+                world_to_lidar_msg.header.stamp = lidar_bag_ts
+                world_to_lidar_msg.header.seq = idx
+                tf_message.transforms.append(world_to_lidar_msg)
             except:
                 pass
+            output_bag.write("/tf", tf_message)
+        if args.log_lidar:
+            output_bag.write(lidar_topic, lidar_msg)
 
         # disp_copy = disparity.copy()
         # yflows = predicted_flows[0,1,:].detach().cpu().numpy()
@@ -636,7 +678,14 @@ elif args.build_rosbag:
         # yflows_viz = cv2.applyColorMap(yflows_viz.astype(np.uint8), cv2.COLORMAP_TURBO)
 
         ptcloud = cv2.reprojectImageTo3D(disparity, calibration.stereo_disp_to_depth_matrix)
-        depth_image = np.linalg.norm(ptcloud, axis=2)
+        ptcloud_data = rf.unstructured_to_structured(ptcloud.reshape(-1, 3), \
+            dtype=np.dtype([('x', np.float32), ('y', np.float32), ('z', np.float32)]))
+
+        ptcloud2_msg = ros_numpy.point_cloud2.array_to_pointcloud2(ptcloud_data)
+        ptcloud2_msg.header.stamp = left_ts
+        ptcloud2_msg.header.frame_id = "camera/depth"
+
+        depth_image = ptcloud[...,2] # np.linalg.norm(ptcloud, axis=2)
 
         depth_image_unrectified = cv2.remap(depth_image,
             xmap_inv_left, ymap_inv_left, cv2.INTER_LANCZOS4, cv2.BORDER_CONSTANT, 0)
@@ -645,6 +694,11 @@ elif args.build_rosbag:
         depthmsg = bridge.cv2_to_imgmsg(depth_image)
         depthmsg.header.stamp = timestamp1
         
+        output_bag.write("/camera/rgb/camera_info", cam_info_msg)
+        output_bag.write("/camera/depth/camera_info", cam_info_msg)
+        left_msg.header.frame_id = "camera/depth"
+        depthmsg.header.frame_id = "camera/depth"
         output_bag.write("/camera/rgb/image_raw", left_msg)
-        output_bag.write("/camera/depth/image_raw", depthmsg)
+        output_bag.write("/camera/depth", depthmsg)
+        output_bag.write("/depth_cloud", ptcloud2_msg)
     output_bag.close()

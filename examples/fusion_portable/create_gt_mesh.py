@@ -59,7 +59,6 @@ def process_cloud(bag_it):
     if timestamps[-1] > gt_timestamps[-1]:
         return None
     
-    # Invert the transformation as we go
     rotations = slerp(timestamps).as_matrix()
     translations = xyz_interp(timestamps).reshape(-1, 3, 1)
     T = np.concatenate((rotations, translations), axis=2)
@@ -84,7 +83,7 @@ for cloud in tqdm.tqdm(clouds):
         continue
     result_pcd.points.extend(o3d.cuda.pybind.utility.Vector3dVector(cloud))
 
-result_pcd = result_pcd.voxel_down_sample(voxel_size=0.01)
-o3d.io.write_point_cloud("ground_truth_mesh_fine.pcd", result_pcd)
+result_pcd = result_pcd.voxel_down_sample(voxel_size=0.05)
+o3d.io.write_point_cloud("ground_truth_mesh_no_mocomp.pcd", result_pcd)
     
     
