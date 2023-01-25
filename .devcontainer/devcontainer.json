@@ -7,7 +7,8 @@
     "huizhou.githd"
   ],
   "mounts":[
-    "source=/home/${env:USER}/Documents/ClonerSlamData/,target=/home/${env:USER}/data,type=bind"
+    "source=/home/${env:USER}/Documents/ClonerSlamData/,target=/home/${env:USER}/data,type=bind",
+    "source=/mnt/,target=/mnt,type=bind"
   ],
   "workspaceMount": "source=${localWorkspaceFolder},target=/home/${env:USER}/ClonerSLAM,type=bind",
   "workspaceFolder": "/home/${env:USER}/ClonerSLAM",

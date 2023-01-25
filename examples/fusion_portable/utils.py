@@ -4,7 +4,7 @@ import tf2_py
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from geometry_msgs.msg import TransformStamped
+from geometry_msgs.msg import TransformStamped, Pose
 
 
 def build_buffer_from_df(df: pd.DataFrame):
@@ -56,3 +56,20 @@ def msg_to_transformation_mat(tf_msg):
     T = np.hstack((rotmat, xyz))
     T = np.vstack((T, [0,0,0,1]))
     return T
+
+def transformation_mat_to_pose_msg(tf):
+    pose_msg = Pose()
+
+    quat = Rotation.from_matrix(tf[:3,:3]).as_quat()
+    trans = tf[:3,3]
+    
+    pose_msg.position.x = trans[0]
+    pose_msg.position.y = trans[1]
+    pose_msg.position.z = trans[2]
+
+    pose_msg.orientation.x = quat[0]
+    pose_msg.orientation.y = quat[1]
+    pose_msg.orientation.z = quat[2]
+    pose_msg.orientation.w = quat[3]
+
+    return pose_msg

@@ -171,7 +171,6 @@ if __name__ == "__main__":
     image_topic = f"{topic_prefix}/{camera}/{camera_suffix}"
     lidar_topic = f"{topic_prefix}/{lidar}"
 
-
     K = torch.from_numpy(calibration.left_cam_intrinsic["K"]).float()
     K[:2, :] *= IM_SCALE_FACTOR
 

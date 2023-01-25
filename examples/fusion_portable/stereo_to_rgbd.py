@@ -7,7 +7,7 @@ import rosbag
 from sensor_msgs.msg import CameraInfo
 from cv_bridge import CvBridge
 from bayes_opt import BayesianOptimization
-from geometry_msgs.msg import TransformStamped
+from geometry_msgs.msg import TransformStamped, PoseStamped
 from bayes_opt.logger import JSONLogger
 from bayes_opt.event import Events
 import tf2_msgs.msg
@@ -25,7 +25,7 @@ import torchvision.transforms.functional as F
 import torch
 from torchvision.utils import flow_to_image
 from more_itertools import peekable
-import numpy.lib.recfunctions as rf
+import numpy.lib.recfunctions as rf 
 
 MIN_DISPARITY = 0
 NUM_DISPARITIES = 3
@@ -541,7 +541,7 @@ elif args.build_rosbag:
 
         lidar_to_cam_msg = TransformStamped()
         lidar_to_cam_msg.header.frame_id = "lidar"
-        lidar_to_cam_msg.child_frame_id = "/camera/depth"
+        lidar_to_cam_msg.child_frame_id = "camera/depth"
         
         lidar_to_cam_msg.transform.translation.x = t_lc[0]
         lidar_to_cam_msg.transform.translation.y = t_lc[1]
@@ -648,27 +648,46 @@ elif args.build_rosbag:
             # Converting to float32 
             disparity = disparity.astype(np.float32) / 16.0
 
-        if args.log_tf2:
-            lidar_to_cam_msg.header.stamp = left_ts
-            lidar_to_cam_msg.header.seq = idx
-            tf_message = tf2_msgs.msg.TFMessage()
+        if args.log_lidar:
+            lidar_bag_ts = lidar_ts
+        else:
+            lidar_bag_ts = left_ts
+        
+        try:
+            world_to_lidar_msg = tf_buffer.lookup_transform_core("map","lidar",lidar_bag_ts)
 
-            tf_message.transforms.append(lidar_to_cam_msg)
-            try:
-                if args.log_lidar:
-                    lidar_bag_ts = lidar_ts
-                else:
-                    lidar_bag_ts = left_ts
-                world_to_lidar_msg = tf_buffer.lookup_transform_core("map","lidar",lidar_bag_ts)
+            if args.log_tf2:
+                lidar_to_cam_msg.header.stamp = left_ts
+                lidar_to_cam_msg.header.seq = idx
+                tf_message = tf2_msgs.msg.TFMessage()
+
+                tf_message.transforms.append(lidar_to_cam_msg)
                 world_to_lidar_msg.header.stamp = lidar_bag_ts
                 world_to_lidar_msg.header.seq = idx
                 tf_message.transforms.append(world_to_lidar_msg)
-            except:
-                pass
-            output_bag.write("/tf", tf_message)
-        if args.log_lidar:
-            output_bag.write(lidar_topic, lidar_msg)
+                output_bag.write("/tf", tf_message, t=lidar_bag_ts)
+            if args.log_lidar:
+                output_bag.write(lidar_topic, lidar_msg, t=lidar_bag_ts)
 
+            # Log the poses
+            world_to_lidar_msg_cam_time = tf_buffer.lookup_transform_core("map","lidar",left_ts)
+            world_to_lidar = msg_to_transformation_mat(world_to_lidar_msg_cam_time)
+            world_to_cam = world_to_lidar @ lidar_to_cam
+            pose_msg_cam = transformation_mat_to_pose_msg(world_to_cam)
+            pose_msg_lidar = transformation_mat_to_pose_msg(world_to_lidar)
+            pose_msg_lidar_stamped = PoseStamped()
+            pose_msg_lidar_stamped.pose = pose_msg_lidar
+            pose_msg_lidar_stamped.header.frame_id = "map"
+            pose_msg_lidar_stamped.header.stamp = left_ts
+
+            pose_msg_camera_stamped = PoseStamped()
+            pose_msg_camera_stamped.pose = pose_msg_cam
+            pose_msg_camera_stamped.header.frame_id = "map"
+            pose_msg_camera_stamped.header.stamp = left_ts
+            output_bag.write("/pose_lidar", pose_msg_lidar_stamped, t=left_ts)
+            output_bag.write("/pose_camera", pose_msg_camera_stamped, t=left_ts)
+        except Exception as e:
+            print("Ignoring: ", e)
         # disp_copy = disparity.copy()
         # yflows = predicted_flows[0,1,:].detach().cpu().numpy()
 
@@ -693,12 +712,13 @@ elif args.build_rosbag:
         depth_image[depth_image > MAX_RANGE] = MAX_RANGE
         depthmsg = bridge.cv2_to_imgmsg(depth_image)
         depthmsg.header.stamp = timestamp1
-        
-        output_bag.write("/camera/rgb/camera_info", cam_info_msg)
-        output_bag.write("/camera/depth/camera_info", cam_info_msg)
-        left_msg.header.frame_id = "camera/depth"
         depthmsg.header.frame_id = "camera/depth"
-        output_bag.write("/camera/rgb/image_raw", left_msg)
-        output_bag.write("/camera/depth", depthmsg)
-        output_bag.write("/depth_cloud", ptcloud2_msg)
+
+        cam_info_msg.header.stamp = left_ts
+        output_bag.write("/camera/rgb/camera_info", cam_info_msg, t=left_ts)
+        output_bag.write("/camera/depth/camera_info", cam_info_msg, t=left_ts)
+        left_msg.header.frame_id = "camera/depth"
+        output_bag.write("/camera/rgb/image_raw", left_msg, t=left_ts)
+        output_bag.write("/camera/depth", depthmsg, t=left_ts)
+        output_bag.write("/depth_cloud", ptcloud2_msg, t=left_ts)
     output_bag.close()
