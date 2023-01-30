@@ -46,8 +46,8 @@ from src.common.pose import Pose
 from src.common.pose_utils import WorldCube
 from src.common.sensors import Image, LidarScan
 from src.common.settings import Settings
-from src.visualization.draw_frames_to_mpl import MplFrameDrawer
-from src.visualization.draw_frames_to_ros import FrameDrawer
+from src.logging.default_logger import DefaultLogger
+from src.logging.draw_frames_to_ros import FrameDrawer
 
 # autopep8: on
 

@@ -319,3 +319,15 @@ def tensor_to_transform(transformation_tensors):
     H_row[3] = 1
     RT = torch.vstack((RT, H_row))
     return RT
+
+def dump_trajectory_to_tum(transformation_matrices: torch.Tensor,
+                      timestamps: torch.Tensor,
+                      output_file: str) -> None:
+    
+    translations = transformation_matrices[:, :3, 3].reshape(-1, 3)
+    rotations = pytorch3d.transforms.matrix_to_quaternion(transformation_matrices[:, :3, :3]).reshape(-1, 4)
+    # swap x,y,z,w to w,x,y,z
+    rotations = torch.hstack([rotations[:,3:4], rotations[:,1:3], rotations[:, 0:1]])
+    data = torch.hstack([timestamps.reshape(-1,1), translations, rotations])
+    data = data.detach().cpu().numpy()
+    np.savetxt(output_file, data, delimiter=" ")

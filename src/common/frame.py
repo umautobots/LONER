@@ -95,10 +95,10 @@ class Frame:
         return self
 
     def get_start_time(self):
-        return self.lidar_points.get_start_time()
+        return self.start_image.timestamp
 
     def get_end_time(self):
-        return self.lidar_points.get_end_time()
+        return self.end_image.timestamp
 
     # Builds a point cloud from the lidar scan.
     # @p time_per_scan: The maximum time to allow in a scan. This prevents aliasing without motion compensation.

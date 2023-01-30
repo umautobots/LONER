@@ -33,8 +33,8 @@ from src.common.pose import Pose
 from src.common.pose_utils import WorldCube
 from src.common.sensors import Image, LidarScan
 from src.common.settings import Settings
-from src.visualization.draw_frames_to_mpl import MplFrameDrawer
-from src.visualization.draw_frames_to_ros import FrameDrawer
+from src.logging.default_logger import DefaultLogger
+from src.logging.draw_frames_to_ros import FrameDrawer
 
 # autopep8: on
 
@@ -181,7 +181,8 @@ if __name__ == "__main__":
                              cloner_slam._rgb_signal,
                              cloner_slam.get_world_cube())
     else:
-        drawer = MplFrameDrawer(cloner_slam._frame_signal,
+        drawer = DefaultLogger(cloner_slam._frame_signal,
+                                cloner_slam._keyframe_update_signal,
                                 cloner_slam.get_world_cube(),
                                 settings.calibration)
 

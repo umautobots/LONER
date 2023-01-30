@@ -22,7 +22,7 @@ debug:
     write_icp_point_clouds: False
     profile: False
     use_groundtruth_poses: False
-    draw_loss_distribution: True
+    draw_loss_distribution: False
 
 # ros_names:
 #   camera: "ego_vehicle/rgb_front"
@@ -94,7 +94,7 @@ mapper:
       - 
         num_keyframes: 1
         iteration_schedule:
-          - num_iterations: 10
+          - num_iterations: 5
             stage: 3
             fix_poses: True
             fix_sigma_mlp: False
@@ -102,12 +102,14 @@ mapper:
       -
         num_keyframes: -1
         iteration_schedule:
+          # First refine the tracking
           - stage: 1
             num_iterations: 5
             fix_poses: False
             latest_kf_only: True
             fix_sigma_mlp: True
             fix_rgb_mlp: True
+          # Now joint optimization
           - stage: 3
             num_iterations: 5
             fix_poses: False

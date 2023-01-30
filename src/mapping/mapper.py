@@ -22,8 +22,10 @@ class Mapper:
     # @param settings: The settings for the mapping and all contained classes
     # @param frame_signal: A Signal which the tracker emits to with completed Frame objects
     def __init__(self, settings: Settings, calibration: Settings, frame_signal: Signal,
-                 world_cube: WorldCube) -> None:
+                 keyframe_update_signal: Signal, world_cube: WorldCube) -> None:
         self._frame_slot = frame_signal.register()
+        self._keyframe_update_signal = keyframe_update_signal
+
         self._settings = settings
 
         self._world_cube = world_cube #.to('device', clone=True)
@@ -74,13 +76,17 @@ class Mapper:
 
                     self._optimizer.iterate_optimizer(active_window)
 
+                    pose_state = self._keyframe_manager.get_poses_state()
+                    
                     ckpt = {'global_step': self._optimizer._global_step,
                             'network_state_dict': self._optimizer._model.state_dict(),
                             'optimizer_state_dict': self._optimizer._optimizer.state_dict(),
-                            'poses': self._keyframe_manager.get_poses_state(),
+                            'poses': pose_state,
                             'occ_model_state_dict': self._optimizer._occupancy_grid_model.state_dict(),
                             'occ_optimizer_state_dict': self._optimizer._occupancy_grid_optimizer.state_dict()}
 
+                    self._keyframe_update_signal.emit(pose_state)
+                    
                     os.makedirs(f"{self._settings.log_directory}/checkpoints", exist_ok=True)
                     torch.save(ckpt, f"{self._settings.log_directory}/checkpoints/ckpt_{self._optimizer._global_step}.tar")
                     

@@ -11,12 +11,11 @@ from utils import *
 from more_itertools import peekable
 
 LIDAR_MIN_RANGE = 0.3 #http://www.oxts.com/wp-content/uploads/2021/01/Ouster-datasheet-revc-v2p0-os0.pdf
-MOTION_COMPENSATE = False
-IM_COMPRESSED = True
 
-parser = argparse.ArgumentParser("stereo to rgbd")
-parser.add_argument("rosbag_path", type=str)
-parser.add_argument("calib_path", type=str)
+parser = argparse.ArgumentParser("Projection Calibration Test")
+parser.add_argument("rosbag_path", type=str, help="Path to Rosbag to process")
+parser.add_argument("calib_path", type=str, help="Path to root of calibration folder (i.e. 20220209_calib/)")
+parser.add_argument("--im_compressed", action="store_true", default=False, help="Set if using a rosbag with compressed images")
 
 args = parser.parse_args()
 
@@ -39,25 +38,18 @@ rotmat = Rotation.from_quat(rotation).as_matrix()
 lidar_to_left_cam = np.hstack((rotmat, xyz))
 lidar_to_left_cam = np.vstack((lidar_to_left_cam, [0,0,0,1]))  
 
-# xmap_left, ymap_left = cv2.initUndistortRectifyMap(K_left, distortion_left, rect_left, proj_left, (im_width, im_height), cv2.CV_32FC1)
-
-# Compute rectified extrinsics
-# R_rect_cam = np.eye(4)
-# R_rect_cam[0:3,0:3] = rect_left
-# T_cam = np.eye(4)
-# T_cam[0,3] = proj_left[0,3] / proj_left[0,0]
-# left_cam_to_lidar_unrect = np.linalg.inv(lidar_to_left_cam)
-# left_cam_to_lidar_rect = T_cam @ (R_rect_cam @ left_cam_to_lidar_unrect)
-# lidar_to_left_cam = np.linalg.inv(left_cam_to_lidar_rect)
-
-### Load GT poses
-compressed_str = "/compressed" if IM_COMPRESSED else ""
+compressed_str = "/compressed" if args.im_compressed else ""
 cam_topics = [f"/stereo/frame_left/image_raw{compressed_str}", f"/stereo/frame_right/image_raw{compressed_str}"]
 all_topics = cam_topics + ["/os_cloud_node/points"]
+
 
 ### Go through bag and get images and corresponding nearby lidar scans
 bag = rosbag.Bag(args.rosbag_path)
 bag_it = peekable(bag.read_messages(topics=all_topics))
+
+if bag.get_message_count(cam_topics) == 0:
+    print("Got no messages for camera topic. Did you forget to specify --im_compressed correctly?")
+    exit()
 
 for idx in tqdm.trange(bag.get_message_count(cam_topics)//2):
     try:
@@ -95,7 +87,7 @@ for idx in tqdm.trange(bag.get_message_count(cam_topics)//2):
         left_msg = msg2
         left_ts = timestamp2
 
-    if IM_COMPRESSED:
+    if args.im_compressed:
         left_im = bridge.compressed_imgmsg_to_cv2(left_msg, 'bgr8')
         right_im = bridge.compressed_imgmsg_to_cv2(right_msg, 'bgr8')
     else:
@@ -104,13 +96,6 @@ for idx in tqdm.trange(bag.get_message_count(cam_topics)//2):
 
     if lidar_msg is None:
         continue
-    
-    # left_im = cv2.remap(left_im,
-    #             xmap_left,
-    #             ymap_left,
-    #             cv2.INTER_LANCZOS4,
-    #             cv2.BORDER_CONSTANT,
-    #             0)
     
     # Get lidar points
     lidar_data = ros_numpy.point_cloud2.pointcloud2_to_array(lidar_msg)
@@ -130,8 +115,6 @@ for idx in tqdm.trange(bag.get_message_count(cam_topics)//2):
     # Project into image frame
     H = np.linalg.inv(lidar_to_left_cam)
     image_frame_points = cv2.projectPoints(lidar_frame_points, cv2.Rodrigues(H[:3,:3])[0], H[:3,3], K_left[:3,:3], distortion_left)[0].squeeze(1).astype(int)
-    # image_frame_points_homog = K_left[:3,:3] @ camera_frame_points.T
-    # image_frame_points = cv2.convertPointsFromHomogeneous(image_frame_points_homog.T).squeeze(1).astype(int)
 
     # Check in camera frame
     good_points = image_frame_points[:,0] >= 0

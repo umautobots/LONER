@@ -12,7 +12,7 @@ from utils import *
 from multiprocessing import Pool
 from tqdm.contrib.concurrent import process_map
 
-parser = argparse.ArgumentParser("stereo to rgbd")
+parser = argparse.ArgumentParser("Create GT Mesh")
 parser.add_argument("rosbag_path", type=str)
 args = parser.parse_args()
 
@@ -84,6 +84,6 @@ for cloud in tqdm.tqdm(clouds):
     result_pcd.points.extend(o3d.cuda.pybind.utility.Vector3dVector(cloud))
 
 result_pcd = result_pcd.voxel_down_sample(voxel_size=0.05)
-o3d.io.write_point_cloud("ground_truth_mesh_no_mocomp.pcd", result_pcd)
+o3d.io.write_point_cloud("reconstructed_mesh.pcd", result_pcd)
     
     

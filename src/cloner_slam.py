@@ -6,6 +6,9 @@ import torch
 import torch.multiprocessing as mp
 import os
 import pickle
+import yaml
+import datetime
+
 
 from common.pose import Pose
 from common.pose_utils import compute_world_cube, WorldCube
@@ -14,8 +17,8 @@ from common.sensors import Image, LidarScan
 from common.settings import Settings
 from mapping.mapper import Mapper
 from tracking.tracker import Tracker
-import yaml
-import datetime 
+from src.logging.default_logger import DefaultLogger
+
 
 class ClonerSLAM:
     """ Top-level SLAM module.
@@ -44,6 +47,9 @@ class ClonerSLAM:
         # The tracker inserts Frames, and the mapper reads them
         self._frame_signal = Signal()
 
+        # The Mapper sends updated keyframe poses each time the optimization is completed
+        self._keyframe_update_signal = Signal()
+
         # Placeholder for the Mapping and Tracking processes
         self._mapper = None
         self._tracker = None
@@ -54,6 +60,7 @@ class ClonerSLAM:
 
         # To initialize, call initialize
         self._initialized = False
+        
 
 
     def initialize(self, camera_to_lidar: torch.Tensor, all_lidar_poses: torch.Tensor,
@@ -64,7 +71,6 @@ class ClonerSLAM:
             camera_to_lidar, K_camera, image_size, all_lidar_poses, camera_range)
         self._initialized = True
         self._dataset_path = dataset_path
-
 
     def get_world_cube(self) -> WorldCube:
         return self._world_cube
@@ -85,6 +91,13 @@ class ClonerSLAM:
         self._experiment_name = f"{expname}_{now_str}"
         self._log_directory = os.path.expanduser(f"~/ClonerSLAM/outputs/{self._experiment_name}/")
         os.makedirs(self._log_directory, exist_ok=True)
+
+        # TODO: Add back support for ROS
+        self._logger = DefaultLogger(self._frame_signal,
+                                     self._keyframe_update_signal,
+                                     self._world_cube,
+                                     self._settings.calibration,
+                                     self._log_directory)
 
         self._settings["experiment_name"] = self._experiment_name
         self._settings["dataset_path"] = self._dataset_path
@@ -118,6 +131,7 @@ class ClonerSLAM:
         self._mapper = Mapper(self._settings.mapper,
                               self._settings.calibration,
                               self._frame_signal,
+                              self._keyframe_update_signal,
                               self._world_cube)
         self._tracker = Tracker(self._settings,
                                 self._rgb_signal,
@@ -134,15 +148,14 @@ class ClonerSLAM:
         self._mapping_process.start()
 
     # Stop the processes running the mapping and tracking
-    def stop(self, waiting_action=None, finish_action=None):
+    def stop(self):
         print("Stopping ClonerSLAM Sub-Processes")
 
         self._lidar_signal.emit(StopSignal())
         self._rgb_signal.emit(StopSignal())
 
         while not self._tracker._processed_stop_signal.value:
-            if waiting_action is not None:
-                waiting_action()
+            self._logger.update()
             time.sleep(0.1)
         print("Processed tracking stop")
 
@@ -150,13 +163,11 @@ class ClonerSLAM:
         # we can kill the mapper.
         self._frame_signal.emit(StopSignal())
         while not self._mapper._processed_stop_signal.value:
-            if waiting_action is not None:
-                waiting_action()
+            self._logger.update()
             time.sleep(0.1)
         print("Processed mapping stop")
 
-        if finish_action is not None:
-            finish_action()
+        self._logger.finish()
 
         self._tracker._term_signal.value = True
         self._mapper._term_signal.value = True

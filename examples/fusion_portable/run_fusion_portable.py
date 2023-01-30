@@ -43,8 +43,8 @@ from src.common.pose import Pose
 from src.common.pose_utils import WorldCube
 from src.common.sensors import Image, LidarScan
 from src.common.settings import Settings
-from src.visualization.draw_frames_to_mpl import MplFrameDrawer
-from src.visualization.draw_frames_to_ros import FrameDrawer
+from src.logging.default_logger import DefaultLogger
+from src.logging.draw_frames_to_ros import FrameDrawer
 
 # autopep8: on
 
@@ -149,6 +149,8 @@ if __name__ == "__main__":
     parser.add_argument("rosbag_path")
     parser.add_argument("calibration_path")
     parser.add_argument("experiment_name", nargs="?", default="experiment")
+    parser.add_argument("--duration", help="How long to run for (in input data time, sec)", type=float, default=None)
+
     args = parser.parse_args()
 
     calibration = FusionPortableCalibration(args.calibration_path)
@@ -195,7 +197,7 @@ if __name__ == "__main__":
 
     cloner_slam = ClonerSLAM(settings)
 
-    # Get ground truth trajectory
+    # Get ground truth trajectory. This is only used to construct the world cube.
     rosbag_path = Path(args.rosbag_path)
     ground_truth_file = rosbag_path.parent / "ground_truth_traj.txt"
     ground_truth_df = pd.read_csv(ground_truth_file, names=["timestamp","x","y","z","q_x","q_y","q_z","q_w"], delimiter=" ")
@@ -205,20 +207,9 @@ if __name__ == "__main__":
     cloner_slam.initialize(camera_to_lidar, lidar_poses, settings.calibration.camera_intrinsic.k,
                            ray_range, image_size, args.rosbag_path)
 
-    if PUB_ROS:
-        rospy.init_node('cloner_slam')
-        drawer = FrameDrawer(cloner_slam._frame_signal,
-                             cloner_slam._rgb_signal,
-                             cloner_slam.get_world_cube())
-    else:
-        drawer = MplFrameDrawer(cloner_slam._frame_signal,
-                                cloner_slam.get_world_cube(),
-                                settings.calibration)
-
     for f in glob.glob("../outputs/frame*"):
         shutil.rmtree(f)
 
-    # TODO: Prevent duplicate opens
     bag = rosbag.Bag(args.rosbag_path, 'r')
 
     cloner_slam.start()
@@ -237,7 +228,7 @@ if __name__ == "__main__":
 
         timestamp -= start_time
 
-        if timestamp.to_sec() > 90:
+        if args.duration is not None and timestamp.to_sec() > args.duration:
             break
 
         if topic == image_topic:
@@ -258,15 +249,13 @@ if __name__ == "__main__":
             gt_cam_pose = Pose(gt_lidar_pose @ camera_to_lidar.inverse())
 
             cloner_slam.process_rgb(image, gt_cam_pose)
-            drawer.update()
         elif topic == lidar_topic:
             lidar_scan = build_scan_from_msg(msg, timestamp)
             cloner_slam.process_lidar(lidar_scan)
-            drawer.update()
         else:
             raise Exception("Should be unreachable")
 
-    cloner_slam.stop(drawer.update, drawer.finish)
+    cloner_slam.stop()
 
     logdir = cloner_slam._log_directory
     checkpoints = os.listdir(f"{logdir}/checkpoints")
