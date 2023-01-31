@@ -63,17 +63,17 @@ mapper:
       temporal:
         time_diff_seconds: 2
     window_selection:
-      strategy: MOST_RECENT
+      strategy: RANDOM
       window_size: 10
     sample_allocation:
-      strategy: UNIFORM
+      strategy: ACTIVE
 
       # How many samples to take uniformly across non-sky regions. 
       # Remember 2 images per frame, so this is doubled.
-      num_rgb_uniform_samples: 256
+      num_rgb_uniform_samples: 128
       
       # How many to use strategy to choose. This is an average since it may vary by image. 
-      avg_rgb_strategy_samples: 0
+      avg_rgb_strategy_samples: 256
 
       # Same, for lidar
       num_lidar_uniform_samples: 512
@@ -90,6 +90,7 @@ mapper:
       fix_sigma_mlp: False
       fix_rgb_mlp: False
     detach_rgb_from_poses: True
+    skip_pose_refinement: False # If set, skips the tracking refinement part of the optimization
     keyframe_schedule:
       - 
         num_keyframes: 1

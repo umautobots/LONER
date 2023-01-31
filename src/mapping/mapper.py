@@ -85,6 +85,7 @@ class Mapper:
                             'occ_model_state_dict': self._optimizer._occupancy_grid_model.state_dict(),
                             'occ_optimizer_state_dict': self._optimizer._occupancy_grid_optimizer.state_dict()}
 
+                    print("Sending KF Update")
                     self._keyframe_update_signal.emit(pose_state)
                     
                     os.makedirs(f"{self._settings.log_directory}/checkpoints", exist_ok=True)

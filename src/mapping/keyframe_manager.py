@@ -12,9 +12,9 @@ from mapping.optimizer import Optimizer
 class KeyFrameSelectionStrategy(Enum):
     TEMPORAL = 0
 
-
 class WindowSelectionStrategy(Enum):
     MOST_RECENT = 0
+    RANDOM = 1
 
 class SampleAllocationStrategy(Enum):
     UNIFORM = 0
@@ -96,6 +96,10 @@ class KeyFrameManager:
 
         if self._window_selection_strategy == WindowSelectionStrategy.MOST_RECENT:
             window = self._keyframes[-window_size:]
+        elif self._window_selection_strategy == WindowSelectionStrategy.RANDOM:
+            indices = torch.randperm(len(self._keyframes) - 1)[:window_size-1].tolist()
+            indices.append(-1)
+            window = [self._keyframes[i] for i in indices]
         else:
             raise ValueError(
                 f"Can't use unknown WindowSelectionStrategy {self._window_selection_strategy}")

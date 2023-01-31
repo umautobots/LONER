@@ -330,4 +330,4 @@ def dump_trajectory_to_tum(transformation_matrices: torch.Tensor,
     rotations = torch.hstack([rotations[:,3:4], rotations[:,1:3], rotations[:, 0:1]])
     data = torch.hstack([timestamps.reshape(-1,1), translations, rotations])
     data = data.detach().cpu().numpy()
-    np.savetxt(output_file, data, delimiter=" ")
+    np.savetxt(output_file, data, delimiter=" ", fmt="%.10f")

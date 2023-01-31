@@ -150,9 +150,7 @@ class CameraRayDirections:
 
         # Stored in row-major order
         self.cell_offsets = torch.hstack((y_cell_offsets,x_cell_offsets)).unsqueeze(1).to(torch.int32)
-        # TODO: don't use cuda, pass device in 
-        self.cell_offsets_gpu = self.cell_offsets.cuda().squeeze(1)
-
+        
     def __len__(self):
         return self.directions.shape[0]
 
@@ -247,6 +245,12 @@ class CameraRayDirections:
             samples_per_cell: torch.Tensor = sample_distribution * total_grid_samples
             samples_per_cell = samples_per_cell.floor().to(torch.int32)
             remainder = total_grid_samples - samples_per_cell.sum()
+
+            while remainder > len(samples_per_cell):
+                breakpoint()
+                samples_per_cell += 1
+                remainder -= len(samples_per_cell)
+
             _, best_indices = samples_per_cell.topk(remainder)
             samples_per_cell[best_indices] += 1
             

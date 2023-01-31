@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import datetime
 import glob
 import os
 import shutil
@@ -21,6 +22,7 @@ from geometry_msgs.msg import TransformStamped
 from pathlib import Path
 from sensor_msgs.msg import Image, PointCloud2
 import pytorch3d.transforms
+import torch.multiprocessing as mp
 
 # autopep8: off
 # Linting needs to be disabled here or it'll try to move includes before path.
@@ -143,22 +145,12 @@ def build_poses_from_buffer(tf_buffer, timestamps, cam_to_lidar):
     return torch.stack(lidar_poses).float()
 
 
-if __name__ == "__main__":
 
-    parser = argparse.ArgumentParser("Run ClonerSLAM on RosBag")
-    parser.add_argument("rosbag_path")
-    parser.add_argument("calibration_path")
-    parser.add_argument("experiment_name", nargs="?", default="experiment")
-    parser.add_argument("--duration", help="How long to run for (in input data time, sec)", type=float, default=None)
-
-    args = parser.parse_args()
-
-    calibration = FusionPortableCalibration(args.calibration_path)
-
-    settings = Settings.load_from_file(os.path.expanduser("~/ClonerSLAM/cfg/settings_schedule.yaml"))
-
+def run_trial(args, settings, settings_description = None, idx = None):
     init = False
     prev_time = None
+
+    calibration = FusionPortableCalibration(args.calibration_path)
 
     tf_buffer = tf2_py.BufferCore(rospy.Duration(10000))
 
@@ -187,7 +179,7 @@ if __name__ == "__main__":
 
     ray_range = settings.mapper.optimizer.model_config.data.ray_range
     image_size = (settings.calibration.camera_intrinsic.height,
-                  settings.calibration.camera_intrinsic.width)
+                settings.calibration.camera_intrinsic.width)
 
     lidar_to_camera = Pose.from_settings(calibration.t_lidar_to_left_cam).get_transformation_matrix()
     camera_to_lidar = lidar_to_camera.inverse()
@@ -203,9 +195,20 @@ if __name__ == "__main__":
     ground_truth_df = pd.read_csv(ground_truth_file, names=["timestamp","x","y","z","q_x","q_y","q_z","q_w"], delimiter=" ")
     tf_buffer, timestamps = build_buffer_from_df(ground_truth_df)
     lidar_poses = build_poses_from_buffer(tf_buffer, timestamps, camera_to_lidar)
+    
+    if idx is None:
+        ablation_name = None
+    else:
+        ablation_name = args.experiment_name
 
     cloner_slam.initialize(camera_to_lidar, lidar_poses, settings.calibration.camera_intrinsic.k,
-                           ray_range, image_size, args.rosbag_path)
+                            ray_range, image_size, args.rosbag_path, ablation_name, idx)
+
+    logdir = cloner_slam._log_directory
+
+    if settings_description is not None:
+        with open(f"{logdir}/configuration.txt", 'w+') as desc_file:
+            desc_file.write(settings_description)
 
     for f in glob.glob("../outputs/frame*"):
         shutil.rmtree(f)
@@ -257,7 +260,7 @@ if __name__ == "__main__":
 
     cloner_slam.stop()
 
-    logdir = cloner_slam._log_directory
+
     checkpoints = os.listdir(f"{logdir}/checkpoints")
     #https://stackoverflow.com/a/2669120
     convert = lambda text: int(text) if text.isdigit() else text 
@@ -286,3 +289,72 @@ if __name__ == "__main__":
     rmse = torch.sqrt(torch.mean(dist**2))
 
     print(f"RMSE: {rmse:.3f}")
+
+# Implements a single worker in a thread-pool model.
+def _gpu_worker(args, gpu_id: int, job_queue: mp.Queue) -> None:
+    
+    # Set this process to only use the desired GPU
+    os.environ['CUDA_VISIBLE_DEVICES'] = gpu_id
+
+    while not job_queue.empty():
+        data = job_queue.get()
+        if data is None:
+            return
+
+        settings, description, trial_idx = data
+        run_trial(args, settings, description, trial_idx)
+
+if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser("Run ClonerSLAM on RosBag")
+    parser.add_argument("rosbag_path")
+    parser.add_argument("calibration_path")
+    parser.add_argument("experiment_name", nargs="?", default="experiment")
+    parser.add_argument("--overrides", type=str, default=None, required=False)
+    parser.add_argument("--duration", help="How long to run for (in input data time, sec)", type=float, default=None)
+    parser.add_argument("--gpu_ids", nargs="*", required=False, default = [0], help="Which GPUs to use. Defaults to parallel if set")
+
+    args = parser.parse_args()
+
+    if args.overrides is not None:
+        settings_options, settings_descriptions = Settings.generate_options(os.path.expanduser("~/ClonerSLAM/cfg/settings_schedule.yaml"), os.path.expanduser(args.overrides))
+        now = datetime.datetime.now()
+        now_str = now.strftime("%m%d%y_%H%M%S")
+        args.experiment_name = f"{args.experiment_name}_{now_str}"
+        
+    else:
+        settings_descriptions = [None]
+        settings_options = [Settings.load_from_file(os.path.expanduser("~/ClonerSLAM/cfg/settings_schedule.yaml"))]
+
+
+    if args.gpu_ids != [0]:
+        mp.set_start_method('spawn')
+
+        job_queue_data = zip(settings_options, settings_descriptions, range(len(settings_descriptions)))
+
+        job_queue = mp.Queue()
+        for element in job_queue_data:
+            job_queue.put(element)
+        
+        for _ in args.gpu_ids:
+            job_queue.put(None)
+
+        # Create the workers
+        gpu_worker_processes = []
+        for gpu_id in args.gpu_ids:
+            gpu_worker_processes.append(mp.Process(target = _gpu_worker, args=(args,gpu_id,job_queue,)))
+
+        # Start them
+        for process in gpu_worker_processes:
+            process.start()
+
+        # Sync
+        for process in gpu_worker_processes:
+            process.join()
+        
+                
+    else:
+        for idx, (settings, description) in enumerate(zip(settings_options, settings_descriptions)):
+            if len(settings_options) == 1:
+                idx = None
+            run_trial(args, settings, description, idx)

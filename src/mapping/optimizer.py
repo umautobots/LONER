@@ -179,6 +179,10 @@ class Optimizer:
         if len(keyframe_window) == 1:
             keyframe_window[0].is_anchored = True
 
+        # TODO (seth): this is temphack
+        if len(iteration_schedule) > 1 and self._settings.skip_pose_refinement:
+            iteration_schedule = iteration_schedule[1:]
+
         for iteration_config in iteration_schedule:
             self._optimization_settings.freeze_poses = iteration_config["fix_poses"]
             
@@ -282,34 +286,40 @@ class Optimizer:
                         lidar_samples = (uniform_lidar_rays.to(self._device).float(), uniform_lidar_depths.to(self._device).float())
     
                     if self.should_enable_camera():
+                        
+                        # Get all the uniform samples first
+                        start_idxs = torch.randint(len(self._rgb_shuffled_indices), (2,))
 
+                        first_im_end_idx = start_idxs[0] + kf.num_uniform_rgb_samples
+                        first_im_uniform_indices = self._rgb_shuffled_indices[start_idxs[0]:first_im_end_idx]
+                        first_im_uniform_indices = first_im_uniform_indices % len(self._rgb_shuffled_indices)
+
+                        second_im_end_idx = start_idxs[1] + kf.num_uniform_rgb_samples
+                        second_im_uniform_indices = self._rgb_shuffled_indices[start_idxs[1]:second_im_end_idx]
+                        second_im_uniform_indices = second_im_uniform_indices % len(self._rgb_shuffled_indices)
+
+                        # Next based on strategy get the rest
                         if self._sample_allocation_strategy == SampleAllocationStrategy.UNIFORM:
-                            start_idxs = torch.randint(
-                                len(self._rgb_shuffled_indices), (2,))
+                            start_idxs = torch.randint(len(self._rgb_shuffled_indices), (2,))
 
-                            # TODO: This addition will NOT work for non-uniform sampling
-                            first_im_end_idx = start_idxs[0] + \
-                                kf.num_uniform_rgb_samples
+                            first_im_end_idx = start_idxs[0] + kf.num_strategy_rgb_samples
 
-                            # autopep8: off
-                            first_im_indices = self._rgb_shuffled_indices[start_idxs[0]:first_im_end_idx]
+                            first_im_strategy_indices = self._rgb_shuffled_indices[start_idxs[0]:first_im_end_idx]
 
-                            first_im_indices = first_im_indices % len(
-                                self._rgb_shuffled_indices)
+                            first_im_strategy_indices = first_im_strategy_indices % len(self._rgb_shuffled_indices)
 
-                            # TODO: This addition will NOT work for non-uniform sampling
-                            second_im_end_idx = start_idxs[1] + \
-                                kf.num_uniform_rgb_samples
-                            second_im_indices = self._rgb_shuffled_indices[start_idxs[1]:second_im_end_idx]
-                            # autopep8: on
+                            second_im_end_idx = start_idxs[1] + kf.num_strategy_rgb_samples
+                            second_im_strategy_indices = self._rgb_shuffled_indices[start_idxs[1]:second_im_end_idx]
 
-                            second_im_indices = second_im_indices % len(
-                                self._rgb_shuffled_indices)
+                            second_im_strategy_indices = second_im_strategy_indices % len(self._rgb_shuffled_indices)
 
                         elif self._sample_allocation_strategy == SampleAllocationStrategy.ACTIVE:
-                            first_im_indices = self._cam_ray_directions.sample_chunks(kf.loss_distribution, kf.num_strategy_rgb_samples.item()).flatten()
-                            second_im_indices = self._cam_ray_directions.sample_chunks(kf.loss_distribution, kf.num_strategy_rgb_samples.item()).flatten()
+                            first_im_strategy_indices = self._cam_ray_directions.sample_chunks(kf.loss_distribution, kf.num_strategy_rgb_samples.item()).flatten()
+                            second_im_strategy_indices = self._cam_ray_directions.sample_chunks(kf.loss_distribution, kf.num_strategy_rgb_samples.item()).flatten()
 
+                        first_im_indices = torch.cat((first_im_uniform_indices, first_im_strategy_indices))
+                        second_im_indices = torch.cat((second_im_uniform_indices, second_im_strategy_indices))
+                        
                         new_cam_rays, new_cam_intensities = kf.build_camera_rays(
                             first_im_indices, second_im_indices, self._ray_range,
                             self._cam_ray_directions, self._world_cube,
@@ -386,7 +396,7 @@ class Optimizer:
             cam_rays = cam_rays.to(self._device)
             cam_intensities = cam_intensities.to(self._device)
 
-            chunk_loss = self.compute_loss((cam_rays,cam_intensities), None)
+            chunk_loss = self.compute_loss((cam_rays,cam_intensities), None, True)
             losses.append(chunk_loss)
 
         losses = torch.stack(losses)
@@ -394,7 +404,8 @@ class Optimizer:
 
     # For the given camera and lidar rays, compute and return the differentiable loss
     def compute_loss(self, camera_samples: Tuple[torch.Tensor, torch.Tensor], 
-                           lidar_samples: Tuple[torch.Tensor, torch.Tensor]) -> torch.Tensor:
+                           lidar_samples: Tuple[torch.Tensor, torch.Tensor],
+                           override_enables: bool = False) -> torch.Tensor:
         scale_factor = self._scale_factor.to(self._device).float()
         
         loss = 0
@@ -402,7 +413,7 @@ class Optimizer:
 
         iteration_idx = self._global_step % self._optimization_settings.num_iterations
 
-        if self.should_enable_lidar() and lidar_samples is not None:
+        if (override_enables or self.should_enable_lidar()) and lidar_samples is not None:
             # TODO: Update with JS divergence method
             if self._model_config.loss.decay_depth_eps:
                 depth_eps = max(self._model_config.loss.depth_eps * (self._model_config.train.decay_rate ** (
@@ -477,7 +488,7 @@ class Optimizer:
             wandb_logs['depth_lambda'] = depth_lambda
             wandb_logs['depth_eps'] = depth_eps
 
-        if self.should_enable_camera() and camera_samples is not None:
+        if (override_enables or self.should_enable_camera()) and camera_samples is not None:
             # camera_samples is organized as [cam_rays, cam_intensities]
             # cam_rays = [origin, direction, viewdir, ray_i_grid, ray_j_grid, near limit, far limit]
             cam_rays, cam_intensities = camera_samples

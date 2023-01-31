@@ -18,6 +18,7 @@ from common.settings import Settings
 from mapping.mapper import Mapper
 from tracking.tracker import Tracker
 from src.logging.default_logger import DefaultLogger
+from pathlib import Path
 
 
 class ClonerSLAM:
@@ -37,9 +38,17 @@ class ClonerSLAM:
         else:
             raise RuntimeError(
                 f"Can't load settings of type {type(settings).__name__}")
-
-        mp.set_start_method('spawn')
         
+
+        try:
+            mp.set_start_method('spawn')
+        except RuntimeError as e:
+            # Don't blame me, pytorch should've made this something other than a generic RuntimeError
+            if str(e) == "context has already been set":
+                pass
+            else:
+                raise e
+            
         # The top-level module inserts RGB frames/Lidar, and the tracker reads them
         self._rgb_signal = Signal(synchronous=True)
         self._lidar_signal = Signal(synchronous=True)
@@ -62,24 +71,17 @@ class ClonerSLAM:
         self._initialized = False
         
 
-
     def initialize(self, camera_to_lidar: torch.Tensor, all_lidar_poses: torch.Tensor,
                               K_camera: torch.Tensor, camera_range: List,
                               image_size: torch.Tensor,
-                              dataset_path: str):
+                              dataset_path: str,
+                              ablation_name: str = None,
+                              trial_idx: int = None):
         self._world_cube = compute_world_cube(
-            camera_to_lidar, K_camera, image_size, all_lidar_poses, camera_range)
+            camera_to_lidar, K_camera, image_size, all_lidar_poses, camera_range, padding=0.3)
         self._initialized = True
-        self._dataset_path = dataset_path
-
-    def get_world_cube(self) -> WorldCube:
-        return self._world_cube
-
-    def start(self) -> None:
-        if not self._initialized:
-            raise RuntimeError(
-                "Can't Start: System Uninitialized. You must call initialize first.")
-
+        self._dataset_path = Path(dataset_path).resolve().as_posix()
+        
         now = datetime.datetime.now()
         now_str = now.strftime("%m%d%y_%H%M%S")
 
@@ -89,8 +91,21 @@ class ClonerSLAM:
             expname = "experiment"
             
         self._experiment_name = f"{expname}_{now_str}"
-        self._log_directory = os.path.expanduser(f"~/ClonerSLAM/outputs/{self._experiment_name}/")
+        if ablation_name is None:
+            self._log_directory = os.path.expanduser(f"~/ClonerSLAM/outputs/{self._experiment_name}/")
+        else:
+            self._log_directory = os.path.expanduser(f"~/ClonerSLAM/outputs/{ablation_name}/trial_{trial_idx}")
+
+
         os.makedirs(self._log_directory, exist_ok=True)
+
+    def get_world_cube(self) -> WorldCube:
+        return self._world_cube
+
+    def start(self) -> None:
+        if not self._initialized:
+            raise RuntimeError(
+                "Can't Start: System Uninitialized. You must call initialize first.")
 
         # TODO: Add back support for ROS
         self._logger = DefaultLogger(self._frame_signal,
@@ -139,6 +154,7 @@ class ClonerSLAM:
                                 self._frame_signal)
 
         print("Starting Cloner SLAM")
+
         # Start the children
         self._tracking_process = mp.Process(target=self._tracker.run)
         self._mapping_process = mp.Process(target=self._mapper.run)
@@ -171,18 +187,18 @@ class ClonerSLAM:
 
         self._tracker._term_signal.value = True
         self._mapper._term_signal.value = True
-
+        
         self._tracking_process.join()
         self._mapping_process.join()
-
         print("Sub-processes Exited")
 
     def process_lidar(self, lidar_scan: LidarScan) -> None:
         assert torch.all(torch.diff(lidar_scan.timestamps) >= 0), "sort your points by timestamps!"
-
+        self._logger.update()
         self._lidar_signal.emit(lidar_scan)
 
     def process_rgb(self, image: Image, gt_pose: Pose=None) -> None:
+        self._logger.update()
         self._rgb_signal.emit((image, gt_pose))
 
     # Note: This is only needed when using mp.Queue instead of mp.Manager().Queue() in Slots. 

@@ -12,6 +12,25 @@ class StopSignal:
     pass
 
 
+class SimpleQueue:
+    """
+    A very simple queue to mimic the interface of MP queue
+    """
+    def __init__(self):
+        self._data = []
+
+    def put(self, value):
+        self._data.append(value)
+    
+    def get(self):
+        return self._data.pop(0)
+
+    def empty(self):
+        return len(self._data) == 0
+    
+    def full(self):
+        return False
+
 class Slot:
     """ A Slot is a listener which listens to data on a particular signal.
 
@@ -19,14 +38,19 @@ class Slot:
     """
 
     # This should not be called directly. Instead, call Signal.register
-    def __init__(self):
-        # The use of Manager().Queue() instead of mp.Queue() here is quite important.
-        # It ensures inserts from multiple processes maintain the correct order.
-        # I don't understand the details.
-        # If this changes in the future, you'll also likely need to add back in
-        # a call to ClonerSlam.cleanup() at the end to prevent deadlock waiting for
-        # the queue to empty.
-        self._queue = mp.Manager().Queue()
+    def __init__(self, single_process: bool):
+
+        if single_process:
+            self._queue = SimpleQueue()
+        else:
+            # The use of Manager().Queue() instead of mp.Queue() here is quite important.
+            # It ensures inserts from multiple processes maintain the correct order.
+            # I don't understand the details.
+            # If this changes in the future, you'll also likely need to add back in
+            # a call to ClonerSlam.cleanup() at the end to prevent deadlock waiting for
+            # the queue to empty.
+            self._queue = mp.Manager().Queue()
+
 
     # Checks whether a value is available
     def has_value(self) -> bool:
@@ -53,12 +77,15 @@ class Signal:
 
     # Constructor: An empty signal is just an empty list of slots
     # If @p synchronous is True, then emit will block until each item has been removed
-    def __init__(self, synchronous = False):
+    # If @p single_process is true, this will not use MP queues, and will just use a normal queue
+    def __init__(self, synchronous: bool = False, single_process: bool = False):
 
         # Stores Slot objects to write to when data is emitted
         self._slots = []
 
         self._synchronous = synchronous
+
+        self._single_process = single_process
 
     # Removes all leftover items from the queue.
     # This is important if you want your code to terminate properly.
@@ -75,7 +102,7 @@ class Signal:
     # Creates and returns a Slot which listens on the Signal
     # If synchronous is True, this 
     def register(self) -> Slot:
-        self._slots.append(Slot())
+        self._slots.append(Slot(self._single_process))
         return self._slots[-1]
 
     # Sends the given value to all the registered Slots

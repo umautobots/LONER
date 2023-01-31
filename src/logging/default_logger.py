@@ -36,7 +36,7 @@ class DefaultLogger:
 
         self._log_directory = log_directory    
 
-    def update(self):
+    def update(self):        
         if self._done:
             while self._frame_slot.has_value():
                 self._frame_slot.get_value()
@@ -60,6 +60,13 @@ class DefaultLogger:
             self._gt_path = torch.cat([self._gt_path, gt_pose.unsqueeze(0)])
 
             self._timestamps.append(frame.get_start_time())
+
+            if self._tracked_path.shape[0] < 2:
+                self._optimized_path = new_pose.unsqueeze(0)
+            else:
+                relative_transform = self._tracked_path[-2].inverse() @  self._tracked_path[-1]
+                self._optimized_path = torch.cat([self._optimized_path, (self._optimized_path[-1] @ relative_transform).unsqueeze(0)])
+
 
         while self._keyframe_update_slot.has_value():
             print("Got KeyFrame Update")
@@ -99,7 +106,6 @@ class DefaultLogger:
         # Dump it all to TUM format
         os.makedirs(f"{self._log_directory}/trajectory", exist_ok=True)
         pose_timestamps = torch.tensor(self._timestamps)
-        breakpoint()
         dump_trajectory_to_tum(self._tracked_path, pose_timestamps, f"{self._log_directory}/trajectory/tracked.txt")
         dump_trajectory_to_tum(self._optimized_path, pose_timestamps, f"{self._log_directory}/trajectory/optimized.txt")
 

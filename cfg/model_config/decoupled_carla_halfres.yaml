@@ -29,8 +29,8 @@ model:
 
 train:
     lrate_mlp: 0.1             # learning rate
-    lrate_pose: 0.005
-    lrate_gamma: 0.95 
+    lrate_pose: 0.0075
+    lrate_gamma: 1.0 
     decay_rate: 0.001
      
 loss:
