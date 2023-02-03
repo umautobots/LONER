@@ -181,9 +181,9 @@ class KeyFrame:
         assert origin_offset.dim() == 2, "Currently there is not support for unique lidar origin offsets"
 
         # N x 4 x 4
-        interpolated_poses = self.interpolate_lidar_poses(timestamps, use_gt_poses) @ origin_offset 
+        # interpolated_poses = self.interpolate_lidar_poses(timestamps, use_gt_poses) @ origin_offset 
 
-        lidar_poses = interpolated_poses
+        lidar_poses = torch.tile(self.get_start_lidar_pose().get_transformation_matrix(), (len(timestamps), 1, 1))
 
         # Now that we're in OpenGL frame, we can apply world cube transformation
         ray_origins = lidar_poses[:, :3, 3]

@@ -29,7 +29,8 @@ class DefaultLogger:
         self._tracked_path = torch.tensor([])
         self._gt_path = torch.tensor([])
 
-        self._done = False
+        self._frame_done = False
+        self._keyframe_done = False
         self._gt_pose_offset = None
 
         self._calibration = calibration    
@@ -37,7 +38,7 @@ class DefaultLogger:
         self._log_directory = log_directory    
 
     def update(self):        
-        if self._done:
+        if self._frame_done:
             while self._frame_slot.has_value():
                 self._frame_slot.get_value()
             return
@@ -45,7 +46,7 @@ class DefaultLogger:
         while self._frame_slot.has_value():
             frame: Frame = self._frame_slot.get_value()
             if isinstance(frame, StopSignal):
-                self._done = True
+                self._frame_done = True
                 break
 
             if self._gt_pose_offset is None:
@@ -72,6 +73,10 @@ class DefaultLogger:
             print("Got KeyFrame Update")
 
             keyframe_state = self._keyframe_update_slot.get_value()
+          
+            if isinstance(keyframe_state, StopSignal):
+                self._frame_done = True
+                break
 
             keyframe_timestamps = torch.tensor([kf["timestamp"] for kf in keyframe_state]).reshape(-1, 1)
 

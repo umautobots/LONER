@@ -4,4 +4,6 @@ mapper:
       strategy: [RANDOM, MOST_RECENT]
     sample_allocation:
       strategy: [ACTIVE, UNIFORM]
-      num_keyframes_to_keep: [10]
+      num_keyframes_to_keep: [5]
+  optimizer:
+    skip_pose_refinement: [False]

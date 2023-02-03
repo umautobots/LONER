@@ -194,12 +194,13 @@ with torch.no_grad():
         start_key = "start_lidar_pose"
         end_key = "end_lidar_pose"
 
-    for kf in tqdm(poses):
+    for kf in tqdm(poses[::15]):
         start_lidar_pose = Pose(pose_tensor=kf[start_key])
         end_lidar_pose = Pose(pose_tensor=kf[end_key])
         lidar_to_camera = Pose(pose_tensor=kf["lidar_to_camera"])
         timestamp = kf["timestamp"]
 
+        print(render_dir)
         timestamp = str(timestamp.item()).replace('.','_')[:5]
         
         start_camera_pose = start_lidar_pose * lidar_to_camera

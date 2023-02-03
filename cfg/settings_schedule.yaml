@@ -16,7 +16,7 @@ debug:
   global_enabled: True
   flags:
     pytorch_detect_anomaly: False
-    draw_comp_graph: False
+    draw_comp_graph: True
     write_ray_point_clouds: False
     write_frame_point_clouds: False
     write_icp_point_clouds: False
@@ -63,14 +63,14 @@ mapper:
       temporal:
         time_diff_seconds: 2
     window_selection:
-      strategy: RANDOM
+      strategy: MOST_RECENT
       window_size: 10
     sample_allocation:
-      strategy: ACTIVE
+      strategy: UNIFORM
 
       # How many samples to take uniformly across non-sky regions. 
       # Remember 2 images per frame, so this is doubled.
-      num_rgb_uniform_samples: 128
+      num_rgb_uniform_samples: 256
       
       # How many to use strategy to choose. This is an average since it may vary by image. 
       avg_rgb_strategy_samples: 256
@@ -92,24 +92,24 @@ mapper:
     detach_rgb_from_poses: True
     skip_pose_refinement: False # If set, skips the tracking refinement part of the optimization
     keyframe_schedule:
-      - 
-        num_keyframes: 1
-        iteration_schedule:
-          - num_iterations: 5
-            stage: 3
-            fix_poses: True
-            fix_sigma_mlp: False
-            fix_rgb_mlp: False
+      # - 
+      #   num_keyframes: 1
+      #   iteration_schedule:
+      #     - num_iterations: 1000
+      #       stage: 3
+      #       fix_poses: True
+      #       fix_sigma_mlp: False
+      #       fix_rgb_mlp: False
       -
         num_keyframes: -1
         iteration_schedule:
           # First refine the tracking
-          - stage: 1
-            num_iterations: 5
-            fix_poses: False
-            latest_kf_only: True
-            fix_sigma_mlp: True
-            fix_rgb_mlp: True
+          # - stage: 1
+          #   num_iterations: 50
+          #   fix_poses: False
+          #   latest_kf_only: True
+          #   fix_sigma_mlp: True
+          #   fix_rgb_mlp: True
           # Now joint optimization
           - stage: 3
             num_iterations: 5

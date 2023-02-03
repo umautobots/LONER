@@ -98,6 +98,9 @@ class KeyFrameManager:
             window = self._keyframes[-window_size:]
         elif self._window_selection_strategy == WindowSelectionStrategy.RANDOM:
             indices = torch.randperm(len(self._keyframes) - 1)[:window_size-1].tolist()
+
+            # Note: This isn't great design, but it's pretty important that the -1 index comes last. 
+            # Otherwise we might not keep it in the sample allocation step
             indices.append(-1)
             window = [self._keyframes[i] for i in indices]
         else:
@@ -137,6 +140,12 @@ class KeyFrameManager:
             losses = torch.sum(loss_distributions, dim=1)
             _, kept_kf_indices = losses.topk(num_kfs)
 
+            # Make sure we keep the most recent.
+            if len(losses) - 1 not in kept_kf_indices:
+                kept_kf_indices[-1] = len(losses) - 1
+
+            print(kept_kf_indices, len(losses))
+            print([keyframes[i].get_start_time() for i in kept_kf_indices])
             losses_dist = losses / losses.sum()
 
             total_strategy_rgb_samples = avg_rgb_samples * len(kept_kf_indices)

@@ -97,8 +97,6 @@ class FrameSynthesis:
 
             # If there are some points we need to skip
             if self._lidar_queue.get_start_time() < start_time:
-                print(
-                    "Warning: Got Lidar points for an already completed frame. Skipping")
                 first_valid_idx = torch.argmax(
                     (self._lidar_queue.timestamps >= start_time).float())
             else:

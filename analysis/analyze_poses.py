@@ -71,6 +71,27 @@ for kf in kfs:
     est.append(est_pose.get_translation())
 
 
+translation_rel_errs = []
+for kf_a, kf_b in zip(kfs[:-1], kfs[1:]):
+    est_start = Pose(pose_tensor = kf_a["start_lidar_pose"])
+    est_end = Pose(pose_tensor = kf_b["start_lidar_pose"])
+    
+    gt_start = Pose(pose_tensor = kf_a["gt_start_lidar_pose"])
+    gt_end = Pose(pose_tensor = kf_b["gt_end_lidar_pose"])
+
+    est_delta = est_start.inv() * est_end
+    gt_delta = gt_start.inv() * gt_end
+
+    est_xyz = est_delta.get_translation()
+    gt_xyz = gt_delta.get_translation()
+    
+    translation_rel_errs.append((gt_xyz - est_xyz).norm())
+
+translation_rel_errs = torch.tensor(translation_rel_errs)
+rmse_rel_err = torch.sqrt(torch.mean(translation_rel_errs**2))
+
+print("RMSE Relative Error:", rmse_rel_err)
+
 gt = torch.stack(gt).detach().cpu()
 tracked = torch.stack(tracked).detach().cpu()
 est = torch.stack(est).detach().cpu()
@@ -79,14 +100,16 @@ tracked_rmse = torch.sqrt(torch.mean(np.square(tracked-gt))).item()
 est_rmse = torch.sqrt(torch.mean(torch.square(est-gt))).item()
 
 
+
 ax = plt.gca()
 ax.set_aspect('equal')
 
 plt.plot(gt[:,0], gt[:,1], label="Ground Truth")
 plt.plot(est[:,0], est[:,1], label="Optimized")
-plt.plot(tracked[:,0], tracked[:,1], label="Tracked", linestyle="dashed")
+plt.scatter(gt[0,0],gt[0,1], s=20, color='red', label="Start Point")
+# plt.plot(tracked[:,0], tracked[:,1], color='g',label="Tracked", linestyle="dashed")
 
-text_box = AnchoredText(f"Tracked RMSE: {tracked_rmse:.3f}\nOptimized RMSE:{est_rmse:.3f}", 
+text_box = AnchoredText(f"KF Relative RMSE: {rmse_rel_err:.3f}\nOptimized RMSE:{est_rmse:.3f}", 
                          frameon=True, loc=4, pad=0.5)
 plt.setp(text_box.patch, facecolor='white', alpha=0.5)
 ax.add_artist(text_box)
@@ -98,5 +121,6 @@ if args.title is not None:
     plt.title(args.title)
 
 plt.legend()
+plt.tight_layout()
 
 plt.savefig(f"{args.experiment_directory}/poses.png")

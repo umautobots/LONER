@@ -88,6 +88,7 @@ class Mapper:
                     print("Sending KF Update")
                     self._keyframe_update_signal.emit(pose_state)
                     
+                    print("Saving Checkpoint to", f"{self._settings.log_directory}/checkpoints/ckpt_{self._optimizer._global_step}.tar")
                     os.makedirs(f"{self._settings.log_directory}/checkpoints", exist_ok=True)
                     torch.save(ckpt, f"{self._settings.log_directory}/checkpoints/ckpt_{self._optimizer._global_step}.tar")
                     
