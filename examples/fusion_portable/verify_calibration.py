@@ -19,12 +19,12 @@ from utils import *
 from more_itertools import peekable
 
 LIDAR_MIN_RANGE = 0.3 #http://www.oxts.com/wp-content/uploads/2021/01/Ouster-datasheet-revc-v2p0-os0.pdf
-MOTION_COMPENSATE = False
-IM_COMPRESSED = True
+MOTION_COMPENSATE = True
 
-parser = argparse.ArgumentParser("stereo to rgbd")
+parser = argparse.ArgumentParser("Verify Calibration")
 parser.add_argument("rosbag_path", type=str)
 parser.add_argument("calib_path", type=str)
+parser.add_argument("--im_compressed", action="store_true", default=False, help="Set if using a rosbag with compressed images")
 
 args = parser.parse_args()
 
@@ -33,16 +33,8 @@ bridge = CvBridge()
 ### Load in the calibration
 calibration = FusionPortableCalibration(args.calib_path)
 K_left = calibration.left_cam_intrinsic["K"]
-proj_left = calibration.left_cam_intrinsic["projection_matrix"]
 distortion_left = calibration.left_cam_intrinsic["distortion_coeffs"]
-rect_left = calibration.left_cam_intrinsic["rectification_matrix"]
 im_width, im_height = (calibration.left_cam_intrinsic["width"], calibration.left_cam_intrinsic["height"])
-K_right = calibration.right_cam_intrinsic["K"]
-proj_right = calibration.right_cam_intrinsic["projection_matrix"]
-distortion_right = calibration.right_cam_intrinsic["distortion_coeffs"]
-rect_right = calibration.right_cam_intrinsic["rectification_matrix"]
-xmap_left, ymap_left = cv2.initUndistortRectifyMap(K_left, distortion_left, rect_left, proj_left, (im_width, im_height), cv2.CV_32FC1)
-xmap_right, ymap_right = cv2.initUndistortRectifyMap(K_right, distortion_right, rect_right, proj_right, (im_width, im_height), cv2.CV_32FC1)
 
 lidar_to_left_cam = calibration.t_lidar_to_left_cam
 xyz = lidar_to_left_cam["xyz"]
@@ -67,13 +59,17 @@ if MOTION_COMPENSATE:
     pose_rot_slerp = Slerp(gt_timestamps, rotations)
     pose_xyz_interp = interp1d(gt_timestamps, xyz, axis=0)
 
-compressed_str = "/compressed" if IM_COMPRESSED else ""
+compressed_str = "/compressed" if args.im_compressed else ""
 cam_topics = [f"/stereo/frame_left/image_raw{compressed_str}", f"/stereo/frame_right/image_raw{compressed_str}"]
 all_topics = cam_topics + ["/os_cloud_node/points"]
 
 ### Go through bag and get images and corresponding nearby lidar scans
 bag = rosbag.Bag(rosbag_path.as_posix())
 bag_it = peekable(bag.read_messages(topics=all_topics))
+
+if bag.get_message_count(cam_topics) == 0:
+    print("Got no messages for camera topic. Did you forget to specify --im_compressed correctly?")
+    exit()
 
 for idx in tqdm.trange(bag.get_message_count(cam_topics)//2):
     try:
@@ -112,7 +108,7 @@ for idx in tqdm.trange(bag.get_message_count(cam_topics)//2):
         left_msg = msg2
         left_ts = timestamp2
 
-    if IM_COMPRESSED:
+    if args.im_compressed:
         left_im = bridge.compressed_imgmsg_to_cv2(left_msg, 'bgr8')
         right_im = bridge.compressed_imgmsg_to_cv2(right_msg, 'bgr8')
     else:
@@ -125,27 +121,19 @@ for idx in tqdm.trange(bag.get_message_count(cam_topics)//2):
     if lidar_msg is None or (MOTION_COMPENSATE and (lidar_ts.to_sec() < gt_timestamps[0] or lidar_ts.to_sec() + 0.1 > gt_timestamps[-1])):
         continue
 
-    print("Lidar TS, Camera TS", left_ts.to_sec(), lidar_ts.to_sec())
     # Undistort the images
     left_im = cv2.undistort(left_im, K_left, distortion_left)
-    right_im = cv2.undistort(right_im, K_right, distortion_right)
-
-    # left_im = cv2.remap(left_im,
-    #             xmap_left,
-    #             ymap_left,
-    #             cv2.INTER_LANCZOS4,
-    #             cv2.BORDER_CONSTANT,
-    #             0)
-    # right_im = cv2.remap(right_im,
-    #             xmap_right,
-    #             ymap_right,
-    #             cv2.INTER_LANCZOS4,
-    #             cv2.BORDER_CONSTANT,
-    #             0)
 
     # Get lidar points
     lidar_data = ros_numpy.point_cloud2.pointcloud2_to_array(lidar_msg)
-    lidar_data = pd.concat(list(map(pd.DataFrame, lidar_data))).to_numpy()
+
+    # Get lidar points
+    lidar_data = ros_numpy.point_cloud2.pointcloud2_to_array(lidar_msg)
+    if len(lidar_data.shape) == 1:
+        lidar_data = pd.DataFrame(lidar_data).to_numpy()
+    else:
+        lidar_data = pd.concat(list(map(pd.DataFrame, lidar_data))).to_numpy()
+        
     xyz = lidar_data[:, :3]
     dists = np.linalg.norm(xyz, axis=1)
     valid_ranges = dists > LIDAR_MIN_RANGE
@@ -182,15 +170,10 @@ for idx in tqdm.trange(bag.get_message_count(cam_topics)//2):
     camera_frame_points = (np.linalg.inv(world_to_camera) @ motion_compensated_points_homog)[:3].T
     valid_points = camera_frame_points[:,2] > 0
     camera_frame_points = camera_frame_points[valid_points]
-    # image_frame_points = cv2.projectPoints(camera_frame_points, np.zeros(3), np.zeros(3), proj_left[:3,:3], distortion_left)[0].squeeze(1).astype(int)
 
-    # H = np.linalg.inv(world_to_camera)
-    # motion_compensated_points = motion_compensated_points[:,]
-    # image_frame_points = cv2.projectPoints(motion_compensated_points[valid_points].T, cv2.Rodrigues(H[:3,:3])[0], H[:3,3], K_left, distortion_left)[0].squeeze(1).astype(int)
-
-    # Project into image frame
-    image_frame_points_homog = proj_left[:3,:3] @ camera_frame_points.T
-    image_frame_points = cv2.convertPointsFromHomogeneous(image_frame_points_homog.T).squeeze(1).astype(int)
+    H = np.linalg.inv(world_to_camera)
+    motion_compensated_points = motion_compensated_points[:,]
+    image_frame_points = cv2.projectPoints(motion_compensated_points[valid_points].T, cv2.Rodrigues(H[:3,:3])[0], H[:3,3], K_left, distortion_left)[0].squeeze(1).astype(int)
 
     # Check in camera frame
     good_points = image_frame_points[:,0] >= 0
@@ -203,7 +186,6 @@ for idx in tqdm.trange(bag.get_message_count(cam_topics)//2):
     camera_frame_points = camera_frame_points[good_points]
     depths = camera_frame_points[...,2]
 
-
     # Colorize and draw
     depths_viz = cv2.normalize(depths, depths.copy(), alpha=255, beta=0, norm_type=cv2.NORM_MINMAX)
     depths_viz = cv2.applyColorMap(depths_viz.astype(np.uint8), cv2.COLORMAP_TURBO).squeeze(1)
@@ -213,11 +195,14 @@ for idx in tqdm.trange(bag.get_message_count(cam_topics)//2):
     # Expand the number of pixels we draw
     depth_im = np.zeros_like(disp_im)
     depth_im[image_frame_points[:,1],image_frame_points[:,0]] = depths_viz
-    depth_im = cv2.dilate(depth_im, np.ones(3))
+    depth_im = cv2.dilate(depth_im, np.ones((3,3)))
     color_coords = depth_im[:,:] != np.zeros(3)
     disp_im[color_coords] = depth_im[color_coords]
 
 
-    cv2.imshow("Projected Points", disp_im)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
+    if idx%100 == 0:
+        cv2.imwrite(f"projection/projected_{idx}.png", disp_im)
+
+    # cv2.imshow("Projected Points", disp_im)
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows()

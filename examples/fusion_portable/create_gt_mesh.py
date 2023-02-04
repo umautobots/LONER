@@ -43,8 +43,11 @@ def process_cloud(bag_it):
         return None
 
     lidar_data = ros_numpy.point_cloud2.pointcloud2_to_array(msg)
-
-    lidar_data = pd.DataFrame(lidar_data).to_numpy()
+    
+    if len(lidar_data.shape) == 1:
+        lidar_data = pd.DataFrame(lidar_data).to_numpy()
+    else:
+        lidar_data = pd.concat(list(map(pd.DataFrame, lidar_data))).to_numpy()
 
     xyz = lidar_data[:, :3]
     dists = np.linalg.norm(xyz, axis=1)
