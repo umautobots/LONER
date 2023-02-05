@@ -33,7 +33,38 @@ class Settings(AttrDict):
         with open(filename, 'r') as f:
             return Settings(yaml.load(f, SettingsLoader))
 
+    
     def generate_options(filename: str, overrides: str):
+        """
+        @param filename: Baseline settings
+        @param overrides: Path to file specifying which parameters to change, and what possible values.
+
+        Given a settings file and overrides, computes all possible combinations of settings.
+
+        For example, consider the baseline settings (in @p filename) are:
+
+        mapper:
+            optimizer:
+                num_iterations: 10
+                num_samples: 20
+            num_keyframes: 20
+        tracker:
+            num_icp_iterations: 20
+        
+        
+        And overrides are:
+
+        mapper:
+            optimizer:
+                num_iterations: [5,10,15]
+        tracker:
+            num_icp_iterations: [10, 30]
+
+        This function will return 6 sets of settings, with all the combinations of settings specified in the overrrides,
+        and everything else as specified in the baseline.
+
+        @returns a list of settings with all combinations of options in overrides, and everything else left at baseline
+        """
 
         baseline = Settings.load_from_file(filename)
 
@@ -42,6 +73,8 @@ class Settings(AttrDict):
 
         options = []
 
+        # Recursively parse overrides looking for leaf elements. 
+        # build options as (path_to_setting: List[str], options: List[Any])
         def _generate_options_helper(data, stack):
             if isinstance(data, list):
                 options.append((tuple(stack), data))
@@ -53,15 +86,17 @@ class Settings(AttrDict):
         
         _generate_options_helper(overrides_data, [])
 
+        # How many choices are there for each override
         option_counts = [len(o[1]) for o in options]
 
+        # Build combinations of overrides, as indices in the array
         all_index_options = tuple(np.arange(o) for o in option_counts)
-
         all_idx_combos = np.array(np.meshgrid(*all_index_options)).T.reshape(-1,len(all_index_options))
 
         print("Options:",options)
         attr_stacks = [o[0] for o in options]
 
+        # Make a copy of the settings for each combo of settings 
         settings_options = []
         settings_descriptions = []
         for idx_combo in all_idx_combos:

@@ -15,7 +15,7 @@ class FrameSynthesis:
     """ FrameSynthesis class to process streams of data and create frames.
     """
 
-    # Constructor
+    ## Constructor
     # @param settings: Settings for the tracker (which includes frame synthesis)
     def __init__(self, settings: Settings, T_lidar_to_camera: Pose) -> None:
         self._settings = settings
@@ -43,7 +43,7 @@ class FrameSynthesis:
         # This is used to queue up all the lidar points before they're assigned to frames
         self._lidar_queue = LidarScan()
 
-    # Reads data from the @p lidar_scan and adds the points to the appropriate frame(s)
+    ## Reads data from the @p lidar_scan and adds the points to the appropriate frame(s)
     # @param lidar_scan: Set of lidar points to add to the in-progress frames(s)
     def process_lidar(self, lidar_scan: LidarScan) -> List[int]:
         self._lidar_queue.merge(lidar_scan)
@@ -70,7 +70,7 @@ class FrameSynthesis:
             else:
                 raise RuntimeError("This should be unreachable")
 
-    # Assigns lidar points from the queue to frames
+    ## Assigns lidar points from the queue to frames
     def dequeue_lidar_points(self):
         completed_frames = 0
         for frame in self._in_progress_frames:
@@ -140,11 +140,11 @@ class FrameSynthesis:
                 self._sky_remover.get_sky_mask(frame.end_image))
             self._completed_frames.append(frame)
 
-    # Check if a frame exists to be returned
+    ## Check if a frame exists to be returned
     def has_frame(self) -> bool:
         return len(self._completed_frames) != 0
 
-    # Return and remove a newly synthesized Frame. If unavailable, returns None.
+    ## Return and remove a newly synthesized Frame. If unavailable, returns None.
     def pop_frame(self) -> Union[Frame, None]:
 
         # note: this is done with queues to avoid potentially expensive copies

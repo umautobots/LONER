@@ -46,6 +46,7 @@ class Frame:
         self._gt_lidar_start_pose = None
         self._gt_lidar_end_pose = None
 
+    ## Returns a deep-copy of the current frame
     def clone(self) -> "Frame":
         
         attrs = ["start_image", "end_image", "lidar_points", "_lidar_to_camera", "start_sky_mask",
@@ -60,7 +61,6 @@ class Frame:
 
         return new_frame
 
-        
     def __str__(self):
         start_im_str = "None" if self.start_image is None else self.start_image.timestamp
         end_im_str = "None" if self.end_image is None else self.end_image.timestamp
@@ -74,7 +74,7 @@ class Frame:
     def __repr__(self):
         return self.__str__()
 
-    # Moves all items in the frame to the specified device, in-place. Also returns the current frame.
+    ## Moves all items in the frame to the specified device, in-place. Also returns the current frame.
     # @param device: Target device, as int (GPU) or string (CPU or GPU)
     def to(self, device: Union[int, str]) -> "Frame":
         self.start_image.to(device)
@@ -88,6 +88,7 @@ class Frame:
 
         return self
 
+    ## Detaches the current frame from the computation graph, and @returns a reference to self.
     def detach(self) -> "Frame":
         self._lidar_start_pose.detach()
         self._lidar_end_pose.detach()
@@ -100,7 +101,7 @@ class Frame:
     def get_end_time(self):
         return self.end_image.timestamp
 
-    # Builds a point cloud from the lidar scan.
+    ## Builds a point cloud from the lidar scan.
     # @p time_per_scan: The maximum time to allow in a scan. This prevents aliasing without motion compensation.
     # @p compensate_motion: If True, interpolate/extrapolate the lidar poses. If false, don't.
     # @p target_points: If not None, downsample uniformly to approximately this many points.
@@ -150,18 +151,18 @@ class Frame:
         self.end_sky_mask = mask
         return self
 
-    # @returns the Pose of the camera at the start of the frame as a transformation matrix
+    ## @returns the Pose of the camera at the start of the frame as a transformation matrix
     def get_start_camera_pose(self) -> Pose:
         return self._lidar_start_pose * self._lidar_to_camera
 
-    # @returns the Pose of the camera at the end of the frame as a transformation matrix
+    ## @returns the Pose of the camera at the end of the frame as a transformation matrix
     def get_end_camera_pose(self) -> Pose:
         return self._lidar_end_pose * self._lidar_to_camera
 
-    # @returns the Pose of the lidar at the start of the frame as a transformation matrix
+    ## @returns the Pose of the lidar at the start of the frame as a transformation matrix
     def get_start_lidar_pose(self) -> Pose:
         return self._lidar_start_pose
 
-    # @returns the Pose of the lidar at the end of the frame as a transformation matrix
+    ## @returns the Pose of the lidar at the end of the frame as a transformation matrix
     def get_end_lidar_pose(self) -> Pose:
         return self._lidar_end_pose

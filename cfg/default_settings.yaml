@@ -22,7 +22,8 @@ debug:
     write_icp_point_clouds: False
     profile: False
     use_groundtruth_poses: False
-    draw_loss_distribution: True
+    draw_loss_distribution: False
+    log_losses: True
 
 # ros_names:
 #   camera: "ego_vehicle/rgb_front"
@@ -73,7 +74,7 @@ mapper:
       num_rgb_uniform_samples: 256
       
       # How many to use strategy to choose. This is an average since it may vary by image. 
-      avg_rgb_strategy_samples: 0
+      avg_rgb_strategy_samples: 256
 
       # Same, for lidar
       num_lidar_uniform_samples: 512
@@ -82,6 +83,7 @@ mapper:
       num_keyframes_to_keep: 10
 
   optimizer:
+    k_test: 0
     enabled: True
     default_optimizer_settings:
       stage: 1
@@ -89,13 +91,33 @@ mapper:
       fix_poses: False
       fix_sigma_mlp: False
       fix_rgb_mlp: False
-    iteration_schedule:
+    detach_rgb_from_poses: True
+    skip_pose_refinement: False # If set, skips the tracking refinement part of the optimization
+    keyframe_schedule:
       - 
         num_keyframes: 1
-        iteration_count: 500
+        iteration_schedule:
+          - num_iterations: 1000
+            stage: 3
+            fix_poses: True
+            fix_sigma_mlp: False
+            fix_rgb_mlp: False
       -
         num_keyframes: -1
-        iteration_count: 150
+        iteration_schedule:
+          # First refine the tracking
+          - stage: 1
+            num_iterations: 50
+            fix_poses: False
+            latest_kf_only: True
+            fix_sigma_mlp: True
+            fix_rgb_mlp: True
+          # Now joint optimization
+          - stage: 3
+            num_iterations: 150
+            fix_poses: False
+            fix_sigma_mlp: False
+            fix_rgb_mlp: False
 
     model_config: !include model_config/decoupled_carla_halfres.yaml
   

@@ -6,24 +6,18 @@ import argparse
 import rosbag
 from sensor_msgs.msg import CameraInfo
 from cv_bridge import CvBridge
-from bayes_opt import BayesianOptimization
 from geometry_msgs.msg import TransformStamped, PoseStamped
-from bayes_opt.logger import JSONLogger
-from bayes_opt.event import Events
 import tf2_msgs.msg
 import tqdm
 import rospy
 import ros_numpy
-import open3d as o3d
 import pandas as pd
 from scipy.spatial.transform import Rotation, Slerp
 from scipy.interpolate import interp1d
 from utils import *
 from torchvision.models.optical_flow import Raft_Large_Weights
 from torchvision.models.optical_flow import raft_large
-import torchvision.transforms.functional as F
 import torch
-from torchvision.utils import flow_to_image
 from more_itertools import peekable
 import numpy.lib.recfunctions as rf 
 
@@ -172,15 +166,6 @@ if args.gui:
                 
             actual_lidar_timestamps.append(timestamp)
             lidar_pose = msg_to_transformation_mat(lidar_pose_msg)
-            # lidar_points = ros_numpy.point_cloud2.pointcloud2_to_xyz_array(msg)
-
-            # print(timestamp.to_sec())
-            # cam_pose = lidar_pose @ lidar_to_cam
-
-            # lidar_points_homog = np.hstack((lidar_points, np.ones_like(lidar_points[:,0:1]))).T
-            # lidar_points_global = lidar_pose @ lidar_points_homog
-            # lidar_points_global /= lidar_points_global[3]
-            # lidar_points_global = lidar_points_global[:3].T
 
             lidar_data = ros_numpy.point_cloud2.pointcloud2_to_array(msg)
             lidar_data = pd.DataFrame(lidar_data).to_numpy()
@@ -192,36 +177,6 @@ if args.gui:
 
             lidar_scans.append(data)
 
-            # cam_pts = np.linalg.inv(lidar_to_cam)[:3] @ lidar_points_homog
-            # im_points = K_left @ cam_pts
-            # depths = np.linalg.norm(cam_pts, axis=0)
-            # print(depths.shape, cam_pts.shape)
-            # valid_points = im_points[2]>0
-            # valid_cam_pts = lidar_points[valid_points]
-            # depths = depths[valid_points]
-            # cam_to_lidar = np.linalg.inv(lidar_to_cam)
-            # im_points_distorted, _ = cv2.projectPoints(valid_cam_pts, cv2.Rodrigues(cam_to_lidar[:3,:3])[0], cam_to_lidar[:3,3],
-            #                                         K_left, distortion_left)
-            # im_points_distorted = im_points_distorted.squeeze(1)
-            # # Check in frame
-            # good_points = im_points_distorted[:,0] >= 0
-            # good_points = np.logical_and(good_points, im_points_distorted[:,0] < size_left[0])
-            # good_points = np.logical_and(good_points, im_points_distorted[:,1] >= 0)
-            # good_points = np.logical_and(good_points, im_points_distorted[:,1] < size_left[1])
-
-
-            # im_points_distorted = im_points_distorted[good_points].astype(int)
-            # depths = depths[good_points]
-
-            # depths = cv2.normalize(depths, depths, alpha=255, beta=0, norm_type=cv2.NORM_MINMAX)
-            # depths = cv2.applyColorMap(depths.astype(np.uint8), cv2.COLORMAP_TURBO).squeeze(1)
-
-            # disp_im = images[ts_idx][0].copy()
-            # disp_im[im_points_distorted[:,1],im_points_distorted[:,0]] = depths
-
-            # cv2.imshow("im", disp_im)
-            # cv2.waitKey(0)
-            # cv2.destroyAllWindows()
             ts_idx += 1
 
         if ts_idx == len(kept_lidar_timestamps):
@@ -233,12 +188,6 @@ if args.gui:
     images = [(images[i][0], images[i][1], lidar_poses[i], lidar_scans[i], image_timestamps[i]) \
         for i in range(len(images)) if lidar_poses[i] is not None and lidar_scans[i] is not None]
 
-    # ground_truth_map_file = rosbag_path.parent / "ground_truth_map.pcd"
-    # ground_truth_map = o3d.io.read_point_cloud(ground_truth_map_file.as_posix())
-    # ground_truth_map = o3d.io.read_point_cloud("./ground_truth_mesh_coarse.pcd")
-    # ground_truth_points = np.asarray(ground_truth_map.points)
-
-    # depth_images = []
     compensated_scans = []
     print("Generating Depth Images")
 
@@ -256,7 +205,6 @@ if args.gui:
             end_pose = msg_to_transformation_mat(end_pose)
         except:
             print("bad depth image poses")
-            # depth_images.append(None)
             continue
         
         scan_duration = np.max(lidar_scan[:,-1])
@@ -278,61 +226,6 @@ if args.gui:
         ground_truth_points = ground_truth_points.squeeze(2)[:,:3]
 
         compensated_scans.append(ground_truth_points)
-
-        # # Project into the rectified image frame
-        # proj_mat = proj_left[:3,:3] @ H[:3]
-
-        # # First do the projection manually just to figure out what's in front of the camera
-        # ground_truth_points_homog = np.hstack((ground_truth_points, np.ones_like(ground_truth_points[:,0:1]))).T
-        # all_depths = np.linalg.norm(pose[:3,3] - ground_truth_points, axis=1)
-        # image_coords = proj_mat @ ground_truth_points_homog
-        # valid_coords = image_coords[2] > 0
-        # image_coords = image_coords[:,valid_coords]
-        # image_coords /= image_coords[2]
-        # projected_points = image_coords[:2].T
-        # all_depths = all_depths[valid_coords]
-
-
-        # depth_image = np.zeros_like(left_im[...,0])
-        
-        # good_width = np.logical_and(0 <= projected_points[:,0], projected_points[:,0] < depth_image.shape[1])
-        # good_height = np.logical_and(0 <= projected_points[:,1], projected_points[:,1] < depth_image.shape[0])
-        # good_items = np.logical_and(good_width, good_height)
-        # good_items = np.logical_and(good_items, all_depths > 0)
-        # good_items = np.logical_and(good_items, all_depths < 25)
-
-        # projected_points = projected_points[good_items].astype(int)
-        # projected_depths = all_depths[good_items]
-
-        # # sort from closest to furthest, so that we can get rid of non-unique points
-        # sorted_indices = np.argsort(projected_depths)
-        # projected_depths = projected_depths[sorted_indices]
-        # projected_points = projected_points[sorted_indices]
-
-        # _, unique_indices = np.unique(projected_points[:,:2], axis = 0, return_index=True)
-        # projected_points = projected_points[unique_indices]
-        # projected_depths = projected_depths[unique_indices]
-
-
-
-        # projected_depths_viz = cv2.normalize(projected_depths, projected_depths.copy(), alpha=255, beta=0, norm_type=cv2.NORM_MINMAX)
-        # projected_depths_viz = cv2.applyColorMap(projected_depths_viz.astype(np.uint8), cv2.COLORMAP_TURBO).squeeze(1)
-        # projected_depths_viz = np.hstack((projected_depths_viz, 0.5 * np.ones_like(projected_depths_viz[:,0:1])))
-
-        # disp_im = cv2.remap(left_im,xmap_left,ymap_left,cv2.INTER_LANCZOS4,cv2.BORDER_CONSTANT, 0)
-        # disp_im = cv2.cvtColor(disp_im, cv2.COLOR_BGR2BGRA)
-        # disp_im[:,:,3] = disp_im[:,:,3] //2
-        
-        # disp_im[projected_points[:,1],projected_points[:,0]] = projected_depths_viz
-
-        # cv2.imshow("im", disp_im)
-        # cv2.waitKey(0)
-        # cv2.destroyAllWindows()
-
-        # depth_image[projected_points[:,1], projected_points[:,0]] = projected_depths
-
-        # depth_images.append(depth_image)
-    ### Adapted from https://learnopencv.com/depth-perception-using-stereo-camera-python-c/
 
     def nothing(x):
         pass
@@ -566,6 +459,10 @@ elif args.build_rosbag:
     bag_it = peekable(bag.read_messages(topics=["/stereo/frame_left/image_raw", "/stereo/frame_right/image_raw", "/os_cloud_node/points"]))
     
     output_bag = rosbag.Bag("canteen_rgbd.bag", 'w')
+
+    msg_seq = 0
+    lidar_seq = 0
+    wrote_current_lidar_msg = False
     
     for idx in tqdm.trange(bag.get_message_count(["/stereo/frame_left/image_raw", "/stereo/frame_right/image_raw"])//2):
         # if idx > 100:
@@ -576,18 +473,21 @@ elif args.build_rosbag:
             while bag_it.peek()[0] == "/os_cloud_node/points":
                 lidar_topic, lidar_msg, lidar_ts = next(bag_it)
                 lidar_msg.header.frame_id = "lidar"
+                wrote_current_lidar_msg = False
             
             topic1, msg1, timestamp1 = next(bag_it)
 
             while bag_it.peek()[0] == "/os_cloud_node/points":
                 lidar_topic, lidar_msg, lidar_ts = next(bag_it)
                 lidar_msg.header.frame_id = "lidar"
+                wrote_current_lidar_msg = False
             
             _, msg2, timestamp2 = next(bag_it)
 
             if bag_it.peek()[0] == "/os_cloud_node/points":
                 lidar_topic, lidar_msg, lidar_ts = next(bag_it)
                 lidar_msg.header.frame_id = "lidar"
+                wrote_current_lidar_msg = False
         except StopIteration:
             break
 
@@ -666,26 +566,29 @@ elif args.build_rosbag:
                 world_to_lidar_msg.header.seq = idx
                 tf_message.transforms.append(world_to_lidar_msg)
                 output_bag.write("/tf", tf_message, t=lidar_bag_ts)
-            if args.log_lidar:
+            if args.log_lidar and not wrote_current_lidar_msg:
+                wrote_current_lidar_msg = True
+                lidar_msg.header.seq = lidar_seq
+                lidar_seq += 1
                 output_bag.write(lidar_topic, lidar_msg, t=lidar_bag_ts)
 
             # Log the poses
             world_to_lidar_msg_cam_time = tf_buffer.lookup_transform_core("map","lidar",left_ts)
             world_to_lidar = msg_to_transformation_mat(world_to_lidar_msg_cam_time)
             world_to_cam = world_to_lidar @ lidar_to_cam
-            pose_msg_cam = transformation_mat_to_pose_msg(world_to_cam)
-            pose_msg_lidar = transformation_mat_to_pose_msg(world_to_lidar)
-            pose_msg_lidar_stamped = PoseStamped()
-            pose_msg_lidar_stamped.pose = pose_msg_lidar
-            pose_msg_lidar_stamped.header.frame_id = "map"
-            pose_msg_lidar_stamped.header.stamp = left_ts
 
-            pose_msg_camera_stamped = PoseStamped()
-            pose_msg_camera_stamped.pose = pose_msg_cam
-            pose_msg_camera_stamped.header.frame_id = "map"
-            pose_msg_camera_stamped.header.stamp = left_ts
-            output_bag.write("/pose_lidar", pose_msg_lidar_stamped, t=left_ts)
-            output_bag.write("/pose_camera", pose_msg_camera_stamped, t=left_ts)
+            odom_msg_cam = transformation_mat_to_odom_msg(world_to_cam)
+            odom_msg_cam.header.frame_id = "map"
+            odom_msg_cam.header.stamp = left_ts
+            odom_msg_cam.header.seq = msg_seq
+
+            odom_msg_lidar = transformation_mat_to_odom_msg(world_to_lidar)
+            odom_msg_lidar.header.frame_id = "map"
+            odom_msg_lidar.header.stamp = left_ts
+            odom_msg_lidar.header.seq = msg_seq
+
+            output_bag.write("/odom_lidar", odom_msg_lidar, t=left_ts)
+            output_bag.write("/odom_camera", odom_msg_cam, t=left_ts)
         except Exception as e:
             print("Ignoring: ", e)
         # disp_copy = disparity.copy()
@@ -703,6 +606,7 @@ elif args.build_rosbag:
         ptcloud2_msg = ros_numpy.point_cloud2.array_to_pointcloud2(ptcloud_data)
         ptcloud2_msg.header.stamp = left_ts
         ptcloud2_msg.header.frame_id = "camera/depth"
+        ptcloud2_msg.header.seq = msg_seq
 
         depth_image = ptcloud[...,2] # np.linalg.norm(ptcloud, axis=2)
 
@@ -711,14 +615,18 @@ elif args.build_rosbag:
 
         depth_image[depth_image > MAX_RANGE] = MAX_RANGE
         depthmsg = bridge.cv2_to_imgmsg(depth_image)
-        depthmsg.header.stamp = timestamp1
+        depthmsg.header.stamp = left_ts
         depthmsg.header.frame_id = "camera/depth"
+        depthmsg.header.seq = msg_seq
 
         cam_info_msg.header.stamp = left_ts
+        cam_info_msg.header.seq = msg_seq
         output_bag.write("/camera/rgb/camera_info", cam_info_msg, t=left_ts)
         output_bag.write("/camera/depth/camera_info", cam_info_msg, t=left_ts)
         left_msg.header.frame_id = "camera/depth"
+        left_msg.header.seq = msg_seq
         output_bag.write("/camera/rgb/image_raw", left_msg, t=left_ts)
         output_bag.write("/camera/depth", depthmsg, t=left_ts)
         output_bag.write("/depth_cloud", ptcloud2_msg, t=left_ts)
+        msg_seq += 1
     output_bag.close()

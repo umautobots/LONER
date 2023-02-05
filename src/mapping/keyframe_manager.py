@@ -25,7 +25,7 @@ class KeyFrameManager:
     data to the optimizer.
     """
 
-    # Constructor
+    ## Constructor
     # @param settings: Settings object for the KeyFrame Manager
     def __init__(self, settings: Settings, device: int = 'cpu') -> None:
         self._settings = settings
@@ -45,7 +45,7 @@ class KeyFrameManager:
 
         self._global_step = 0
 
-    # Processes the input @p frame, decides whether it's a KeyFrame, and if so
+    ## Processes the input @p frame, decides whether it's a KeyFrame, and if so
     # adds it to internal KeyFrame storage
     def process_frame(self, frame: Frame) -> KeyFrame:
         if self._keyframe_selection_strategy == KeyFrameSelectionStrategy.TEMPORAL:
@@ -89,7 +89,7 @@ class KeyFrameManager:
         dt_threshold = self._settings.keyframe_selection.temporal.time_diff_seconds
         return dt >= dt_threshold
 
-    # Selects which KeyFrames are to be used in the optimization, allocates
+    ## Selects which KeyFrames are to be used in the optimization, allocates
     # samples to them, and returns the result as {keyframe: num_samples}
     def get_active_window(self, optimizer: Optimizer) -> List[KeyFrame]:
         window_size = self._settings.window_selection.window_size
@@ -109,7 +109,7 @@ class KeyFrameManager:
 
         return self.allocate_samples(window, optimizer)
     
-    # Given the input @p keyframes, set the correct number of samples per frame. Modifies in-place.
+    ## Given the input @p keyframes, set the correct number of samples per frame. Modifies in-place.
     # @returns The updated list of keyframes.
     def allocate_samples(self, keyframes: List[KeyFrame], optimizer: Optimizer) -> List[KeyFrame]:
         uniform_rgb_samples = self._settings.sample_allocation.num_rgb_uniform_samples
@@ -187,6 +187,7 @@ class KeyFrameManager:
         self._global_step += 1
         return allocated_keyframes
 
+    ## @returns a list of all the KeyFrame's Pose States, represented as dicts 
     def get_poses_state(self) -> List:
         result = []
         for kf in self._keyframes:

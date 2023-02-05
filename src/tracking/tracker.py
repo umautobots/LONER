@@ -36,7 +36,7 @@ class Tracker:
     Frame instances and estimating their poses.
     """
 
-    # Constructor
+    ## Constructor
     # @param settings: Top level settings for the entire Cloner-SLAM module. Needed for calib etc.
     # @param rgb_signal: A Signal which the Tracker creates a Slot for, used for fetching RGB frames
     # @param lidar_signal: Same as rgb_signal, but for lidar
@@ -71,7 +71,7 @@ class Tracker:
 
         self._frame_count = 0
 
-    # Run spins and processes incoming data while putting resulting frames into the queue
+    ## Run spins and processes incoming data while putting resulting frames into the queue
     def run(self) -> None:
         while True:
             if self._rgb_slot.has_value():
@@ -118,7 +118,7 @@ class Tracker:
             continue
         print("Exiting tracking process.")
 
-    # track_frame inputs a @p frame and estimates its pose, which is stored in the Frame.
+    ## track_frame inputs a @p frame and estimates its pose, which is stored in the Frame.
     # @returns True if tracking was successful.
     def track_frame(self, frame: Frame) -> bool:
 

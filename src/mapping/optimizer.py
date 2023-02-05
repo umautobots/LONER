@@ -56,7 +56,7 @@ class Optimizer:
     which the Optimizer then uses to draw samples and iterate the optimization
     """
 
-    # Constructor
+    ## Constructor
     # @param settings: Optimizer-specific settings. See the example settings for details.
     # @param calibration: Calibration-related settings. See the example settings for details
     # @param world_cube: The world cube pre-computed that is used to scale the world.
@@ -118,7 +118,7 @@ class Optimizer:
         # self._wandb = wandb.init(project='cloner_slam', config=self._model_config,
         #                          save_code=True, mode=self._wandb_mode)
 
-    # Run one or more iterations of the optimizer, as specified by the stored settings
+    ## Run one or more iterations of the optimizer, as specified by the stored settings
     # @param keyframe_window: The set of keyframes to use in the optimization.
     def iterate_optimizer(self, keyframe_window: List[KeyFrame]) -> float:
                 
@@ -183,7 +183,12 @@ class Optimizer:
         if len(iteration_schedule) > 1 and self._settings.skip_pose_refinement:
             iteration_schedule = iteration_schedule[1:]
 
+        # For each iteration config, have a list of the losses
+        losses_log = []
+
         for iteration_config in iteration_schedule:
+            losses_log.append([])
+
             self._optimization_settings.freeze_poses = iteration_config["fix_poses"]
             
             if "latest_kf_only" in iteration_config:
@@ -343,6 +348,8 @@ class Optimizer:
 
                 loss = self.compute_loss(camera_samples, lidar_samples)
 
+                losses_log[-1].append(loss.detach().cpu().item())
+
                 if self._settings.debug.draw_comp_graph:
                     graph_dir = f"{self._settings.log_directory}/graphs"
                     os.makedirs(graph_dir, exist_ok=True)
@@ -366,20 +373,30 @@ class Optimizer:
 
                 if profiler is not None:
                     profiler.step()
-    # Returns whether or not the lidar should be used, as indicated by the settings
+
+
+        if self._settings.debug.log_losses:
+            graph_dir = f"{self._settings.log_directory}/losses/keyframe_{self._keyframe_count}"
+            os.makedirs(graph_dir, exist_ok=True)
+            for log_idx, log in enumerate(losses_log):
+                with open(f"{graph_dir}/phase_{log_idx}.csv", 'w+') as log_file:
+                    log = [str(l) for l in log]
+                    log_file.write("\n".join(log))
+
+    ## @returns whether or not the lidar should be used, as indicated by the settings
     def should_enable_lidar(self) -> bool:
         return self._optimization_settings.stage in [1, 3] \
                     and (not self._optimization_settings.freeze_sigma_mlp \
                          or not self._optimization_settings.freeze_poses)
 
-    # Returns whether or not the camera should be use, as indicated by the settings
-
+    ## @returns whether or not the camera should be use, as indicated by the settings
     def should_enable_camera(self) -> bool:
         return self._optimization_settings.stage in [2, 3] \
                 and (not self._optimization_settings.freeze_rgb_mlp \
                      or (not self._settings.detach_rgb_from_poses \
                          and not self._optimization_settings.freeze_poses))
 
+    ## For an 8x8 grid on the start image, compute the loss of each cell
     def compute_rgb_loss_distribution(self, keyframe: KeyFrame):
         # TODO: For simplicity, this only computes losses for the first image. Is this OK?
         chunk_indices = self._cam_ray_directions.sample_chunks()
@@ -402,7 +419,7 @@ class Optimizer:
         losses = torch.stack(losses)
         return losses
 
-    # For the given camera and lidar rays, compute and return the differentiable loss
+    ## For the given camera and lidar rays, compute and return the differentiable loss
     def compute_loss(self, camera_samples: Tuple[torch.Tensor, torch.Tensor], 
                            lidar_samples: Tuple[torch.Tensor, torch.Tensor],
                            override_enables: bool = False) -> torch.Tensor:

@@ -82,7 +82,7 @@ class KeyFrame:
     def get_end_time(self) -> float:
         return self._frame.end_image.timestamp
 
-    # At the given @p timestamps, interpolate/extrapolate and return the lidar poses.
+    ## At the given @p timestamps, interpolate/extrapolate and return the lidar poses.
     # @returns For N timestamps, returns a Nx4x4 tensor with all the interpolated/extrapolated transforms
     def interpolate_lidar_poses(self, timestamps: torch.Tensor, use_groundtruth: bool = False) -> torch.Tensor:
         assert timestamps.dim() == 1
@@ -148,7 +148,7 @@ class KeyFrame:
 
         return output_transformations_homo
 
-    # For all the points in the frame, create lidar rays in the format Cloner wants
+    ## For all the points in the frame, create lidar rays in the format Cloner wants
     def build_lidar_rays(self,
                          lidar_indices: torch.Tensor,
                          ray_range: torch.Tensor,
@@ -157,17 +157,6 @@ class KeyFrame:
                          ignore_world_cube: bool = False) -> torch.Tensor:
 
         lidar_scan = self.get_lidar_scan()
-
-
-        # TODO: member variables
-        # rotate_lidar_points_opengl = torch.Tensor([[0, -1, 0],
-        #                                            [0,  0, 1],
-        #                                            [-1, 0, 0]]).to(self._device)
-
-        # rotate_lidar_opengl = torch.Tensor([[0, 0, -1, 0],
-        #                                     [-1,0, 0, 0],
-        #                                     [0, 1, 0, 0],
-        #                                     [0, 0, 0, 1]]).to(self._device)
 
         rotate_lidar_opengl = torch.eye(4).to(self._device)
         rotate_lidar_points_opengl = torch.eye(3).to(self._device)
@@ -181,9 +170,10 @@ class KeyFrame:
         assert origin_offset.dim() == 2, "Currently there is not support for unique lidar origin offsets"
 
         # N x 4 x 4
-        # interpolated_poses = self.interpolate_lidar_poses(timestamps, use_gt_poses) @ origin_offset 
+        interpolated_poses = self.interpolate_lidar_poses(timestamps, use_gt_poses) @ origin_offset 
 
-        lidar_poses = torch.tile(self.get_start_lidar_pose().get_transformation_matrix(), (len(timestamps), 1, 1))
+        # lidar_poses = torch.tile(self.get_start_lidar_pose().get_transformation_matrix(), (len(timestamps), 1, 1))
+        lidar_poses = interpolated_poses
 
         # Now that we're in OpenGL frame, we can apply world cube transformation
         ray_origins = lidar_poses[:, :3, 3]
@@ -236,7 +226,7 @@ class KeyFrame:
             valid_idxs = (far > (near + 1. / world_cube.scale_factor))[..., 0]
             return rays[valid_idxs], depths[valid_idxs]
     
-    # Given the images, create camera rays in Cloner's format
+    ## Given the images, create camera rays in Cloner's format
     def build_camera_rays(self,
                           first_camera_indices: torch.Tensor,
                           second_camera_indices: torch.Tensor,
@@ -289,7 +279,8 @@ class KeyFrame:
             "lidar_to_camera": self._frame._lidar_to_camera.get_pose_tensor()
         }
 
-
+    ## Overlay an 8x8 grid on the start image, and write the loss distribution on each cell. 
+    # Save output to @p output_path
     def draw_loss_distribution(self, output_path, total_loss: float = None, kept: bool = None) -> None:
         image = self._frame.start_image.image.detach().cpu().numpy()*255
 

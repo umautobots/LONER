@@ -10,7 +10,7 @@ class Image:
     A simple wrapper containing an image and a timestamp
     """
 
-    # Constructor
+    ## Constructor
     # @param image: a torch Tensor of RGB or Binary data
     # @param timestamp: the time at which the image was captured
     def __init__(self, image: torch.Tensor, timestamp: float):
@@ -19,6 +19,7 @@ class Image:
 
         self.shape = self.image.shape
 
+    ## @returns a copy of the current image
     def clone(self) -> "Image":
         if isinstance(self.timestamp, torch.Tensor):
             new_ts = self.timestamp.clone()
@@ -26,7 +27,7 @@ class Image:
             new_ts = self.timestamp
         return Image(self.image.clone(), new_ts)
 
-    # Moves all items in the image to the specified device, in-place. Also returns the current image.
+    ## Moves all items in the image to the specified device, in-place. Also returns the current image.
     # @param device: Target device, as int (GPU) or string (CPU or GPU)
     def to(self, device: Union[int, str]) -> "Image":
         self.image = self.image.to(device)
@@ -67,18 +68,19 @@ class LidarScan:
         self.ray_origin_offsets = ray_origin_offsets
         self.timestamps = timestamps
 
+    ## @returns the number of points in the scan
     def __len__(self) -> int:
         return self.timestamps.shape[0]
 
-    # Gets the timestamp of the first lidar point
+    ## Gets the timestamp of the first lidar point
     def get_start_time(self) -> torch.Tensor:
         return self.timestamps[0]
 
-    # Gets the timestamp of the last lidar point
+    ## Gets the timestamp of the last lidar point
     def get_end_time(self) -> torch.Tensor:
         return self.timestamps[-1]
 
-    # Removes all points from the current scan. Also @returns self
+    ## Removes all points from the current scan. Also @returns self
     def clear(self) -> "LidarScan":
         self.ray_directions = torch.Tensor()
         self.distances = torch.Tensor()
@@ -86,13 +88,14 @@ class LidarScan:
         self.timestamps = torch.Tensor()
         return self
 
+    ## @returns a deep copy of the current scan
     def clone(self) -> "LidarScan":
         return LidarScan(self.ray_directions.clone(),
                          self.distances.clone(),
                          self.ray_origin_offsets.clone(),
                          self.timestamps.clone())
 
-    # Removes the first @p num_points points from the scan. Also @returns self.
+    ## Removes the first @p num_points points from the scan. Also @returns self.
     def remove_points(self, num_points: int) -> "LidarScan":
         self.ray_directions = self.ray_directions[..., num_points:]
         self.distances = self.distances[num_points:]
@@ -103,7 +106,7 @@ class LidarScan:
             self.ray_origin_offsets = self.ray_origin_offsets[..., num_points:]
         return self
 
-    # Copies points from the @p other scan into this one. Also returns self.
+    ## Copies points from the @p other scan into this one. Also returns self.
     def merge(self, other: "LidarScan") -> "LidarScan":
         self.add_points(other.ray_directions,
                         other.distances,
@@ -111,7 +114,7 @@ class LidarScan:
                         other.timestamps)
         return self
 
-    # Moves all items in the LidarScan to the specified device, in-place.
+    ## Moves all items in the LidarScan to the specified device, in-place.
     # @param device: Target device, as int (GPU) or string (CPU or GPU)
     # @returns the current scan.
     def to(self, device: Union[int, str]) -> "LidarScan":
@@ -121,7 +124,7 @@ class LidarScan:
         self.timestamps = self.timestamps.to(device)
         return self
 
-    # Add points to the current scan, with same arguments as constructor. @returns self.
+    ## Add points to the current scan, with same arguments as constructor. @returns self.
     def add_points(self,
                    ray_directions: torch.Tensor,
                    distances: torch.Tensor,
@@ -144,19 +147,3 @@ class LidarScan:
                 self.ray_origin_offsets = torch.hstack(
                     (self.ray_origin_offsets, ray_origin_offsets))
         return self
-
-    # Transforms the points according to the given @p world_cube.
-    # @param world_cube specifies the transformation
-    # @param reverse specifies whether to invert the transformation
-    # @returns self
-    # Commented out because it's probably a terrible idea to ever use this
-    # def transform_world_cube(self, world_cube: WorldCube, reverse=False) -> "LidarScan":
-    #     if reverse:
-    #         self.ray_origin_offsets[..., :3, 3] = self.ray_origin_offsets[..., :3, 3]\
-    #                                                * world_cube.scale_factor
-    #         self.distances = self.distances * world_cube.scale_factor
-    #     else:
-    #         self.ray_origin_offsets[..., :3, 3] =self.ray_origin_offsets[..., :3, 3] \
-    #                                              / world_cube.scale_factor
-    #         self.distances = self.distances / world_cube.scale_factor
-    #     return self

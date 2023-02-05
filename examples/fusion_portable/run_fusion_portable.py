@@ -317,7 +317,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.overrides is not None:
-        settings_options, settings_descriptions = Settings.generate_options(os.path.expanduser("~/ClonerSLAM/cfg/settings_schedule.yaml"), os.path.expanduser(args.overrides))
+        settings_options, settings_descriptions = Settings.generate_options(os.path.expanduser("~/ClonerSLAM/cfg/default_settings.yaml"), os.path.expanduser(args.overrides))
             
         now = datetime.datetime.now()
         now_str = now.strftime("%m%d%y_%H%M%S")
@@ -325,7 +325,7 @@ if __name__ == "__main__":
         
     else:
         settings_descriptions = [None]
-        settings_options = [Settings.load_from_file(os.path.expanduser("~/ClonerSLAM/cfg/settings_schedule.yaml"))]
+        settings_options = [Settings.load_from_file(os.path.expanduser("~/ClonerSLAM/cfg/default_settings.yaml"))]
 
 
     if args.gpu_ids != [0]:

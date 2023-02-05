@@ -1,9 +1,4 @@
 mapper:
   keyframe_manager:
     window_selection:
-      strategy: [RANDOM, MOST_RECENT]
-    sample_allocation:
-      strategy: [ACTIVE, UNIFORM]
-      num_keyframes_to_keep: [5]
-  optimizer:
-    skip_pose_refinement: [False]
+      window_size: [10, 20]

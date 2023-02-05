@@ -3,6 +3,7 @@ import rospy
 import tf2_py
 import numpy as np
 from scipy.spatial.transform import Rotation
+from nav_msgs.msg import Odometry
 
 from geometry_msgs.msg import TransformStamped, Pose
 
@@ -73,3 +74,20 @@ def transformation_mat_to_pose_msg(tf):
     pose_msg.orientation.w = quat[3]
 
     return pose_msg
+
+def transformation_mat_to_odom_msg(tf):
+    odom_msg = Odometry()
+
+    quat = Rotation.from_matrix(tf[:3,:3]).as_quat()
+    trans = tf[:3,3]
+    
+    odom_msg.pose.pose.position.x = trans[0]
+    odom_msg.pose.pose.position.y = trans[1]
+    odom_msg.pose.pose.position.z = trans[2]
+
+    odom_msg.pose.pose.orientation.x = quat[0]
+    odom_msg.pose.pose.orientation.y = quat[1]
+    odom_msg.pose.pose.orientation.z = quat[2]
+    odom_msg.pose.pose.orientation.w = quat[3]
+
+    return odom_msg

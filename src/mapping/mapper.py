@@ -18,7 +18,7 @@ class Mapper:
     the optimizer.
     """
 
-    # Constructor
+    ## Constructor
     # @param settings: The settings for the mapping and all contained classes
     # @param frame_signal: A Signal which the tracker emits to with completed Frame objects
     def __init__(self, settings: Settings, calibration: Settings, frame_signal: Signal,
@@ -46,7 +46,7 @@ class Mapper:
         self._term_signal = mp.Value('i', 0)
         self._processed_stop_signal = mp.Value('i', 0)
 
-    # Spins by reading frames from the @m frame_slot as inputs.
+    ## Spins by reading frames from the @m frame_slot as inputs.
     def run(self) -> None:
 
         print(self._settings.debug)
@@ -69,7 +69,6 @@ class Mapper:
                 # print(
                 #     f"{accepted_str} frame at time {new_frame.start_image.timestamp}")
             
-
                 if self._settings.optimizer.enabled and accepted_frame:
 
                     active_window = self._keyframe_manager.get_active_window(self._optimizer)

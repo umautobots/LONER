@@ -14,6 +14,8 @@ import geometry_msgs.msg
 
 """
 Listens to data on the given signals, and publishes to ROS for visualization. 
+
+Out-of-date; don't use. 
 """
 
 
