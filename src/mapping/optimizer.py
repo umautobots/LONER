@@ -432,11 +432,6 @@ class Optimizer:
 
         if (override_enables or self.should_enable_lidar()) and lidar_samples is not None:
             # TODO: Update with JS divergence method
-            if self._model_config.loss.decay_depth_eps:
-                depth_eps = max(self._model_config.loss.depth_eps * (self._model_config.train.decay_rate ** (
-                                iteration_idx / (self._model_config.loss.depth_eps_decay_steps))), self._model_config.loss.min_depth_eps)
-            else:
-                depth_eps = self._model_config.loss.depth_eps
 
             if self._model_config.loss.decay_depth_lambda:
                 depth_lambda = max(self._model_config.loss.depth_lambda * (self._model_config.train.decay_rate ** (
@@ -464,8 +459,32 @@ class Optimizer:
             self._lidar_depths_gt = lidar_depths * scale_factor
             weights_pred_lidar = self._results_lidar['weights_fine']
 
-            weights_gt_lidar = get_weights_gt(
-                self._lidar_depth_samples_fine, self._lidar_depths_gt, eps=depth_eps)
+            if self._model_config.loss.dynamic_depth_eps_JS:
+                # print('using JS divergence loss')
+                min_js_score = self._model_config.loss.min_js_score
+                max_js_score = self._model_config.loss.max_js_score
+                alpha = self._model_config.loss.alpha
+
+                mean = torch.sum(self._lidar_depth_samples_fine * weights_pred_lidar, axis=1) / (torch.sum(weights_pred_lidar, axis=1) + 1e-10) # weighted mean # [N_rays]
+                var = torch.sum((self._lidar_depth_samples_fine-torch.unsqueeze(mean, dim=-1))**2 * weights_pred_lidar, axis=1) / (torch.sum(weights_pred_lidar, axis=1) + 1e-10) + 1e-10 # [N_rays]
+                eps = torch.sqrt(var) # [N_rays]
+                mean, var, eps = torch.unsqueeze(mean, 1), torch.unsqueeze(var, 1), torch.unsqueeze(eps, 1)
+                eps_min = self._model_config.loss.min_depth_eps
+                js_score = self.jsd_gauss(self._lidar_depths_gt, eps_min, mean, eps).squeeze()
+                js_score[js_score<min_js_score] = 0
+                js_score[js_score>max_js_score] = max_js_score
+                eps_dynamic = eps_min*(1+(alpha * js_score))
+                eps_dynamic = torch.unsqueeze(eps_dynamic, dim=-1).detach()
+                weights_gt_lidar = get_weights_gt(self._lidar_depth_samples_fine, self._lidar_depths_gt, eps=eps_dynamic) # [N_rays, N_samples]
+            else:
+                if self._model_config.loss.decay_depth_eps:
+                    depth_eps = max(self._model_config.loss.depth_eps * (self._model_config.train.decay_rate ** (
+                                    iteration_idx / (self._model_config.loss.depth_eps_decay_steps))), self._model_config.loss.min_depth_eps)
+                else:
+                    depth_eps = self._model_config.loss.depth_eps
+                weights_gt_lidar = get_weights_gt(
+                    self._lidar_depth_samples_fine, self._lidar_depths_gt, eps=depth_eps)
+            
             weights_gt_lidar[~opaque_rays, :] = 0
 
             depth_loss_los_fine = nn.functional.l1_loss(
@@ -574,3 +593,22 @@ class Optimizer:
         self._occupancy_grid = self._occupancy_grid_model()
         self._ray_sampler.update_occ_grid(self._occupancy_grid.detach())
         self._occupancy_grid_optimizer.zero_grad()
+
+
+    def kld_gauss(self, u1, s1, u2, s2):
+        # general KL two Gaussians
+        # u2, s2 often N(0,1)
+        # https://stats.stackexchange.com/questions/7440/ +
+        # kl-divergence-between-two-univariate-gaussians
+        # log(s2/s1) + [( s1^2 + (u1-u2)^2 ) / 2*s2^2] - 0.5
+        v1 = s1 * s1
+        v2 = s2 * s2
+        a = torch.log(s2/s1) 
+        num = v1 + (u1 - u2)**2
+        den = 2 * v2
+        b = num / den
+        return a + b - 0.5
+    def jsd_gauss(self, u1, s1, u2, s2):
+        um = 0.5 * (u1+u2)
+        sm = 0.5 * torch.sqrt(s1**2+s2**2)
+        return 0.5 * self.kld_gauss(u1, s1, um, sm) + 0.5 * self.kld_gauss(u2, s2, um, sm)
