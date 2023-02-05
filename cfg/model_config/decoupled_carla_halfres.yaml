@@ -34,6 +34,12 @@ train:
     decay_rate: 0.001
      
 loss:
+    dynamic_depth_eps_JS: True         # boolean to enable JS divergence loss
+    # Params for dynamic_depth_eps_JS
+    min_js_score: 1.
+    max_js_score: 10.
+    alpha: 5
+
     decay_depth_lambda: False          # boolean to enable decay
     depth_lambda: 1000.                # Depth lambda used for loss.
     min_depth_lambda: 10.              # Minimum value after decay
