@@ -12,6 +12,10 @@ import torchviz
 import tqdm
 import wandb
 from torch.profiler import ProfilerActivity, profile
+# for visualization
+import numpy as np
+from matplotlib import pyplot as plt
+from scipy.stats import norm
 
 from common.pose_utils import WorldCube
 from common.ray_utils import CameraRayDirections, rays_to_pcd
@@ -458,24 +462,32 @@ class Optimizer:
 
             self._lidar_depths_gt = lidar_depths * scale_factor
             weights_pred_lidar = self._results_lidar['weights_fine']
+            
+            # Compute JS divergence (also calculate when using fix depth_eps for visualization)
+            mean = torch.sum(self._lidar_depth_samples_fine * weights_pred_lidar, axis=1) / (torch.sum(weights_pred_lidar, axis=1) + 1e-10) # weighted mean # [N_rays]
+            var = torch.sum((self._lidar_depth_samples_fine-torch.unsqueeze(mean, dim=-1))**2 * weights_pred_lidar, axis=1) / (torch.sum(weights_pred_lidar, axis=1) + 1e-10) + 1e-10 # [N_rays]
+            eps = torch.sqrt(var) # [N_rays]
+            mean, var, eps = torch.unsqueeze(mean, 1), torch.unsqueeze(var, 1), torch.unsqueeze(eps, 1)
+            eps_min = self._model_config.loss.min_depth_eps
+            js_score = self.jsd_gauss(self._lidar_depths_gt, eps_min, mean, eps).squeeze()
 
             if self._model_config.loss.dynamic_depth_eps_JS:
                 # print('using JS divergence loss')
-                min_js_score = self._model_config.loss.min_js_score
-                max_js_score = self._model_config.loss.max_js_score
-                alpha = self._model_config.loss.alpha
-
-                mean = torch.sum(self._lidar_depth_samples_fine * weights_pred_lidar, axis=1) / (torch.sum(weights_pred_lidar, axis=1) + 1e-10) # weighted mean # [N_rays]
-                var = torch.sum((self._lidar_depth_samples_fine-torch.unsqueeze(mean, dim=-1))**2 * weights_pred_lidar, axis=1) / (torch.sum(weights_pred_lidar, axis=1) + 1e-10) + 1e-10 # [N_rays]
-                eps = torch.sqrt(var) # [N_rays]
-                mean, var, eps = torch.unsqueeze(mean, 1), torch.unsqueeze(var, 1), torch.unsqueeze(eps, 1)
-                eps_min = self._model_config.loss.min_depth_eps
-                js_score = self.jsd_gauss(self._lidar_depths_gt, eps_min, mean, eps).squeeze()
+                min_js_score = self._model_config.loss.dynamic_depth_eps_JS.min_js_score
+                max_js_score = self._model_config.loss.dynamic_depth_eps_JS.max_js_score
+                alpha = self._model_config.loss.dynamic_depth_eps_JS.alpha
                 js_score[js_score<min_js_score] = 0
                 js_score[js_score>max_js_score] = max_js_score
                 eps_dynamic = eps_min*(1+(alpha * js_score))
                 eps_dynamic = torch.unsqueeze(eps_dynamic, dim=-1).detach()
                 weights_gt_lidar = get_weights_gt(self._lidar_depth_samples_fine, self._lidar_depths_gt, eps=eps_dynamic) # [N_rays, N_samples]
+
+                if self._model_config.loss.viz_loss:
+                    # viz_idx = np.where(js_score.detach().cpu().numpy() == max_js_score)[0] # show rays that haven't converged
+                    viz_idx = np.array([0]) # show the first ray
+                    self.viz_loss(iteration_idx, viz_idx, opaque_rays.detach().cpu().numpy(), weights_gt_lidar.detach().cpu().numpy(), weights_pred_lidar.detach().cpu().numpy(), \
+                                mean.detach().cpu().numpy(), var.detach().cpu().numpy(), js_score.detach().cpu().numpy(), \
+                                self._lidar_depth_samples_fine.detach().cpu().numpy(), self._lidar_depths_gt.detach().cpu().numpy(), eps_dynamic.detach().cpu().numpy())
             else:
                 if self._model_config.loss.decay_depth_eps:
                     depth_eps = max(self._model_config.loss.depth_eps * (self._model_config.train.decay_rate ** (
@@ -484,6 +496,13 @@ class Optimizer:
                     depth_eps = self._model_config.loss.depth_eps
                 weights_gt_lidar = get_weights_gt(
                     self._lidar_depth_samples_fine, self._lidar_depths_gt, eps=depth_eps)
+                
+                if self._model_config.loss.viz_loss:
+                    # viz_idx = np.where(js_score.detach().cpu().numpy() == max_js_score)[0] # show rays that haven't converged
+                    viz_idx = np.array([0]) # show the first ray
+                    self.viz_loss(iteration_idx, viz_idx, opaque_rays.detach().cpu().numpy(), weights_gt_lidar.detach().cpu().numpy(), weights_pred_lidar.detach().cpu().numpy(), \
+                                    mean.detach().cpu().numpy(), var.detach().cpu().numpy(), js_score.detach().cpu().numpy(), \
+                                    self._lidar_depth_samples_fine.detach().cpu().numpy(), self._lidar_depths_gt.detach().cpu().numpy(), depth_eps)
             
             weights_gt_lidar[~opaque_rays, :] = 0
 
@@ -612,3 +631,54 @@ class Optimizer:
         um = 0.5 * (u1+u2)
         sm = 0.5 * torch.sqrt(s1**2+s2**2)
         return 0.5 * self.kld_gauss(u1, s1, um, sm) + 0.5 * self.kld_gauss(u2, s2, um, sm)
+
+    def viz_loss(self, i, viz_idx: np.ndarray, opaque_rays: np.ndarray, weights_gt_lidar: np.ndarray, weights_pred_lidar: np.ndarray \
+                        , mean: np.ndarray, var: np.ndarray, js_score: np.ndarray \
+                        , s_vals_lidar: np.ndarray, depth_gt_lidar: np.ndarray, eps_: np.ndarray)->None:
+        if i > 0:
+            # max_js_ids = np.where(js_score == self._model_config.loss.dynamic_depth_eps_JS.max_js_score)[0]
+            # opaque_ids = np.where(opaque_rays == True)[0]
+            # print('maxjs_count: ', len(np.intersect1d(max_js_ids, opaque_ids)) )
+            # return
+            for j in viz_idx:
+                if not opaque_rays[j]:
+                    continue
+                print('ray idx:', j)
+                x = s_vals_lidar[j]
+                y = weights_pred_lidar[j]
+                y_gt = weights_gt_lidar[j]
+                u = mean[j]
+                variance = var[j]
+                print("u: ", u, " var: ", variance)
+                plt.figure(figsize=(15, 10))
+                plt.plot(x,y,'.', linewidth=0.5) 
+                plt.plot(x,y_gt,'.', linewidth=0.5) 
+
+                depth_gt_lidar = np.array(np.squeeze(depth_gt_lidar)).reshape((-1))
+                eps_min = self._model_config.loss.min_depth_eps
+                if self._model_config.loss.dynamic_depth_eps_JS:
+                    eps_dynamic_ = eps_
+                    print("u_gt:", depth_gt_lidar[j], "eps: ", eps_dynamic_[j])
+                else:
+                    depth_eps_ = eps_
+                    print("u_gt:", depth_gt_lidar[j], "eps: ", depth_eps_)
+                if self._model_config.loss.dynamic_depth_eps_JS:
+                    if js_score.ndim>0:
+                        plt.title('Iter: %d\n mean: %1.3f std: %1.3f\n JS(P||Q) = %1.3f' % (i, u, np.sqrt(variance), js_score[j]))
+                    else:
+                        plt.title('Iter: %d\n mean: %1.3f std: %1.3f\n JS(P||Q) = %1.3f' % (i, u, np.sqrt(variance), js_score))
+                else:
+                    plt.title('Iter: %d\n mean: %1.3f std: %1.3f\n mean err: %1.3f std err: %1.3f' % (i, u, np.sqrt(variance), depth_gt_lidar[j]-u, eps_min-np.sqrt(variance)))
+
+                x_axis = np.arange(np.amin(x), np.amax(x), 0.01)
+                plt.plot(x_axis, norm.pdf(x_axis, u, np.sqrt(variance)) * (0.5/np.amax(norm.pdf(x_axis, u, np.sqrt(variance)))), '-m', linewidth=2) # np.amax(y)
+                #plt.plot(x_axis, norm.pdf(x_axis, depth_gt_lidar[0], depth_eps) * np.amax(y), '-g', linewidth=3)
+                plt.plot(x_axis, norm.pdf(x_axis, depth_gt_lidar[j], eps_min) * (0.5/np.amax(norm.pdf(x_axis, depth_gt_lidar[j], eps_min))), '-g', linewidth=2)
+                if self._model_config.loss.dynamic_depth_eps_JS:
+                    plt.plot(x_axis, norm.pdf(x_axis, depth_gt_lidar[j], eps_dynamic_[j]) * (0.5/np.amax(norm.pdf(x_axis, depth_gt_lidar[j], eps_dynamic_[j]))), '-r', linewidth=2)
+                else:
+                    plt.plot(x_axis, norm.pdf(x_axis, depth_gt_lidar[j], depth_eps_) * (0.5/np.amax(norm.pdf(x_axis, depth_gt_lidar[j], depth_eps_))), '-r', linewidth=2)
+                plt.xlabel("Dist. (m)")
+                plt.ylabel("Predicted weight")
+                plt.legend(["Sample results", "Sample gt", "Sample distribution", "Goal distribution", "Training distribution"], loc ="upper center")
+                plt.show()
