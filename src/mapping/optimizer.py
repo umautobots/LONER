@@ -471,7 +471,7 @@ class Optimizer:
             eps_min = self._model_config.loss.min_depth_eps
             js_score = self.jsd_gauss(self._lidar_depths_gt, eps_min, mean, eps).squeeze()
 
-            print('self._model_config.loss.dynamic_depth_eps_JS: ', self._model_config.loss.dynamic_depth_eps_JS)
+            #print('self._model_config.loss.dynamic_depth_eps_JS: ', self._model_config.loss.dynamic_depth_eps_JS)
             if self._model_config.loss.dynamic_depth_eps_JS:
                 #print('using JS divergence loss')
                 min_js_score = self._model_config.loss.JS_loss.min_js_score
