@@ -236,7 +236,7 @@ class Optimizer:
                 optimizable_poses = [kf.get_start_lidar_pose().get_pose_tensor() for kf in active_keyframe_window if not kf.is_anchored] \
                     + [kf.get_end_lidar_pose().get_pose_tensor()
                     for kf in active_keyframe_window if not kf.is_anchored]
-
+                print('optimize_poses!')
                 print(f"Num keyframes: {len(active_keyframe_window)}, Num Trainable Poses: {len(optimizable_poses)}")
                 self._optimizer = torch.optim.Adam([{'params': trainable_model_params, 'lr': self._model_config.train.lrate_mlp},
                                             {'params': optimizable_poses, 'lr': self._model_config.train.lrate_pose}])
@@ -471,11 +471,12 @@ class Optimizer:
             eps_min = self._model_config.loss.min_depth_eps
             js_score = self.jsd_gauss(self._lidar_depths_gt, eps_min, mean, eps).squeeze()
 
+            print('self._model_config.loss.dynamic_depth_eps_JS: ', self._model_config.loss.dynamic_depth_eps_JS)
             if self._model_config.loss.dynamic_depth_eps_JS:
-                # print('using JS divergence loss')
-                min_js_score = self._model_config.loss.dynamic_depth_eps_JS.min_js_score
-                max_js_score = self._model_config.loss.dynamic_depth_eps_JS.max_js_score
-                alpha = self._model_config.loss.dynamic_depth_eps_JS.alpha
+                #print('using JS divergence loss')
+                min_js_score = self._model_config.loss.JS_loss.min_js_score
+                max_js_score = self._model_config.loss.JS_loss.max_js_score
+                alpha = self._model_config.loss.JS_loss.alpha
                 js_score[js_score<min_js_score] = 0
                 js_score[js_score>max_js_score] = max_js_score
                 eps_dynamic = eps_min*(1+(alpha * js_score))
@@ -636,7 +637,7 @@ class Optimizer:
                         , mean: np.ndarray, var: np.ndarray, js_score: np.ndarray \
                         , s_vals_lidar: np.ndarray, depth_gt_lidar: np.ndarray, eps_: np.ndarray)->None:
         if i > 0:
-            # max_js_ids = np.where(js_score == self._model_config.loss.dynamic_depth_eps_JS.max_js_score)[0]
+            # max_js_ids = np.where(js_score == self._model_config.loss.JS_loss.max_js_score)[0]
             # opaque_ids = np.where(opaque_rays == True)[0]
             # print('maxjs_count: ', len(np.intersect1d(max_js_ids, opaque_ids)) )
             # return
