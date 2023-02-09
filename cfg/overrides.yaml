@@ -1,4 +1,11 @@
 mapper:
   keyframe_manager:
     window_selection:
-      window_size: [10, 20]
+      hybrid_settings:
+        num_recent_frames: [1, 3, 5]
+  optimizer:
+    model_config:
+      train:
+        lrate_gamma: [0.95]
+# system:
+#   single_threaded: [False, True]

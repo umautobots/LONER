@@ -25,6 +25,9 @@ debug:
     draw_loss_distribution: False
     log_losses: True
 
+system:
+  single_threaded: True
+
 # ros_names:
 #   camera: "ego_vehicle/rgb_front"
 #   lidar: "ego_vehicle/lidar"
@@ -57,14 +60,17 @@ tracker:
       target_uniform_point_count: 10000
       voxel_downsample_size: 0.1
 mapper:
-  device: 0
+  device: 0 # don't change this, use CUDA_VISIBLE_DEVICES
+  data_prep_on_cpu: &data_prep_on_cpu True
   keyframe_manager:
     keyframe_selection:
       strategy: TEMPORAL
       temporal:
         time_diff_seconds: 2
     window_selection:
-      strategy: MOST_RECENT
+      strategy: HYBRID
+      hybrid_settings:
+        num_recent_frames: 3
       window_size: 10
     sample_allocation:
       strategy: UNIFORM
@@ -83,6 +89,7 @@ mapper:
       num_keyframes_to_keep: 10
 
   optimizer:
+    data_prep_on_cpu: *data_prep_on_cpu
     k_test: 0
     enabled: True
     default_optimizer_settings:
@@ -97,7 +104,7 @@ mapper:
       - 
         num_keyframes: 1
         iteration_schedule:
-          - num_iterations: 1000
+          - num_iterations: 10
             stage: 3
             fix_poses: True
             fix_sigma_mlp: False
