@@ -15,7 +15,6 @@ class KeyFrameSelectionStrategy(Enum):
 class WindowSelectionStrategy(Enum):
     MOST_RECENT = 0
     RANDOM = 1
-    HYBRID = 2
 
 class SampleAllocationStrategy(Enum):
     UNIFORM = 0
@@ -97,19 +96,12 @@ class KeyFrameManager:
 
         if self._window_selection_strategy == WindowSelectionStrategy.MOST_RECENT:
             window = self._keyframes[-window_size:]
-        elif self._window_selection_strategy in [WindowSelectionStrategy.RANDOM, WindowSelectionStrategy.HYBRID]:
-            
-            if self._window_selection_strategy == WindowSelectionStrategy.RANDOM:
-                num_temporal_frames = 1
-            else:
-                num_temporal_frames = self._settings.window_selection.hybrid_settings.num_recent_frames
-                
-            num_temporal_frames = min(num_temporal_frames, len(self._keyframes))
-            indices = torch.randperm(len(self._keyframes) - num_temporal_frames)[:window_size-num_temporal_frames].tolist()
+        elif self._window_selection_strategy == WindowSelectionStrategy.RANDOM:
+            indices = torch.randperm(len(self._keyframes) - 1)[:window_size-1].tolist()
 
-            # Note: This isn't great design, but it's pretty important that these indices comes last. 
+            # Note: This isn't great design, but it's pretty important that the -1 index comes last. 
             # Otherwise we might not keep it in the sample allocation step
-            indices += list(range(-num_temporal_frames, 0))
+            indices.append(-1)
             window = [self._keyframes[i] for i in indices]
         else:
             raise ValueError(
@@ -128,15 +120,6 @@ class KeyFrameManager:
 
         num_kfs = min(self._settings.sample_allocation.num_keyframes_to_keep, len(keyframes))
 
-        if self._window_selection_strategy == WindowSelectionStrategy.RANDOM:
-            num_temporal_frames = 1
-        elif self._window_selection_strategy == WindowSelectionStrategy.HYBRID:
-            num_temporal_frames = self._settings.window_selection.hybrid_settings.num_recent_frames
-        else:
-            num_temporal_frames = 0
-
-        num_temporal_frames = min(num_temporal_frames, len(self._keyframes))
-
         allocated_keyframes = []
         if self._sample_allocation_strategy == SampleAllocationStrategy.UNIFORM:
             for kf in keyframes[-num_kfs:]:
@@ -147,7 +130,7 @@ class KeyFrameManager:
                 allocated_keyframes.append(kf)
         elif self._sample_allocation_strategy == SampleAllocationStrategy.ACTIVE:
             loss_distributions = []
-            for kf in keyframes[:len(keyframes)-num_temporal_frames]:
+            for kf in keyframes:
                 with torch.no_grad():
                     loss_distribution = optimizer.compute_rgb_loss_distribution(kf)
                 loss_distributions.append(loss_distribution)
@@ -157,7 +140,9 @@ class KeyFrameManager:
             losses = torch.sum(loss_distributions, dim=1)
             _, kept_kf_indices = losses.topk(num_kfs)
 
-            kept_kf_indices = kept_kf_indices.tolist() + list(range(-num_temporal_frames, 0))
+            # Make sure we keep the most recent.
+            if len(losses) - 1 not in kept_kf_indices:
+                kept_kf_indices[-1] = len(losses) - 1
 
             print(kept_kf_indices, len(losses))
             print([keyframes[i].get_start_time() for i in kept_kf_indices])

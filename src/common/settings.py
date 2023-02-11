@@ -80,6 +80,7 @@ class Settings(AttrDict):
                 options.append((tuple(stack), data))
                 return
             
+            print(data)
             for element in data:
                 _generate_options_helper(data[element], stack + [element])
         
@@ -92,6 +93,7 @@ class Settings(AttrDict):
         all_index_options = tuple(np.arange(o) for o in option_counts)
         all_idx_combos = np.array(np.meshgrid(*all_index_options)).T.reshape(-1,len(all_index_options))
 
+        print("Options:",options)
         attr_stacks = [o[0] for o in options]
 
         # Make a copy of the settings for each combo of settings 

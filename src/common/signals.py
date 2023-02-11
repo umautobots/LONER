@@ -39,7 +39,7 @@ class Slot:
 
     # This should not be called directly. Instead, call Signal.register
     def __init__(self, single_process: bool):
-        
+
         if single_process:
             self._queue = SimpleQueue()
         else:

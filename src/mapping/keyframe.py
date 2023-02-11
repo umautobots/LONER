@@ -188,6 +188,7 @@ class KeyFrame:
         directions_3d = directions.unsqueeze(0).swapaxes(0, 2)
 
         # rotate ray directions from sensor coordinates to world coordinates
+        # TODO: This is a bit different from how original cloner calculates it. Verify correctness.
         ray_directions = lidar_rotations @ directions_3d
 
         # ray_directions is now Nx3x1, we want Nx3.
@@ -210,6 +211,7 @@ class KeyFrame:
         far_range = ray_range[1] / world_cube.scale_factor * \
             torch.ones_like(ray_origins[:, :1])
 
+        # TODO: Does no_nan cause problems here? 
         far_clip = get_far_val(ray_origins, ray_directions, no_nan=True)
         far = torch.minimum(far_range, far_clip)
 

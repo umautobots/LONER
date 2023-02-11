@@ -89,14 +89,10 @@ class Optimizer:
         self._model_config = settings.model_config
 
         self._scale_factor = world_cube.scale_factor
-
-        self._data_prep_device = 'cpu' if settings.data_prep_on_cpu else self._device
-
-        self._world_cube = world_cube.to(self._data_prep_device)
-
+        self._world_cube = world_cube
 
         self._ray_range = torch.Tensor(
-            self._model_config.model.ray_range).to(self._data_prep_device)
+            self._model_config.model.ray_range) #.to(self._device)
 
         # Main Model
         self._model = Model(self._model_config.model)
@@ -114,7 +110,7 @@ class Optimizer:
         self._ray_sampler = OccGridRaySampler()
         self._ray_sampler.update_occ_grid(self._occupancy_grid.detach())
 
-        self._cam_ray_directions = CameraRayDirections(calibration, device=self._data_prep_device)
+        self._cam_ray_directions = CameraRayDirections(calibration, device='cpu')
         self._keyframe_count = 0
         self._global_step = 0
 
@@ -240,6 +236,7 @@ class Optimizer:
                 optimizable_poses = [kf.get_start_lidar_pose().get_pose_tensor() for kf in active_keyframe_window if not kf.is_anchored] \
                     + [kf.get_end_lidar_pose().get_pose_tensor()
                     for kf in active_keyframe_window if not kf.is_anchored]
+                print('optimize_poses!')
                 print(f"Num keyframes: {len(active_keyframe_window)}, Num Trainable Poses: {len(optimizable_poses)}")
                 self._optimizer = torch.optim.Adam([{'params': trainable_model_params, 'lr': self._model_config.train.lrate_mlp},
                                             {'params': optimizable_poses, 'lr': self._model_config.train.lrate_pose}])
@@ -262,6 +259,20 @@ class Optimizer:
 
                 for kf_idx, kf in enumerate(active_keyframe_window):                
                     if self.should_enable_lidar():
+                        # lidar_start_idx = torch.randint(
+                        #     MAX_POSSIBLE_LIDAR_RAYS, (1,))
+                        # # TODO: This addition will NOT work for non-uniform sampling
+                        # lidar_end_idx = lidar_start_idx + kf.num_uniform_lidar_samples
+                        # lidar_indices = self._lidar_shuffled_indices[lidar_start_idx:lidar_end_idx]
+
+                        # if kf.num_uniform_lidar_samples > len(kf.get_lidar_scan()):
+                        #     print(
+                        #         "Warning: Dropping lidar points since too many were requested")
+                        #     lidar_end_idx = lidar_start_idx + \
+                        #         len(kf.get_lidar_scan())
+
+                        # # lidar_indices was roughly estimated using some way-too-big indices
+                        # lidar_indices = lidar_indices % len(kf.get_lidar_scan())
 
                         lidar_indices = torch.randint(len(kf.get_lidar_scan()), (kf.num_uniform_lidar_samples,))
 
@@ -355,6 +366,9 @@ class Optimizer:
                 lrate_scheduler.step()
 
                 self._optimizer.zero_grad(set_to_none=True)
+
+                # TODO: Active Sampling
+
 
                 if self.should_enable_lidar() and \
                         self._global_step % self._model_config.model.occ_model.N_iters_acc == 0:
@@ -641,15 +655,14 @@ class Optimizer:
         den = 2 * v2
         b = num / den
         return a + b - 0.5
-    
     def jsd_gauss(self, u1, s1, u2, s2):
         um = 0.5 * (u1+u2)
         sm = 0.5 * torch.sqrt(s1**2+s2**2)
         return 0.5 * self.kld_gauss(u1, s1, um, sm) + 0.5 * self.kld_gauss(u2, s2, um, sm)
 
-    def viz_loss(self, i, viz_idx: np.ndarray, opaque_rays: np.ndarray, weights_gt_lidar: np.ndarray, weights_pred_lidar: np.ndarray,
-                 mean: np.ndarray, var: np.ndarray, js_score: np.ndarray, s_vals_lidar: np.ndarray,
-            depth_gt_lidar: np.ndarray, eps_: np.ndarray)->None:
+    def viz_loss(self, i, viz_idx: np.ndarray, opaque_rays: np.ndarray, weights_gt_lidar: np.ndarray, weights_pred_lidar: np.ndarray \
+                        , mean: np.ndarray, var: np.ndarray, js_score: np.ndarray \
+                        , s_vals_lidar: np.ndarray, depth_gt_lidar: np.ndarray, eps_: np.ndarray)->None:
         if i > 0:
             # max_js_ids = np.where(js_score == self._model_config.loss.JS_loss.max_js_score)[0]
             # opaque_ids = np.where(opaque_rays == True)[0]
