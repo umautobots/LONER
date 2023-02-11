@@ -84,6 +84,7 @@ class ClonerSLAM:
         
         now = datetime.datetime.now()
         now_str = now.strftime("%m%d%y_%H%M%S")
+        # now_str = ''
 
         if "experiment_name" in self._settings:
             expname = self._settings.experiment_name
@@ -93,8 +94,12 @@ class ClonerSLAM:
         self._experiment_name = f"{expname}_{now_str}"
         if ablation_name is None:
             self._log_directory = os.path.expanduser(f"~/ClonerSLAM/outputs/{self._experiment_name}/")
+            # self._log_directory = os.path.expanduser(f"/mnt/ws-frb/projects/frank/cloner-slam_experiment_data/{self._experiment_name}/")
+
         else:
             self._log_directory = os.path.expanduser(f"~/ClonerSLAM/outputs/{ablation_name}/trial_{trial_idx}")
+            # self._log_directory = os.path.expanduser(f"/mnt/ws-frb/projects/frank/cloner-slam_experiment_data/{ablation_name}/trial_{trial_idx}")
+            
 
 
         os.makedirs(self._log_directory, exist_ok=True)

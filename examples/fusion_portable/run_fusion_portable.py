@@ -310,6 +310,7 @@ if __name__ == "__main__":
     parser.add_argument("rosbag_path")
     parser.add_argument("calibration_path")
     parser.add_argument("experiment_name", nargs="?", default="experiment")
+    parser.add_argument("--save_time", type=str, default=False, required=False)
     parser.add_argument("--overrides", type=str, default=None, required=False)
     parser.add_argument("--duration", help="How long to run for (in input data time, sec)", type=float, default=None)
     parser.add_argument("--gpu_ids", nargs="*", required=False, default = [0], help="Which GPUs to use. Defaults to parallel if set")
@@ -318,7 +319,6 @@ if __name__ == "__main__":
 
     if args.overrides is not None:
         settings_options, settings_descriptions = Settings.generate_options(os.path.expanduser("~/ClonerSLAM/cfg/default_settings.yaml"), os.path.expanduser(args.overrides))
-            
         now = datetime.datetime.now()
         now_str = now.strftime("%m%d%y_%H%M%S")
         args.experiment_name = f"{args.experiment_name}_{now_str}"

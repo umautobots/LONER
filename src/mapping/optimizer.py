@@ -350,7 +350,7 @@ class Optimizer:
                     
                         camera_samples = (uniform_camera_rays.to(self._device).float(), uniform_camera_intensities.to(self._device).float())
 
-                loss = self.compute_loss(camera_samples, lidar_samples)
+                loss = self.compute_loss(camera_samples, lidar_samples, self._optimization_settings.stage)
 
                 losses_log[-1].append(loss.detach().cpu().item())
 
@@ -426,6 +426,7 @@ class Optimizer:
     ## For the given camera and lidar rays, compute and return the differentiable loss
     def compute_loss(self, camera_samples: Tuple[torch.Tensor, torch.Tensor], 
                            lidar_samples: Tuple[torch.Tensor, torch.Tensor],
+                           optimization_stage: int,
                            override_enables: bool = False) -> torch.Tensor:
         scale_factor = self._scale_factor.to(self._device).float()
         
@@ -433,9 +434,10 @@ class Optimizer:
         wandb_logs = {}
 
         iteration_idx = self._global_step % self._optimization_settings.num_iterations
+        # print('iteration_idx: ', iteration_idx)
+        # print('self._optimization_settings.num_iterations: ', self._optimization_settings.num_iterations)
 
         if (override_enables or self.should_enable_lidar()) and lidar_samples is not None:
-            # TODO: Update with JS divergence method
 
             if self._model_config.loss.decay_depth_lambda:
                 depth_lambda = max(self._model_config.loss.depth_lambda * (self._model_config.train.decay_rate ** (
@@ -460,7 +462,7 @@ class Optimizer:
             self._lidar_depth_samples_fine = self._results_lidar['samples_fine'] * \
                 scale_factor
 
-            self._lidar_depths_gt = lidar_depths * scale_factor
+            self._lidar_depths_gt = lidar_depths * scale_factor # [N_rays, 1]
             weights_pred_lidar = self._results_lidar['weights_fine']
             
             # Compute JS divergence (also calculate when using fix depth_eps for visualization)
@@ -473,7 +475,7 @@ class Optimizer:
 
             #print('self._model_config.loss.dynamic_depth_eps_JS: ', self._model_config.loss.dynamic_depth_eps_JS)
             if self._model_config.loss.dynamic_depth_eps_JS:
-                #print('using JS divergence loss')
+                # print('using JS divergence loss')
                 min_js_score = self._model_config.loss.JS_loss.min_js_score
                 max_js_score = self._model_config.loss.JS_loss.max_js_score
                 alpha = self._model_config.loss.JS_loss.alpha
@@ -507,8 +509,33 @@ class Optimizer:
             
             weights_gt_lidar[~opaque_rays, :] = 0
 
+            # # [NEW]
+            # if optimization_stage != 1:
+            #     # print('use step loss')
+            #     # print('lidar_depths:', lidar_depths)
+            #     mask = self._lidar_depth_samples_fine > (self._lidar_depths_gt + 0.) # N (m) tail
+            #     weights_pred_lidar = weights_pred_lidar * torch.logical_not(mask)
+            #     weights_gt_lidar = weights_gt_lidar * torch.logical_not(mask) * 10.
+
+            #     # j = 0
+            #     # x = self._lidar_depth_samples_fine[j].detach().cpu().numpy()
+            #     # y = weights_pred_lidar[j].detach().cpu().numpy()
+            #     # y_gt = weights_gt_lidar[j].detach().cpu().numpy()
+            #     # mask_ = mask[j].detach().cpu().numpy()
+            #     # plt.figure(figsize=(15, 10))
+            #     # plt.plot(x, y, '.', linewidth=0.5) 
+            #     # plt.plot(x, y_gt, '.', linewidth=0.5) 
+            #     # plt.plot(x, mask_, '.', linewidth=0.5) 
+            #     # plt.show()
+            #     # print('torch.count_nonzero(mask): ', torch.count_nonzero(mask))
+            #     depth_loss_los_fine = nn.functional.l1_loss(
+            #         weights_pred_lidar, weights_gt_lidar, reduction='sum') / (torch.numel(mask)-torch.count_nonzero(mask))
+            # else:
+            #     depth_loss_los_fine = nn.functional.l1_loss(
+            #         weights_pred_lidar, weights_gt_lidar)
+            
             depth_loss_los_fine = nn.functional.l1_loss(
-                weights_pred_lidar, weights_gt_lidar)
+                    weights_pred_lidar, weights_gt_lidar)
 
             loss += depth_lambda * depth_loss_los_fine
             wandb_logs['loss_lidar_los'] = depth_loss_los_fine.item()

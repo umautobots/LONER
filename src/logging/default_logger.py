@@ -113,3 +113,4 @@ class DefaultLogger:
         pose_timestamps = torch.tensor(self._timestamps)
         dump_trajectory_to_tum(self._tracked_path, pose_timestamps, f"{self._log_directory}/trajectory/tracked.txt")
         dump_trajectory_to_tum(self._optimized_path, pose_timestamps, f"{self._log_directory}/trajectory/optimized.txt")
+        dump_trajectory_to_tum(self._gt_path, pose_timestamps, f"{self._log_directory}/trajectory/gt.txt")

@@ -11,6 +11,10 @@ import time
 import torch
 import tqdm
 
+from packaging import version
+import numpy as np
+import open3d as o3d
+
 # autopep8: off
 # Linting needs to be disabled here or it'll try to move includes before path.
 PUB_ROS = False
@@ -61,7 +65,7 @@ else:
 
 checkpoint_path = pathlib.Path(f"{args.experiment_directory}/checkpoints/{checkpoint}")
 
-render_dir = pathlib.Path(f"{args.experiment_directory}/renders")
+render_dir = pathlib.Path(f"{args.experiment_directory}/renders/{checkpoint}")
 os.makedirs(render_dir, exist_ok=True)
 
 # override any params loaded from yaml
@@ -72,6 +76,13 @@ intrinsic = full_config.calibration.camera_intrinsic
 im_size = torch.Tensor([intrinsic.height, intrinsic.width]) #/ 2
 # full_config["calibration"]["camera_intrinsic"]["height"] = int(im_size[0])
 # full_config["calibration"]["camera_intrinsic"]["width"] = int(im_size[1])
+
+W = intrinsic['width']
+H = intrinsic['height']
+fx = intrinsic['k'][0,0].cpu().numpy()
+fy = intrinsic['k'][1,1].cpu().numpy()
+cx = intrinsic['k'][0,2].cpu().numpy()
+cy = intrinsic['k'][1,2].cpu().numpy()
 
 if args.debug:
     full_config['debug'] = True
@@ -194,7 +205,8 @@ with torch.no_grad():
         start_key = "start_lidar_pose"
         end_key = "end_lidar_pose"
 
-    for kf in tqdm(poses[::15]):
+    for kf in tqdm(poses[::5]): # ::15
+
         start_lidar_pose = Pose(pose_tensor=kf[start_key])
         end_lidar_pose = Pose(pose_tensor=kf[end_key])
         lidar_to_camera = Pose(pose_tensor=kf["lidar_to_camera"])
@@ -216,8 +228,56 @@ with torch.no_grad():
         
         save_img(start_rendered, [], f"predicted_img_{timestamp}_start.png", render_dir)
         save_img(end_rendered, [], f"predicted_img_{timestamp}_end.png", render_dir)
-        save_depth(start_depth_rendered, f"predicted_depth_{timestamp}_start.png", render_dir)
-        save_depth(end_depth_rendered, f"predicted_depth_{timestamp}_end.png", render_dir)
+        save_depth(start_depth_rendered, f"predicted_depth_{timestamp}_start.png", render_dir, min_depth=1, max_depth=50)
+        save_depth(end_depth_rendered, f"predicted_depth_{timestamp}_end.png", render_dir, min_depth=1, max_depth=50)
         # save_video(f"{render_dir}/spiral_rgb_{timestamp}.gif", rgbs, (int(im_size[0]), int(im_size[1]), 3), rescale=False, clahe=False, isdepth=False, fps=5)
         # save_video(f"{render_dir}/spiral_depth_{timestamp}.gif", depths, (int(im_size[0]), int(im_size[1])), rescale=False, clahe=False, isdepth=True, fps=5)
+
+
+        # scale = 1 # 0.1
+        # if version.parse(o3d.__version__) >= version.parse('0.13.0'):
+        #     # for new version as provided in environment.yaml
+        #     volume = o3d.pipelines.integration.ScalableTSDFVolume(
+        #         voxel_length=4.0 * scale / 512.0,
+        #         sdf_trunc=0.04 * scale,
+        #         color_type=o3d.pipelines.integration.TSDFVolumeColorType.RGB8)
+        # else:
+        #     # for lower version
+        #     volume = o3d.integration.ScalableTSDFVolume(
+        #         voxel_length=4.0 * scale / 512.0,
+        #         sdf_trunc=0.04 * scale,
+        #         color_type=o3d.integration.TSDFVolumeColorType.RGB8)
+
+        # depth = torch.squeeze(start_depth_rendered).cpu().numpy()
+        # color = torch.squeeze(start_rendered).permute(1,2,0).cpu().numpy()
+        # print(depth.shape, color.shape)
+        # depth = o3d.geometry.Image(np.expand_dims(depth, -1).astype(np.float32))
+        # print(type(depth))
+        # color = o3d.geometry.Image(np.array(
+        #     (color * 255).astype(np.uint8)))
+        # print(type(color))
+
+        # extrinsic = np.eye(4)
+        # intrinsic = o3d.camera.PinholeCameraIntrinsic(W, H, fx, fy, cx, cy)
+        # rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(
+        #     color,
+        #     depth,
+        #     depth_scale=1, #1
+        #     depth_trunc=30,
+        #     convert_rgb_to_intensity=False)
+        # volume.integrate(rgbd, intrinsic, extrinsic)
+
+        # # mesh = volume.extract_triangle_mesh()
+        # # mesh.compute_vertex_normals()
+        # # o3d.visualization.draw_geometries([mesh])
+
+        # cam_points = np.zeros((1, 3))
+        # mesh = volume.extract_triangle_mesh()
+        # mesh_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size = 0.6, origin = [0, 0, 0])
+        # o3d.visualization.draw_geometries([mesh, mesh_frame],
+        #                           front=[0.0, 0.0, -1.0],
+        #                           lookat=[-1.0, 0.0, 0.0],
+        #                           up=[0.0, -1.0, 0.0],
+        #                          zoom=0.05)
+
         
