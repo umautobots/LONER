@@ -53,6 +53,9 @@ class Mapper:
     ## Spins by reading frames from the @m frame_slot as inputs.
     def run(self) -> None:
 
+    ## Spins by reading frames from the @m frame_slot as inputs.
+    def run(self) -> None:
+
         print(self._settings.debug)
         if self._settings.debug.pytorch_detect_anomaly:
             torch.autograd.set_detect_anomaly(True)
