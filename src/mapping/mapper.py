@@ -34,12 +34,12 @@ class Mapper:
         settings["keyframe_manager"]["log_directory"] = settings.log_directory
 
         self._keyframe_manager = KeyFrameManager(
-            settings.keyframe_manager, 'cpu')
+            settings.keyframe_manager, 'cpu' if settings.data_prep_on_cpu else self._settings.device)
 
         settings["optimizer"]["debug"] = settings.debug
         settings["optimizer"]["log_directory"] = settings.log_directory
         self._optimizer = Optimizer(
-            settings.optimizer, calibration, self._world_cube, settings.device,
+            settings.optimizer, calibration, self._world_cube, 0,
             settings.debug.use_groundtruth_poses,
             settings.keyframe_manager.sample_allocation.strategy)
 
@@ -47,52 +47,57 @@ class Mapper:
         self._processed_stop_signal = mp.Value('i', 0)
         self.mapping_cnt = 0
 
+    def update(self) -> None:
+        if self._processed_stop_signal.value:
+            print("Not updating mapper: Mapping already done.")
+            
+        if self._frame_slot.has_value():
+            new_frame = self._frame_slot.get_value()
+
+            if isinstance(new_frame, StopSignal):
+                self._processed_stop_signal.value = 1
+                return
+
+            new_keyframe = self._keyframe_manager.process_frame(new_frame)
+            
+            accepted_frame = new_keyframe is not None
+
+            accepted_str = "Accepted" if accepted_frame else "Didn't accept"
+            # print(
+            #     f"{accepted_str} frame at time {new_frame.start_image.timestamp}")
+        
+            if self._settings.optimizer.enabled and accepted_frame:
+
+                active_window = self._keyframe_manager.get_active_window(self._optimizer)
+
+                self._optimizer.iterate_optimizer(active_window)
+
+                pose_state = self._keyframe_manager.get_poses_state()
+                
+                ckpt = {'global_step': self._optimizer._global_step,
+                        'network_state_dict': self._optimizer._model.state_dict(),
+                        'optimizer_state_dict': self._optimizer._optimizer.state_dict(),
+                        'poses': pose_state,
+                        'occ_model_state_dict': self._optimizer._occupancy_grid_model.state_dict(),
+                        'occ_optimizer_state_dict': self._optimizer._occupancy_grid_optimizer.state_dict()}
+
+                print("Sending KF Update")
+                self._keyframe_update_signal.emit(pose_state)
+                
+                print("Saving Checkpoint to", f"{self._settings.log_directory}/checkpoints/ckpt_{self._optimizer._global_step}.tar")
+                os.makedirs(f"{self._settings.log_directory}/checkpoints", exist_ok=True)
+                torch.save(ckpt, f"{self._settings.log_directory}/checkpoints/ckpt_{self._optimizer._global_step}.tar")
+
     ## Spins by reading frames from the @m frame_slot as inputs.
     def run(self) -> None:
 
-        print(self._settings.debug)
         if self._settings.debug.pytorch_detect_anomaly:
             torch.autograd.set_detect_anomaly(True)
         
         self.has_written = False
-        while True:
-            if self._frame_slot.has_value():
-                new_frame = self._frame_slot.get_value()
-    
-                if isinstance(new_frame, StopSignal):
-                    break
-
-                new_keyframe = self._keyframe_manager.process_frame(new_frame)
-                
-                accepted_frame = new_keyframe is not None
-
-                accepted_str = "Accepted" if accepted_frame else "Didn't accept"
-                # print(
-                #     f"{accepted_str} frame at time {new_frame.start_image.timestamp}")
+        while not self._processed_stop_signal.value:
+            self.update()
             
-                if self._settings.optimizer.enabled and accepted_frame:
-                    self.mapping_cnt +=1
-                    active_window = self._keyframe_manager.get_active_window(self._optimizer)
-
-                    self._optimizer.iterate_optimizer(active_window)
-
-                    pose_state = self._keyframe_manager.get_poses_state()
-                    
-                    ckpt = {'global_step': self._optimizer._global_step,
-                            'network_state_dict': self._optimizer._model.state_dict(),
-                            'optimizer_state_dict': self._optimizer._optimizer.state_dict(),
-                            'poses': pose_state,
-                            'occ_model_state_dict': self._optimizer._occupancy_grid_model.state_dict(),
-                            'occ_optimizer_state_dict': self._optimizer._occupancy_grid_optimizer.state_dict()}
-
-                    print("Sending KF Update")
-                    self._keyframe_update_signal.emit(pose_state)
-                    
-                    print("Saving Checkpoint to", f"{self._settings.log_directory}/checkpoints/ckpt_{self.mapping_cnt}_{self._optimizer._global_step}.tar")
-                    os.makedirs(f"{self._settings.log_directory}/checkpoints", exist_ok=True)
-                    torch.save(ckpt, f"{self._settings.log_directory}/checkpoints/ckpt_{self.mapping_cnt}_{self._optimizer._global_step}.tar")
-                    
-        self._processed_stop_signal.value = True
         print("Mapping Done. Waiting to terminate.")
         # Wait until an external terminate signal has been sent.
         # This is used to prevent race conditions at shutdown

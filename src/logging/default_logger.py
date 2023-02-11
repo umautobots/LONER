@@ -49,11 +49,13 @@ class DefaultLogger:
                 self._frame_done = True
                 break
 
+            frame = frame.clone().to('cpu')
+
             if self._gt_pose_offset is None:
                 start_pose = frame._gt_lidar_end_pose
                 self._gt_pose_offset = start_pose.inv()
 
-            new_pose = frame.get_start_lidar_pose().get_transformation_matrix().detach()
+            new_pose = frame.get_start_lidar_pose().get_transformation_matrix().detach().cpu()
 
             gt_pose = (self._gt_pose_offset * frame._gt_lidar_end_pose).get_transformation_matrix().detach()
 
@@ -101,7 +103,7 @@ class DefaultLogger:
                 relative_poses = poses @ torch.linalg.inv(poses[0])
 
                 reference_pose_tensor = keyframe_state[chunk_idx]["start_lidar_pose"]
-                reference_pose = tensor_to_transform(reference_pose_tensor)
+                reference_pose = tensor_to_transform(reference_pose_tensor).cpu()
                 corrected_poses = reference_pose @ relative_poses
                 self._optimized_path[chunk[0]:chunk[-1]+1] = corrected_poses
 

@@ -71,45 +71,51 @@ class Tracker:
 
         self._frame_count = 0
 
+    def update(self):
+        if self._processed_stop_signal.value:
+            print("Not updating tracker: Tracker already done.")
+
+        if self._rgb_slot.has_value():
+            val = self._rgb_slot.get_value()
+
+            if isinstance(val, StopSignal):
+                self._processed_stop_signal.value = 1
+                return
+
+            new_rgb, new_gt_pose = val
+
+            self._frame_synthesizer.process_image(new_rgb, new_gt_pose)
+
+        if self._lidar_slot.has_value():
+            new_lidar = self._lidar_slot.get_value()
+
+            if isinstance(new_lidar, StopSignal):
+                self._processed_stop_signal.value = 1
+                return
+
+            self._frame_synthesizer.process_lidar(new_lidar)
+
+        while self._frame_synthesizer.has_frame():
+            frame = self._frame_synthesizer.pop_frame()
+            tracked = self.track_frame(frame)
+
+            if not tracked:
+                print("Warning: Failed to track frame. Skipping.")
+                continue
+            
+            if self._settings.debug.write_frame_point_clouds:
+                pcd = frame.build_point_cloud()
+                logdir = f"{self._settings.log_directory}/frames/"
+                os.makedirs(logdir, exist_ok=True)
+                o3d.io.write_point_cloud(
+                    f"{logdir}/cloud_{self._frame_count}.pcd", pcd)
+
+            self._frame_signal.emit(frame)
+
     ## Run spins and processes incoming data while putting resulting frames into the queue
     def run(self) -> None:
-        while True:
-            if self._rgb_slot.has_value():
-                val = self._rgb_slot.get_value()
-
-                if isinstance(val, StopSignal):
-                    break
-
-                new_rgb, new_gt_pose = val
-
-                self._frame_synthesizer.process_image(new_rgb, new_gt_pose)
-
-            if self._lidar_slot.has_value():
-                new_lidar = self._lidar_slot.get_value()
-
-                if isinstance(new_lidar, StopSignal):
-                    break
-
-                self._frame_synthesizer.process_lidar(new_lidar)
-
-            while self._frame_synthesizer.has_frame():
-                frame = self._frame_synthesizer.pop_frame()
-                tracked = self.track_frame(frame)
-
-                if not tracked:
-                    print("Warning: Failed to track frame. Skipping.")
-                    continue
-                
-                if self._settings.debug.write_frame_point_clouds:
-                    pcd = frame.build_point_cloud()
-                    logdir = f"{self._settings.log_directory}/frames/"
-                    os.makedirs(logdir, exist_ok=True)
-                    o3d.io.write_point_cloud(
-                        f"{logdir}/cloud_{self._frame_count}.pcd", pcd)
-
-                self._frame_signal.emit(frame)
-
-        self._processed_stop_signal.value = True
+        while not self._processed_stop_signal.value:
+            self.update()
 
         print("Tracking Done. Waiting to terminate.")
         # Wait until an external terminate signal has been sent.

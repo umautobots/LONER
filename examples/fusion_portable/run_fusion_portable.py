@@ -8,6 +8,7 @@ import shutil
 import sys
 import re
 import pathlib
+import time
 
 import cv2
 import pandas as pd
@@ -42,11 +43,8 @@ from fusion_portable_calibration import FusionPortableCalibration
 
 from src.cloner_slam import ClonerSLAM
 from src.common.pose import Pose
-from src.common.pose_utils import WorldCube
 from src.common.sensors import Image, LidarScan
 from src.common.settings import Settings
-from src.logging.default_logger import DefaultLogger
-from src.logging.draw_frames_to_ros import FrameDrawer
 
 # autopep8: on
 
@@ -150,6 +148,8 @@ def run_trial(args, settings, settings_description = None, idx = None):
     init = False
     prev_time = None
 
+    init_clock = time.time()
+
     calibration = FusionPortableCalibration(args.calibration_path)
 
     tf_buffer = tf2_py.BufferCore(rospy.Duration(10000))
@@ -221,6 +221,8 @@ def run_trial(args, settings, settings_description = None, idx = None):
     start_timestamp = None
 
     start_lidar_pose = None
+
+    start_clock = time.time()
     for topic, msg, timestamp in bag.read_messages(topics=[lidar_topic, image_topic]):        
         # Wait for lidar to init
         if topic == lidar_topic and not init:
@@ -259,6 +261,11 @@ def run_trial(args, settings, settings_description = None, idx = None):
             raise Exception("Should be unreachable")
 
     cloner_slam.stop()
+    end_clock = time.time()
+
+    with open(f"{cloner_slam._log_directory}/runtime.txt", 'w+') as runtime_f:
+        runtime_f.write(f"Execution Time (With Overhead): {end_clock - init_clock}\n")
+        runtime_f.write(f"Execution Time (Without Overhead): {end_clock - start_clock}\n")
 
 
     checkpoints = os.listdir(f"{logdir}/checkpoints")
@@ -292,9 +299,6 @@ def run_trial(args, settings, settings_description = None, idx = None):
 
 # Implements a single worker in a thread-pool model.
 def _gpu_worker(args, gpu_id: int, job_queue: mp.Queue) -> None:
-    
-    # Set this process to only use the desired GPU
-    os.environ['CUDA_VISIBLE_DEVICES'] = gpu_id
 
     while not job_queue.empty():
         data = job_queue.get()
@@ -343,11 +347,9 @@ if __name__ == "__main__":
         # Create the workers
         gpu_worker_processes = []
         for gpu_id in args.gpu_ids:
+            os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
             gpu_worker_processes.append(mp.Process(target = _gpu_worker, args=(args,gpu_id,job_queue,)))
-
-        # Start them
-        for process in gpu_worker_processes:
-            process.start()
+            gpu_worker_processes[-1].start()
 
         # Sync
         for process in gpu_worker_processes:
