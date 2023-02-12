@@ -3,12 +3,13 @@ from scipy.spatial.transform import Rotation as R, Slerp
 import matplotlib.pyplot as plt
 import torch
 import os
+from typing import Union
 
 from common.pose_utils import WorldCube, dump_trajectory_to_tum
 from common.pose import Pose
 from common.settings import Settings
 from common.signals import Slot, Signal, StopSignal
-from common.frame import Frame
+from common.frame import Frame, SimpleFrame
 from common.pose_utils import tensor_to_transform
 
 
@@ -44,25 +45,40 @@ class DefaultLogger:
             return
 
         while self._frame_slot.has_value():
-            frame: Frame = self._frame_slot.get_value()
+            frame: Union[Frame, SimpleFrame] = self._frame_slot.get_value()
             if isinstance(frame, StopSignal):
                 self._frame_done = True
                 break
+            elif isinstance(frame, SimpleFrame):
+                use_simple_frame = True
+            else:
+                use_simple_frame = False
 
             frame = frame.clone().to('cpu')
 
             if self._gt_pose_offset is None:
-                start_pose = frame._gt_lidar_end_pose
+                if use_simple_frame:
+                    start_pose = frame._gt_lidar_pose
+                else:
+                    start_pose = frame._gt_lidar_end_pose
+                    
                 self._gt_pose_offset = start_pose.inv()
 
-            new_pose = frame.get_start_lidar_pose().get_transformation_matrix().detach().cpu()
+            if use_simple_frame:
+                new_pose = frame.get_lidar_pose().get_transformation_matrix().detach().cpu()
+                gt_pose_raw = frame._gt_lidar_pose
+                frame_time = frame.get_time()
+            else:
+                new_pose = frame.get_start_lidar_pose().get_transformation_matrix().detach().cpu()
+                gt_pose_raw = frame._gt_lidar_start_pose
+                frame_time = frame.get_start_time()
 
-            gt_pose = (self._gt_pose_offset * frame._gt_lidar_end_pose).get_transformation_matrix().detach()
+            gt_pose = (self._gt_pose_offset * gt_pose_raw).get_transformation_matrix().detach()
 
             self._tracked_path = torch.cat([self._tracked_path, new_pose.unsqueeze(0)])
             self._gt_path = torch.cat([self._gt_path, gt_pose.unsqueeze(0)])
 
-            self._timestamps.append(frame.get_start_time())
+            self._timestamps.append(frame_time)
 
             if self._tracked_path.shape[0] < 2:
                 self._optimized_path = new_pose.unsqueeze(0)
@@ -72,8 +88,6 @@ class DefaultLogger:
 
 
         while self._keyframe_update_slot.has_value():
-            print("Got KeyFrame Update")
-
             keyframe_state = self._keyframe_update_slot.get_value()
           
             if isinstance(keyframe_state, StopSignal):
@@ -102,7 +116,11 @@ class DefaultLogger:
                 poses = self._tracked_path[chunk[0]:chunk[-1]+1]
                 relative_poses = poses @ torch.linalg.inv(poses[0])
 
-                reference_pose_tensor = keyframe_state[chunk_idx]["start_lidar_pose"]
+                if "start_lidar_pose" in keyframe_state[chunk_idx]: 
+                    reference_pose_tensor = keyframe_state[chunk_idx]["start_lidar_pose"]
+                else:
+                    reference_pose_tensor = keyframe_state[chunk_idx]["lidar_pose"]
+
                 reference_pose = tensor_to_transform(reference_pose_tensor).cpu()
                 corrected_poses = reference_pose @ relative_poses
                 self._optimized_path[chunk[0]:chunk[-1]+1] = corrected_poses

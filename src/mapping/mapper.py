@@ -45,6 +45,7 @@ class Mapper:
 
         self._term_signal = mp.Value('i', 0)
         self._processed_stop_signal = mp.Value('i', 0)
+        os.makedirs(f"{self._settings.log_directory}/checkpoints", exist_ok=True)
 
     def update(self) -> None:
         if self._processed_stop_signal.value:
@@ -84,8 +85,14 @@ class Mapper:
                 self._keyframe_update_signal.emit(pose_state)
                 
                 print("Saving Checkpoint to", f"{self._settings.log_directory}/checkpoints/ckpt_{self._optimizer._global_step}.tar")
-                os.makedirs(f"{self._settings.log_directory}/checkpoints", exist_ok=True)
                 torch.save(ckpt, f"{self._settings.log_directory}/checkpoints/ckpt_{self._optimizer._global_step}.tar")
+            elif not self._settings.optimizer.enabled:
+                if self._optimizer._global_step % 100 == 0:
+                    pose_state = self._keyframe_manager.get_poses_state()
+                    ckpt = {'poses': pose_state}
+                    print("Saving Checkpoint to", f"{self._settings.log_directory}/checkpoints/ckpt_{self._optimizer._global_step}.tar")
+                    torch.save(ckpt, f"{self._settings.log_directory}/checkpoints/ckpt_{self._optimizer._global_step}.tar")
+                self._optimizer._global_step += 1
 
     ## Spins by reading frames from the @m frame_slot as inputs.
     def run(self) -> None:

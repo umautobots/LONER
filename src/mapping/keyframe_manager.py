@@ -1,9 +1,9 @@
-from typing import List
+from typing import List, Union
 import torch
 from enum import Enum
 
 from common.pose import Pose
-from common.frame import Frame
+from common.frame import Frame, SimpleFrame
 from common.settings import Settings
 from mapping.keyframe import KeyFrame
 from mapping.optimizer import Optimizer
@@ -48,7 +48,7 @@ class KeyFrameManager:
 
     ## Processes the input @p frame, decides whether it's a KeyFrame, and if so
     # adds it to internal KeyFrame storage
-    def process_frame(self, frame: Frame) -> KeyFrame:
+    def process_frame(self, frame: Union[Frame, SimpleFrame]) -> KeyFrame:
         if self._keyframe_selection_strategy == KeyFrameSelectionStrategy.TEMPORAL:
             should_use_frame = self._select_frame_temporal(frame)
         else:
@@ -56,37 +56,57 @@ class KeyFrameManager:
                 f"Can't use unknown KeyFrameSelectionStrategy {self._keyframe_selection_strategy}")
 
         if should_use_frame:
-            self._last_accepted_frame_ts = frame.start_image.timestamp
+            if isinstance(frame, Frame):
+                self._last_accepted_frame_ts = frame.start_image.timestamp
+            elif isinstance(frame, SimpleFrame):
+                self._last_accepted_frame_ts = frame.image.timestamp
+            else:
+                raise ValueError("Invalid frame type")
+                
+                            
             new_keyframe = KeyFrame(frame, self._device)
 
             # Apply the optimizated result to the new pose
             if len(self._keyframes) > 0:
                 reference_kf: KeyFrame = self._keyframes[-1]
 
-                # Get tracked estimate from previous to current pose
-                tracked_reference_start_pose = reference_kf._tracked_start_lidar_pose.get_transformation_matrix().detach()
-                tracked_current_start_pose = new_keyframe._tracked_start_lidar_pose.get_transformation_matrix().detach()
-                T_track_start = tracked_reference_start_pose.inverse() @ tracked_current_start_pose
+                if reference_kf._use_simple_frame:
+                    tracked_reference_pose = reference_kf._tracked_lidar_pose.get_transformation_matrix().detach()
+                    tracked_current_pose = new_keyframe._tracked_lidar_pose.get_transformation_matrix().detach()
+                    T_track = tracked_reference_pose.inverse() @ tracked_current_pose
 
-                # Apply that transform to the optimized pose
-                start_mat = reference_kf.get_start_lidar_pose().get_transformation_matrix().detach() @ T_track_start
-                new_keyframe._frame._lidar_start_pose = Pose(start_mat, requires_tensor=True)
+                    optimized_tracked_pose = reference_kf.get_lidar_pose().get_transformation_matrix().detach() @ T_track
+                    new_keyframe._frame._lidar_pose = Pose(optimized_tracked_pose, requires_tensor=True)
 
-                tracked_reference_end_pose = reference_kf._tracked_end_lidar_pose.get_transformation_matrix().detach()
-                tracked_current_end_pose = new_keyframe._tracked_end_lidar_pose.get_transformation_matrix().detach()
-                T_track_end = tracked_reference_end_pose.inverse() @ tracked_current_end_pose
-                end_mat = reference_kf.get_end_lidar_pose().get_transformation_matrix().detach() @ T_track_end
-                new_keyframe._frame._lidar_end_pose = Pose(end_mat, requires_tensor=True)
+                else:                
+                    # Get tracked estimate from previous to current pose
+                    tracked_reference_start_pose = reference_kf._tracked_start_lidar_pose.get_transformation_matrix().detach()
+                    tracked_current_start_pose = new_keyframe._tracked_start_lidar_pose.get_transformation_matrix().detach()
+                    T_track_start = tracked_reference_start_pose.inverse() @ tracked_current_start_pose
+
+                    # Apply that transform to the optimized pose
+                    start_mat = reference_kf.get_start_lidar_pose().get_transformation_matrix().detach() @ T_track_start
+                    new_keyframe._frame._lidar_start_pose = Pose(start_mat, requires_tensor=True)
+
+                    tracked_reference_end_pose = reference_kf._tracked_end_lidar_pose.get_transformation_matrix().detach()
+                    tracked_current_end_pose = new_keyframe._tracked_end_lidar_pose.get_transformation_matrix().detach()
+                    T_track_end = tracked_reference_end_pose.inverse() @ tracked_current_end_pose
+                    end_mat = reference_kf.get_end_lidar_pose().get_transformation_matrix().detach() @ T_track_end
+                    new_keyframe._frame._lidar_end_pose = Pose(end_mat, requires_tensor=True)
 
             self._keyframes.append(new_keyframe)
 
         return new_keyframe if should_use_frame else None 
 
-    def _select_frame_temporal(self, frame: Frame) -> bool:
+    def _select_frame_temporal(self, frame: Union[Frame, SimpleFrame]) -> bool:
         if self._last_accepted_frame_ts is None:
             return True
 
-        dt = frame.start_image.timestamp - self._last_accepted_frame_ts
+        if isinstance(frame, SimpleFrame):
+            dt = frame.image.timestamp - self._last_accepted_frame_ts
+        else:
+            dt = frame.start_image.timestamp - self._last_accepted_frame_ts
+
         dt_threshold = self._settings.keyframe_selection.temporal.time_diff_seconds
         return dt >= dt_threshold
 

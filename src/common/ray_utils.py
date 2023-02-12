@@ -110,7 +110,6 @@ class CameraRayDirections:
     def __init__(self, calibration: Settings, samples_per_pixel: int = 1, device = 'cpu', chunk_size=512,
                  grid_dimensions = (8,8), samples_per_grid_cell = 12):
 
-        print(calibration)
         K = calibration.camera_intrinsic.k.to(device)
         distortion = calibration.camera_intrinsic.distortion.to(device)
         new_k = calibration.camera_intrinsic.new_k

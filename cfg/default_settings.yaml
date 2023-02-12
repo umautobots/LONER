@@ -20,10 +20,11 @@ debug:
     write_ray_point_clouds: False
     write_frame_point_clouds: False
     write_icp_point_clouds: False
-    profile: False
+    profile_optimizer: False
     use_groundtruth_poses: False
     draw_loss_distribution: False
     log_losses: True
+    profile: False
 
 system:
   single_threaded: True
@@ -50,15 +51,20 @@ tracker:
     sky_removal: NULL
     frame_decimation_rate_hz: 10
     eps_t_over_delta_t: 0.5 # epsilon_t = <this number> * (1/frame_decimation_rate_hz). Maximum/Default 0.5.
+    use_simple_frames: True
+    lidar_point_step: 10 # Only keep 1 out of this many lidar points
   icp:
     threshold: 0.25
-    max_iterations: 15
-    relative_fitness: 1.e-10
-    relative_rmse: 1.e-10
+    max_iterations: 10
+    relative_fitness: 1.e-8
+    relative_rmse: 1.e-8
     downsample:
       type: UNIFORM
       target_uniform_point_count: 10000
       voxel_downsample_size: 0.1
+  motion_compensation:
+    enabled: True
+    use_gpu: True
 mapper:
   device: 0 # don't change this, use CUDA_VISIBLE_DEVICES
   data_prep_on_cpu: &data_prep_on_cpu True
@@ -104,7 +110,7 @@ mapper:
       - 
         num_keyframes: 1
         iteration_schedule:
-          - num_iterations: 10
+          - num_iterations: 1000
             stage: 3
             fix_poses: True
             fix_sigma_mlp: False

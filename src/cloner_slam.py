@@ -8,6 +8,7 @@ import os
 import pickle
 import yaml
 import datetime
+from torch.profiler import ProfilerActivity, profile
 
 
 from common.pose import Pose
@@ -143,6 +144,19 @@ class ClonerSLAM:
         with open(f"{self._log_directory}/full_config.pkl", 'wb+') as f:
             pickle.dump(self._settings, f)
 
+        if self._settings.debug.profile:
+            prof_dir = f"{self._settings.log_directory}/profile"
+            os.makedirs(prof_dir, exist_ok=True)
+            
+            self._profiler = profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+                profile_memory=True,
+                record_shapes=True,
+                with_stack=True,
+                with_modules=True,
+                on_trace_ready=torch.profiler.tensorboard_trace_handler(f"{prof_dir}/tensorboard/"))
+            
+            self._profiler.start()
+
         self._mapper = Mapper(self._settings.mapper,
                               self._settings.calibration,
                               self._frame_signal,
@@ -185,6 +199,9 @@ class ClonerSLAM:
                 self._logger.update()
                 time.sleep(0.1)
             print("Processed mapping stop")
+        
+        if self._settings.debug.profile:
+            self._profiler.stop()
 
         self._logger.finish()
 
@@ -196,12 +213,17 @@ class ClonerSLAM:
             self._mapping_process.join()
             print("Sub-processes Exited")
 
+
+
     # For use in single-threaded system. 
     def _system_update(self):
         assert self._single_threaded, "_system_update should only be called in single-threaded mode"
 
         self._tracker.update()
         self._mapper.update()
+
+        if self._settings.debug.profile:
+            self._profiler.step()
 
 
     def process_lidar(self, lidar_scan: LidarScan) -> None:

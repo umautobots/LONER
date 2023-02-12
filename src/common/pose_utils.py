@@ -201,14 +201,11 @@ def compute_world_cube(camera_to_lidar, intrinsic_mats, image_sizes, lidar_poses
         corners = c2w[:3, :] @ pts_homo.T
         all_corners += [corners.T]
     all_corners = torch.cat(all_corners, dim=0)  # (8N, 3)
-    print(f'Computed a list of corners with shape {all_corners.shape}')
 
     all_poses = torch.cat(
         [camera_poses[..., :3, 3], lidar_poses[..., :3, 3]], dim=0)
-    print(f'Computed a list of poses with shape {all_poses.shape}')
 
     all_points = torch.cat([all_corners, all_poses])
-    print(f'Accumulated all points to get: {all_points.shape}')
 
     # TODO: Convert this to minimal volume bounding box.
     # For now, using Axis Aligned Bounding Box
@@ -220,8 +217,6 @@ def compute_world_cube(camera_to_lidar, intrinsic_mats, image_sizes, lidar_poses
 
     origin = min_coord + (max_coord - min_coord) / 2
     # origin = torch.zeros(3)
-    print(
-        f'Minimum coordinate: {min_coord}, Maximum coordinate: {max_coord}, New origin: {origin}')
 
     scale_factor = (torch.linalg.norm(max_coord - min_coord) /
                     (2 * torch.sqrt(torch.Tensor([3])))) * (1+padding)

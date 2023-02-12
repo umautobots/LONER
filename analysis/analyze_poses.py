@@ -65,22 +65,33 @@ for experiment_directory in args.experiment_directories:
     est = []
 
     for kf in kfs:
-        tracked_pose = Pose(pose_tensor = kf["tracked_start_lidar_pose"])
-        gt_pose = Pose(pose_tensor = kf["gt_start_lidar_pose"])
-        est_pose = Pose(pose_tensor = kf["start_lidar_pose"])
+        if "gt_start_lidar_pose" in kf:
+            gt_pose = Pose(pose_tensor = kf["gt_start_lidar_pose"])
+            est_pose = Pose(pose_tensor = kf["start_lidar_pose"])
+            tracked_pose = Pose(pose_tensor=kf["tracked_start_lidar_pose"])
+            use_simple_poses=False
+        else:
+            gt_pose = Pose(pose_tensor=kf["gt_lidar_pose"])
+            est_pose = Pose(pose_tensor=kf["lidar_pose"])
+            tracked_pose = Pose(pose_tensor=kf["tracked_pose"])
+            use_simple_poses=True
+            
 
         gt.append(gt_pose.get_translation())
         tracked.append(tracked_pose.get_translation())
         est.append(est_pose.get_translation())
 
-
+    if use_simple_poses:
+        pose_key = "lidar_pose"
+    else:
+        pose_key = "start_lidar_pose"
     translation_rel_errs = []
     for kf_a, kf_b in zip(kfs[:-1], kfs[1:]):
-        est_start = Pose(pose_tensor = kf_a["start_lidar_pose"])
-        est_end = Pose(pose_tensor = kf_b["start_lidar_pose"])
+        est_start = Pose(pose_tensor = kf_a[pose_key])
+        est_end = Pose(pose_tensor = kf_b[pose_key])
         
-        gt_start = Pose(pose_tensor = kf_a["gt_start_lidar_pose"])
-        gt_end = Pose(pose_tensor = kf_b["gt_end_lidar_pose"])
+        gt_start = Pose(pose_tensor = kf_a["gt_" + pose_key])
+        gt_end = Pose(pose_tensor = kf_b["gt_" + pose_key])
 
         est_delta = est_start.inv() * est_end
         gt_delta = gt_start.inv() * gt_end

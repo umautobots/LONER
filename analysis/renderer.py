@@ -187,37 +187,40 @@ with torch.no_grad():
     poses = ckpt["poses"]
 
     all_poses = []
-    if args.use_gt_poses:
-        start_key = "gt_start_lidar_pose"
-        end_key = "gt_end_lidar_pose"
-    else:
-        start_key = "start_lidar_pose"
-        end_key = "end_lidar_pose"
 
     for kf in tqdm(poses[::15]):
-        start_lidar_pose = Pose(pose_tensor=kf[start_key])
-        end_lidar_pose = Pose(pose_tensor=kf[end_key])
+        
+        if args.use_gt_poses:
+            start_key = "gt_start_lidar_pose"
+            end_key = "gt_end_lidar_pose"
+            pose_key = "gt_lidar_pose"
+        else:
+            start_key = "start_lidar_pose"
+            end_key = "end_lidar_pose"
+            pose_key = "lidar_pose"
+
+
         lidar_to_camera = Pose(pose_tensor=kf["lidar_to_camera"])
         timestamp = kf["timestamp"]
-
-        print(render_dir)
         timestamp = str(timestamp.item()).replace('.','_')[:5]
-        
-        start_camera_pose = start_lidar_pose * lidar_to_camera
-        end_camera_pose = end_lidar_pose * lidar_to_camera
 
-        start_rendered, start_depth_rendered, _ = render_dataset_frame(start_camera_pose.to(_DEVICE))
-        end_rendered, end_depth_rendered, _ = render_dataset_frame(end_camera_pose.to(_DEVICE))
-        # rgbs, depths = render_spiral(start_camera_pose)
+        if start_key in kf:
+            start_lidar_pose = Pose(pose_tensor=kf[start_key])
+            end_lidar_pose = Pose(pose_tensor=kf[end_key])
+            start_camera_pose = start_lidar_pose * lidar_to_camera
+            end_camera_pose = end_lidar_pose * lidar_to_camera
 
-        # rgbs = [torch.from_numpy(rgb) for rgb in rgbs]
-        # depths = [torch.from_numpy(depth) for depth in depths]
-
-        
-        save_img(start_rendered, [], f"predicted_img_{timestamp}_start.png", render_dir)
-        save_img(end_rendered, [], f"predicted_img_{timestamp}_end.png", render_dir)
-        save_depth(start_depth_rendered, f"predicted_depth_{timestamp}_start.png", render_dir)
-        save_depth(end_depth_rendered, f"predicted_depth_{timestamp}_end.png", render_dir)
-        # save_video(f"{render_dir}/spiral_rgb_{timestamp}.gif", rgbs, (int(im_size[0]), int(im_size[1]), 3), rescale=False, clahe=False, isdepth=False, fps=5)
-        # save_video(f"{render_dir}/spiral_depth_{timestamp}.gif", depths, (int(im_size[0]), int(im_size[1])), rescale=False, clahe=False, isdepth=True, fps=5)
-        
+            start_rendered, start_depth_rendered, _ = render_dataset_frame(start_camera_pose.to(_DEVICE))
+            end_rendered, end_depth_rendered, _ = render_dataset_frame(end_camera_pose.to(_DEVICE))
+            
+            save_img(start_rendered, [], f"predicted_img_{timestamp}_start.png", render_dir)
+            save_img(end_rendered, [], f"predicted_img_{timestamp}_end.png", render_dir)
+            save_depth(start_depth_rendered, f"predicted_depth_{timestamp}_start.png", render_dir)
+            save_depth(end_depth_rendered, f"predicted_depth_{timestamp}_end.png", render_dir)
+          
+        else:
+            lidar_pose= Pose(pose_tensor=kf[pose_key])
+            cam_pose = lidar_pose * lidar_to_camera
+            rgb, depth, _ = render_dataset_frame(cam_pose.to(_DEVICE))
+            save_img(rgb, [], f"predicted_img_{timestamp}.png", render_dir)
+            save_depth(depth, f"predicted_depth_{timestamp}.png", render_dir)

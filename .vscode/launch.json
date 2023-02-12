@@ -40,8 +40,7 @@
       "console": "integratedTerminal",
       "args": ["${workspaceFolder}/../data/fusion_portable/20220216_canteen_day/20220216_canteen_day_ref.bag",
                "${workspaceFolder}/../data/fusion_portable/calibration/20220209_calib/",
-              "--duration",
-              "10"],
+              "--duration", "10"],
       "cwd": "${workspaceFolder}/examples/fusion_portable",
       "subProcess": true
     },
@@ -53,6 +52,16 @@
       "console": "integratedTerminal",
       "args": ["${workspaceFolder}/../data/fusion_portable/20220216_canteen_day/20220216_canteen_day_ref.bag",
                "${workspaceFolder}/../data/fusion_portable/calibration/20220209_calib/"],
+      "cwd": "${workspaceFolder}/test",
+      "subProcess": true
+    },
+    {
+      "name": "Test Frame Synthesis",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/test/frame_synthesis_test.py",
+      "console": "integratedTerminal",
+      "args": ["TestSimpleFrameSynthesis"],
       "cwd": "${workspaceFolder}/test",
       "subProcess": true
     },

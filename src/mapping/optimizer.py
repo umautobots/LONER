@@ -10,7 +10,6 @@ import torch.profiler
 import torch.optim
 import torchviz
 import tqdm
-import wandb
 from torch.profiler import ProfilerActivity, profile
 # for visualization
 import numpy as np
@@ -142,7 +141,7 @@ class Optimizer:
 
         num_its = sum(i["num_iterations"] for i in iteration_schedule)
 
-        if self._settings.debug.profile:
+        if self._settings.debug.profile_optimizer:
             prof_dir = f"{self._settings.log_directory}/profile"
             os.makedirs(prof_dir, exist_ok=True)
 
@@ -152,7 +151,7 @@ class Optimizer:
                          with_stack=True,
                          with_modules=True,
                          schedule=torch.profiler.schedule(wait=1, warmup=1, active=num_its - 2),
-                         on_trace_ready=torch.profiler.tensorboard_trace_handler(f"{prof_dir}/tensorboard/"))
+                         on_trace_ready=torch.profiler.tensorboard_trace_handler(f"{prof_dir}/tensorboard_optimizer/"))
             
             prof.start()
             start_time = time.time()
@@ -183,6 +182,8 @@ class Optimizer:
         return result
 
     def _do_iterate_optimizer(self, keyframe_window: List[KeyFrame], iteration_schedule: dict, profiler: profile = None) -> float:
+        
+        use_simple_frame = keyframe_window[0]._use_simple_frame
 
         if len(keyframe_window) == 1:
             keyframe_window[0].is_anchored = True
@@ -232,14 +233,20 @@ class Optimizer:
 
             for kf in active_keyframe_window:
                 if not kf.is_anchored:
-                    kf.get_start_lidar_pose().set_fixed(not optimize_poses)
-                    kf.get_end_lidar_pose().set_fixed(not optimize_poses)
+                    if use_simple_frame:
+                        kf.get_lidar_pose().set_fixed(not optimize_poses)
+                    else:
+                        kf.get_start_lidar_pose().set_fixed(not optimize_poses)
+                        kf.get_end_lidar_pose().set_fixed(not optimize_poses)
 
             if optimize_poses:
-            
-                optimizable_poses = [kf.get_start_lidar_pose().get_pose_tensor() for kf in active_keyframe_window if not kf.is_anchored] \
-                    + [kf.get_end_lidar_pose().get_pose_tensor()
-                    for kf in active_keyframe_window if not kf.is_anchored]
+                
+                if use_simple_frame:
+                    optimizable_poses = [kf.get_lidar_pose().get_pose_tensor() for kf in active_keyframe_window if not kf.is_anchored]
+                else:
+                    optimizable_poses = [kf.get_start_lidar_pose().get_pose_tensor() for kf in active_keyframe_window if not kf.is_anchored] \
+                        + [kf.get_end_lidar_pose().get_pose_tensor() for kf in active_keyframe_window if not kf.is_anchored]
+                        
                 print(f"Num keyframes: {len(active_keyframe_window)}, Num Trainable Poses: {len(optimizable_poses)}")
                 self._optimizer = torch.optim.Adam([{'params': trainable_model_params, 'lr': self._model_config.train.lrate_mlp},
                                             {'params': optimizable_poses, 'lr': self._model_config.train.lrate_pose}])
@@ -292,9 +299,10 @@ class Optimizer:
                         first_im_uniform_indices = self._rgb_shuffled_indices[start_idxs[0]:first_im_end_idx]
                         first_im_uniform_indices = first_im_uniform_indices % len(self._rgb_shuffled_indices)
 
-                        second_im_end_idx = start_idxs[1] + kf.num_uniform_rgb_samples
-                        second_im_uniform_indices = self._rgb_shuffled_indices[start_idxs[1]:second_im_end_idx]
-                        second_im_uniform_indices = second_im_uniform_indices % len(self._rgb_shuffled_indices)
+                        if not use_simple_frame:
+                            second_im_end_idx = start_idxs[1] + kf.num_uniform_rgb_samples
+                            second_im_uniform_indices = self._rgb_shuffled_indices[start_idxs[1]:second_im_end_idx]
+                            second_im_uniform_indices = second_im_uniform_indices % len(self._rgb_shuffled_indices)
 
                         # Next based on strategy get the rest
                         if self._sample_allocation_strategy == SampleAllocationStrategy.UNIFORM:
@@ -306,17 +314,23 @@ class Optimizer:
 
                             first_im_strategy_indices = first_im_strategy_indices % len(self._rgb_shuffled_indices)
 
-                            second_im_end_idx = start_idxs[1] + kf.num_strategy_rgb_samples
-                            second_im_strategy_indices = self._rgb_shuffled_indices[start_idxs[1]:second_im_end_idx]
+                            if not use_simple_frame:
+                                second_im_end_idx = start_idxs[1] + kf.num_strategy_rgb_samples
+                                second_im_strategy_indices = self._rgb_shuffled_indices[start_idxs[1]:second_im_end_idx]
 
-                            second_im_strategy_indices = second_im_strategy_indices % len(self._rgb_shuffled_indices)
+                                second_im_strategy_indices = second_im_strategy_indices % len(self._rgb_shuffled_indices)
 
                         elif self._sample_allocation_strategy == SampleAllocationStrategy.ACTIVE:
                             first_im_strategy_indices = self._cam_ray_directions.sample_chunks(kf.loss_distribution, kf.num_strategy_rgb_samples.item()).flatten()
-                            second_im_strategy_indices = self._cam_ray_directions.sample_chunks(kf.loss_distribution, kf.num_strategy_rgb_samples.item()).flatten()
+                            if not use_simple_frame:
+                                second_im_strategy_indices = self._cam_ray_directions.sample_chunks(kf.loss_distribution, kf.num_strategy_rgb_samples.item()).flatten()
 
                         first_im_indices = torch.cat((first_im_uniform_indices, first_im_strategy_indices))
-                        second_im_indices = torch.cat((second_im_uniform_indices, second_im_strategy_indices))
+                        
+                        if use_simple_frame:
+                            second_im_indices = None
+                        else:
+                            second_im_indices = torch.cat((second_im_uniform_indices, second_im_strategy_indices))
                         
                         new_cam_rays, new_cam_intensities = kf.build_camera_rays(
                             first_im_indices, second_im_indices, self._ray_range,

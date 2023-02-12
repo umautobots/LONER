@@ -75,7 +75,7 @@ def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time) -> LidarS
     dists = dists[indices]
     directions = directions[:, indices]
 
-    return LidarScan(directions.float(), dists.float(), torch.eye(4).float(), timestamps.float())
+    return LidarScan(directions.float(), dists.float(), timestamps.float())
 
 
 def tf_to_settings(tf_msg):
@@ -269,6 +269,10 @@ def run_trial(args, settings, settings_description = None, idx = None):
 
 
     checkpoints = os.listdir(f"{logdir}/checkpoints")
+    if len(checkpoints) == 0:
+        return
+
+
     #https://stackoverflow.com/a/2669120
     convert = lambda text: int(text) if text.isdigit() else text 
     alphanum_key = lambda key: [ convert(c) for c in re.split('([0-9]+)', key) ] 
@@ -282,9 +286,13 @@ def run_trial(args, settings, settings_description = None, idx = None):
     est = []
 
     for kf in kfs:
-        gt_pose = Pose(pose_tensor = kf["gt_start_lidar_pose"])
-        est_pose = Pose(pose_tensor = kf["start_lidar_pose"])
-
+        if "gt_start_lidar_pose" in kf:
+            gt_pose = Pose(pose_tensor = kf["gt_start_lidar_pose"])
+            est_pose = Pose(pose_tensor = kf["start_lidar_pose"])
+        else:
+            gt_pose = Pose(pose_tensor=kf["gt_lidar_pose"])
+            est_pose = Pose(pose_tensor=kf["lidar_pose"])
+            
         gt.append(gt_pose.get_translation())
         est.append(est_pose.get_translation())
 
@@ -321,7 +329,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.overrides is not None:
-        settings_options, settings_descriptions = Settings.generate_options(os.path.expanduser("~/ClonerSLAM/cfg/default_settings.yaml"), os.path.expanduser(args.overrides))
+        settings_options, settings_descriptions = \
+            Settings.generate_options(os.path.expanduser("~/ClonerSLAM/cfg/default_settings.yaml"), 
+                                      os.path.expanduser(args.overrides))
             
         now = datetime.datetime.now()
         now_str = now.strftime("%m%d%y_%H%M%S")

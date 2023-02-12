@@ -1,8 +1,11 @@
 import torch
-from typing import Union
+from typing import Tuple, Union
 
 from common.pose_utils import WorldCube
 from common.pose import Pose
+import pytorch3d.transforms as transf
+
+NUMERIC_TOLERANCE = 1e-9
 
 class Image:
     """ Image class for holding images.
@@ -47,25 +50,21 @@ class LidarScan:
     a point cloud, for each ray you would do the following, given a pose of lidar
     at time t of $$T_{l,t}$$:
 
-    $$point = T_{l,timestamps[i]}*ray_origin_offsets[i] + ray_directions[i]$$
+    $$point = T_{l,timestamps[i]} + ray_directions[i]$$
     """
 
     # Constructor
     # @param ray_directions: Direction of each ray. 3xn tensor.
     # @param distances: Distance of each ray. 1xn tensor
-    # @param ray_origin_offsets: Offset from the origin of the lidar frame to the
-    #        origin of each lidar ray. Either 4x4 tensor (constant offset) or 4x4xn tensor
     # @param timestamps: The time at which each laser fired. Used for motion compensation.
     # @precond: timestamps are sorted. You will have mysterious problems if this isn't true.
     def __init__(self,
                  ray_directions: torch.Tensor = torch.Tensor(),
                  distances: torch.Tensor = torch.Tensor(),
-                 ray_origin_offsets: torch.Tensor = torch.eye(4),
                  timestamps: torch.Tensor = torch.Tensor()) -> None:
 
         self.ray_directions = ray_directions
         self.distances = distances
-        self.ray_origin_offsets = ray_origin_offsets
         self.timestamps = timestamps
 
     ## @returns the number of points in the scan
@@ -84,7 +83,6 @@ class LidarScan:
     def clear(self) -> "LidarScan":
         self.ray_directions = torch.Tensor()
         self.distances = torch.Tensor()
-        self.ray_origin_offsets = torch.eye(4)
         self.timestamps = torch.Tensor()
         return self
 
@@ -92,7 +90,6 @@ class LidarScan:
     def clone(self) -> "LidarScan":
         return LidarScan(self.ray_directions.clone(),
                          self.distances.clone(),
-                         self.ray_origin_offsets.clone(),
                          self.timestamps.clone())
 
     ## Removes the first @p num_points points from the scan. Also @returns self.
@@ -101,16 +98,12 @@ class LidarScan:
         self.distances = self.distances[num_points:]
         self.timestamps = self.timestamps[num_points:]
 
-        single_origin = self.ray_origin_offsets.dim() == 2
-        if not single_origin:
-            self.ray_origin_offsets = self.ray_origin_offsets[..., num_points:]
         return self
 
     ## Copies points from the @p other scan into this one. Also returns self.
     def merge(self, other: "LidarScan") -> "LidarScan":
         self.add_points(other.ray_directions,
                         other.distances,
-                        other.ray_origin_offsets,
                         other.timestamps)
         return self
 
@@ -120,7 +113,6 @@ class LidarScan:
     def to(self, device: Union[int, str]) -> "LidarScan":
         self.ray_directions = self.ray_directions.to(device)
         self.distances = self.distances.to(device)
-        self.ray_origin_offsets = self.ray_origin_offsets.to(device)
         self.timestamps = self.timestamps.to(device)
         return self
 
@@ -128,13 +120,11 @@ class LidarScan:
     def add_points(self,
                    ray_directions: torch.Tensor,
                    distances: torch.Tensor,
-                   ray_origin_offsets: torch.Tensor,
                    timestamps: torch.Tensor) -> "LidarScan":
 
         if self.ray_directions.shape[0] == 0:
             self.distances = distances
             self.ray_directions = ray_directions
-            self.ray_origin_offsets = ray_origin_offsets
             self.timestamps = timestamps
         else:
             self.ray_directions = torch.hstack(
@@ -142,8 +132,63 @@ class LidarScan:
             self.timestamps = torch.hstack((self.timestamps, timestamps))
             self.distances = torch.hstack((self.distances, distances))
 
-            # If it's a constant offset (4x4 tensor), then don't do anything
-            if ray_origin_offsets.dim() == 3:
-                self.ray_origin_offsets = torch.hstack(
-                    (self.ray_origin_offsets, ray_origin_offsets))
         return self
+
+    def motion_compensate(self,
+                          poses: Tuple[Pose, Pose], 
+                          timestamps: Tuple[float, float],
+                          target_frame: Pose,
+                          use_gpu: bool = False):
+        
+        device = 'cuda' if use_gpu else 'cpu'
+
+        start_pose, end_pose = poses
+        start_ts, end_ts = timestamps
+
+        N = self.timestamps.shape[0]
+        interp_factors = ((self.timestamps - start_ts)/(end_ts - start_ts)).to(device)
+
+        start_trans, end_trans = start_pose.get_translation().to(device), end_pose.get_translation().to(device)
+        delta_translation = end_trans - start_trans
+
+        output_translations = delta_translation * interp_factors[:, None] + start_trans
+
+        start_rot = start_pose.get_transformation_matrix()[:3, :3]
+        end_rot = end_pose.get_transformation_matrix()[:3, :3]
+
+        relative_rotation = torch.linalg.inv(start_rot) @ end_rot
+
+        # TODO: Find a way to make this motion compensation interpolation-only so we can Slerp
+        rotation_axis_angle = transf.matrix_to_axis_angle(relative_rotation).to(device)
+
+        rotation_angle = torch.linalg.norm(rotation_axis_angle).to(device)
+
+        if rotation_angle < NUMERIC_TOLERANCE:
+            rotation_matrices = torch.eye(3, device=device).repeat(N, 1, 1)
+        else:
+            rotation_axis = rotation_axis_angle / rotation_angle
+
+            rotation_amounts = rotation_angle * interp_factors[:, None]
+            output_rotation_axis_angles = rotation_amounts * rotation_axis
+
+            rotation_matrices = transf.axis_angle_to_matrix(
+                output_rotation_axis_angles)
+
+        rotation_matrices = start_rot.to(device) @ rotation_matrices
+        
+        T_world_to_compensated_lidar = torch.cat(
+            [rotation_matrices, output_translations.unsqueeze(2)], dim=-1)
+        h = torch.Tensor([0, 0, 0, 1]).to(T_world_to_compensated_lidar.device).repeat(N, 1, 1)
+        T_world_to_compensated_lidar = torch.cat([T_world_to_compensated_lidar, h], dim=1)
+
+
+        T_world_to_target = target_frame.get_transformation_matrix().detach().to(device)
+        T_target_to_compensated_lidar = torch.linalg.inv(T_world_to_target) @ T_world_to_compensated_lidar
+
+        points_lidar = self.ray_directions*self.distances
+        points_lidar_homog = torch.vstack((points_lidar, torch.ones_like(points_lidar[0]))).to(device)
+        motion_compensated_points = (T_target_to_compensated_lidar @ points_lidar_homog.T.unsqueeze(2)).squeeze(2).T[:3]
+
+        self.distances = torch.linalg.norm(motion_compensated_points, dim=0)
+        self.ray_directions = (motion_compensated_points / self.distances).to(self.timestamps.device)
+        self.distances = self.distances.to(self.timestamps.device)
