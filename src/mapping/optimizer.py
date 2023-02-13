@@ -194,9 +194,11 @@ class Optimizer:
 
         # For each iteration config, have a list of the losses
         losses_log = []
+        depth_eps_log = []
 
         for iteration_config in iteration_schedule:
             losses_log.append([])
+            depth_eps_log.append([])
 
             self._optimization_settings.freeze_poses = iteration_config["fix_poses"]
             
@@ -353,9 +355,10 @@ class Optimizer:
                     
                         camera_samples = (uniform_camera_rays.to(self._device).float(), uniform_camera_intensities.to(self._device).float())
 
-                loss = self.compute_loss(camera_samples, lidar_samples)
+                loss, depth_eps = self.compute_loss(camera_samples, lidar_samples)
 
                 losses_log[-1].append(loss.detach().cpu().item())
+                depth_eps_log[-1].append(depth_eps)
 
                 if self._settings.debug.draw_comp_graph:
                     graph_dir = f"{self._settings.log_directory}/graphs"
@@ -383,6 +386,12 @@ class Optimizer:
             graph_dir = f"{self._settings.log_directory}/losses/keyframe_{self._keyframe_count}"
             os.makedirs(graph_dir, exist_ok=True)
             for log_idx, log in enumerate(losses_log):
+                with open(f"{graph_dir}/phase_{log_idx}.csv", 'w+') as log_file:
+                    log = [str(l) for l in log]
+                    log_file.write("\n".join(log))
+            graph_dir = f"{self._settings.log_directory}/depth_eps/keyframe_{self._keyframe_count}"
+            os.makedirs(graph_dir, exist_ok=True)
+            for log_idx, log in enumerate(depth_eps_log):
                 with open(f"{graph_dir}/phase_{log_idx}.csv", 'w+') as log_file:
                     log = [str(l) for l in log]
                     log_file.write("\n".join(log))
@@ -417,7 +426,7 @@ class Optimizer:
             cam_rays = cam_rays.to(self._device)
             cam_intensities = cam_intensities.to(self._device)
 
-            chunk_loss = self.compute_loss((cam_rays,cam_intensities), None, True)
+            chunk_loss, depth_eps = self.compute_loss((cam_rays,cam_intensities), None, True)
             losses.append(chunk_loss)
 
         losses = torch.stack(losses)
@@ -469,7 +478,7 @@ class Optimizer:
             eps = torch.sqrt(var) # [N_rays]
             mean, var, eps = torch.unsqueeze(mean, 1), torch.unsqueeze(var, 1), torch.unsqueeze(eps, 1)
             eps_min = self._model_config.loss.min_depth_eps
-            js_score = self.jsd_gauss(self._lidar_depths_gt, eps_min, mean, eps).squeeze()
+            js_score = self.calculate_JS_divergence(self._lidar_depths_gt, eps_min, mean, eps).squeeze()
 
             #print('self._model_config.loss.dynamic_depth_eps_JS: ', self._model_config.loss.dynamic_depth_eps_JS)
             if self._model_config.loss.dynamic_depth_eps_JS:
@@ -481,12 +490,12 @@ class Optimizer:
                 js_score[js_score>max_js_score] = max_js_score
                 eps_dynamic = eps_min*(1+(alpha * js_score))
                 eps_dynamic = torch.unsqueeze(eps_dynamic, dim=-1).detach()
+                depth_eps = float(np.average(eps_dynamic.detach().cpu().numpy()))
                 weights_gt_lidar = get_weights_gt(self._lidar_depth_samples_fine, self._lidar_depths_gt, eps=eps_dynamic) # [N_rays, N_samples]
-
-                if self._model_config.loss.viz_loss:
+                if self._model_config.loss.visualize_loss:
                     # viz_idx = np.where(js_score.detach().cpu().numpy() == max_js_score)[0] # show rays that haven't converged
                     viz_idx = np.array([0]) # show the first ray
-                    self.viz_loss(iteration_idx, viz_idx, opaque_rays.detach().cpu().numpy(), weights_gt_lidar.detach().cpu().numpy(), weights_pred_lidar.detach().cpu().numpy(), \
+                    self.visualize_loss(iteration_idx, viz_idx, opaque_rays.detach().cpu().numpy(), weights_gt_lidar.detach().cpu().numpy(), weights_pred_lidar.detach().cpu().numpy(), \
                                 mean.detach().cpu().numpy(), var.detach().cpu().numpy(), js_score.detach().cpu().numpy(), \
                                 self._lidar_depth_samples_fine.detach().cpu().numpy(), self._lidar_depths_gt.detach().cpu().numpy(), eps_dynamic.detach().cpu().numpy())
             else:
@@ -498,10 +507,10 @@ class Optimizer:
                 weights_gt_lidar = get_weights_gt(
                     self._lidar_depth_samples_fine, self._lidar_depths_gt, eps=depth_eps)
                 
-                if self._model_config.loss.viz_loss:
+                if self._model_config.loss.visualize_loss:
                     # viz_idx = np.where(js_score.detach().cpu().numpy() == max_js_score)[0] # show rays that haven't converged
                     viz_idx = np.array([0]) # show the first ray
-                    self.viz_loss(iteration_idx, viz_idx, opaque_rays.detach().cpu().numpy(), weights_gt_lidar.detach().cpu().numpy(), weights_pred_lidar.detach().cpu().numpy(), \
+                    self.visualize_loss(iteration_idx, viz_idx, opaque_rays.detach().cpu().numpy(), weights_gt_lidar.detach().cpu().numpy(), weights_pred_lidar.detach().cpu().numpy(), \
                                     mean.detach().cpu().numpy(), var.detach().cpu().numpy(), js_score.detach().cpu().numpy(), \
                                     self._lidar_depth_samples_fine.detach().cpu().numpy(), self._lidar_depths_gt.detach().cpu().numpy(), depth_eps)
             
@@ -537,9 +546,9 @@ class Optimizer:
             if self._model_config.loss.decay_depth_lambda:
                 depth_lambda = max(self._model_config.loss.depth_lambda * (self._model_config.train.decay_rate ** (
                     (self._global_step + 1) / (self._model_config.loss.depth_lambda_decay_steps))), self._model_config.loss.min_depth_lambda)
-            if self._model_config.loss.decay_depth_eps:
-                depth_eps = max(self._model_config.loss.depth_eps * (self._model_config.train.decay_rate ** (
-                    (self._global_step + 1) / (self._model_config.loss.depth_eps_decay_steps))), self._model_config.loss.min_depth_eps)
+            # if self._model_config.loss.decay_depth_eps:
+            #     depth_eps = max(self._model_config.loss.depth_eps * (self._model_config.train.decay_rate ** (
+            #         (self._global_step + 1) / (self._model_config.loss.depth_eps_decay_steps))), self._model_config.loss.min_depth_eps)
 
             wandb_logs['depth_lambda'] = depth_lambda
             wandb_logs['depth_eps'] = depth_eps
@@ -598,7 +607,7 @@ class Optimizer:
         #     wandb.log(wandb_logs, commit=False)
 
         # wandb.log({}, commit=True)
-        return loss
+        return loss, depth_eps
 
     # @precond: This MUST be called after compute_loss!!
     def _step_occupancy_grid(self):
@@ -615,28 +624,23 @@ class Optimizer:
         self._occupancy_grid_optimizer.zero_grad()
 
 
-    def kld_gauss(self, u1, s1, u2, s2):
-        # general KL two Gaussians
-        # u2, s2 often N(0,1)
-        # https://stats.stackexchange.com/questions/7440/ +
-        # kl-divergence-between-two-univariate-gaussians
-        # log(s2/s1) + [( s1^2 + (u1-u2)^2 ) / 2*s2^2] - 0.5
-        v1 = s1 * s1
-        v2 = s2 * s2
-        a = torch.log(s2/s1) 
-        num = v1 + (u1 - u2)**2
-        den = 2 * v2
+    def calculate_KL_divergence(self, mean1, std1, mean2, std2):
+        var1 = std1 * std1
+        var2 = std2 * std2
+        a = torch.log(std2/std1) 
+        num = var1 + (mean1 - mean2)**2
+        den = 2 * var2
         b = num / den
         return a + b - 0.5
     
-    def jsd_gauss(self, u1, s1, u2, s2):
-        um = 0.5 * (u1+u2)
-        sm = 0.5 * torch.sqrt(s1**2+s2**2)
-        return 0.5 * self.kld_gauss(u1, s1, um, sm) + 0.5 * self.kld_gauss(u2, s2, um, sm)
+    def calculate_JS_divergence(self, mean1, std1, mean2, std2):
+        mean_m = 0.5 * (mean1+mean2)
+        std_m = 0.5 * torch.sqrt(std1**2+std2**2)
+        return 0.5 * self.calculate_KL_divergence(mean1, std1, mean_m, std_m) + 0.5 * self.calculate_KL_divergence(mean2, std2, mean_m, std_m)
 
-    def viz_loss(self, i, viz_idx: np.ndarray, opaque_rays: np.ndarray, weights_gt_lidar: np.ndarray, weights_pred_lidar: np.ndarray,
-                 mean: np.ndarray, var: np.ndarray, js_score: np.ndarray, s_vals_lidar: np.ndarray,
-            depth_gt_lidar: np.ndarray, eps_: np.ndarray)->None:
+    def visualize_loss(self, i, viz_idx: np.ndarray, opaque_rays: np.ndarray, weights_gt_lidar: np.ndarray, weights_pred_lidar: np.ndarray,
+                        mean: np.ndarray, var: np.ndarray, js_score: np.ndarray, s_vals_lidar: np.ndarray,
+                        depth_gt_lidar: np.ndarray, eps_: np.ndarray)->None:
         if i > 0:
             # max_js_ids = np.where(js_score == self._model_config.loss.JS_loss.max_js_score)[0]
             # opaque_ids = np.where(opaque_rays == True)[0]

@@ -74,24 +74,32 @@ class Mapper:
 
                 pose_state = self._keyframe_manager.get_poses_state()
                 
-                ckpt = {'global_step': self._optimizer._global_step,
-                        'network_state_dict': self._optimizer._model.state_dict(),
-                        'optimizer_state_dict': self._optimizer._optimizer.state_dict(),
-                        'poses': pose_state,
-                        'occ_model_state_dict': self._optimizer._occupancy_grid_model.state_dict(),
-                        'occ_optimizer_state_dict': self._optimizer._occupancy_grid_optimizer.state_dict()}
+                if self._optimizer._keyframe_count % 10 == 0:
+                    ckpt = {'global_step': self._optimizer._global_step,
+                            'network_state_dict': self._optimizer._model.state_dict(),
+                            'optimizer_state_dict': self._optimizer._optimizer.state_dict(),
+                            'poses': pose_state,
+                            'occ_model_state_dict': self._optimizer._occupancy_grid_model.state_dict(),
+                            'occ_optimizer_state_dict': self._optimizer._occupancy_grid_optimizer.state_dict()}
+                else:
+                    ckpt = {'global_step': self._optimizer._global_step,
+                            # 'network_state_dict': self._optimizer._model.state_dict(),
+                            # 'optimizer_state_dict': self._optimizer._optimizer.state_dict(),
+                            'poses': pose_state,
+                            'occ_model_state_dict': self._optimizer._occupancy_grid_model.state_dict(),
+                            'occ_optimizer_state_dict': self._optimizer._occupancy_grid_optimizer.state_dict()}
 
                 print("Sending KF Update")
                 self._keyframe_update_signal.emit(pose_state)
                 
-                print("Saving Checkpoint to", f"{self._settings.log_directory}/checkpoints/ckpt_{self._optimizer._global_step}.tar")
-                torch.save(ckpt, f"{self._settings.log_directory}/checkpoints/ckpt_{self._optimizer._global_step}.tar")
+                print("Saving Checkpoint to", f"{self._settings.log_directory}/checkpoints/ckpt_{self._optimizer._keyframe_count}.tar")
+                torch.save(ckpt, f"{self._settings.log_directory}/checkpoints/ckpt_{self._optimizer._keyframe_count}.tar")
             elif not self._settings.optimizer.enabled:
                 if self._optimizer._global_step % 100 == 0:
                     pose_state = self._keyframe_manager.get_poses_state()
                     ckpt = {'poses': pose_state}
-                    print("Saving Checkpoint to", f"{self._settings.log_directory}/checkpoints/ckpt_{self._optimizer._global_step}.tar")
-                    torch.save(ckpt, f"{self._settings.log_directory}/checkpoints/ckpt_{self._optimizer._global_step}.tar")
+                    print("Saving Checkpoint to", f"{self._settings.log_directory}/checkpoints/ckpt_{self._optimizer._keyframe_count}.tar")
+                    torch.save(ckpt, f"{self._settings.log_directory}/checkpoints/ckpt_{self._optimizer._keyframe_count}.tar")
                 self._optimizer._global_step += 1
 
     ## Spins by reading frames from the @m frame_slot as inputs.
