@@ -110,8 +110,8 @@ for experiment_directory in args.experiment_directories:
     tracked = torch.stack(tracked).detach().cpu()
     est = torch.stack(est).detach().cpu()
 
-    tracked_rmse = torch.sqrt(torch.mean(np.square(tracked-gt))).item()
-    est_rmse = torch.sqrt(torch.mean(torch.square(est-gt))).item()
+    tracked_rmse = torch.sqrt(torch.mean(np.square(torch.linalg.norm(tracked-gt, dim=1)))).item()
+    est_rmse = torch.sqrt(torch.mean(torch.square(torch.linalg.norm(est-gt, dim=1)))).item()
 
 
 
