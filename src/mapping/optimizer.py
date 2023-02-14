@@ -355,7 +355,7 @@ class Optimizer:
                     
                         camera_samples = (uniform_camera_rays.to(self._device).float(), uniform_camera_intensities.to(self._device).float())
 
-                loss, depth_eps = self.compute_loss(camera_samples, lidar_samples)
+                loss, depth_eps = self.compute_loss(camera_samples, lidar_samples, it_idx)
 
                 losses_log[-1].append(loss.detach().cpu().item())
                 depth_eps_log[-1].append(depth_eps)
@@ -435,13 +435,12 @@ class Optimizer:
     ## For the given camera and lidar rays, compute and return the differentiable loss
     def compute_loss(self, camera_samples: Tuple[torch.Tensor, torch.Tensor], 
                            lidar_samples: Tuple[torch.Tensor, torch.Tensor],
+                           iteration_idx: int,
                            override_enables: bool = False) -> torch.Tensor:
         scale_factor = self._scale_factor.to(self._device).float()
         
         loss = 0
         wandb_logs = {}
-
-        iteration_idx = self._global_step % self._optimization_settings.num_iterations
 
         if (override_enables or self.should_enable_lidar()) and lidar_samples is not None:
             # TODO: Update with JS divergence method
@@ -546,9 +545,6 @@ class Optimizer:
             if self._model_config.loss.decay_depth_lambda:
                 depth_lambda = max(self._model_config.loss.depth_lambda * (self._model_config.train.decay_rate ** (
                     (self._global_step + 1) / (self._model_config.loss.depth_lambda_decay_steps))), self._model_config.loss.min_depth_lambda)
-            # if self._model_config.loss.decay_depth_eps:
-            #     depth_eps = max(self._model_config.loss.depth_eps * (self._model_config.train.decay_rate ** (
-            #         (self._global_step + 1) / (self._model_config.loss.depth_eps_decay_steps))), self._model_config.loss.min_depth_eps)
 
             wandb_logs['depth_lambda'] = depth_lambda
             wandb_logs['depth_eps'] = depth_eps
