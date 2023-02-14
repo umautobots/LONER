@@ -46,6 +46,7 @@ class Mapper:
         self._term_signal = mp.Value('i', 0)
         self._processed_stop_signal = mp.Value('i', 0)
         os.makedirs(f"{self._settings.log_directory}/checkpoints", exist_ok=True)
+        self.last_ckpt = {}
 
     def update(self) -> None:
         if self._processed_stop_signal.value:
@@ -88,7 +89,12 @@ class Mapper:
                             'poses': pose_state,
                             'occ_model_state_dict': self._optimizer._occupancy_grid_model.state_dict(),
                             'occ_optimizer_state_dict': self._optimizer._occupancy_grid_optimizer.state_dict()}
-
+                self.last_ckpt = {'global_step': self._optimizer._global_step,
+                                    'network_state_dict': self._optimizer._model.state_dict(),
+                                    'optimizer_state_dict': self._optimizer._optimizer.state_dict(),
+                                    'poses': pose_state,
+                                    'occ_model_state_dict': self._optimizer._occupancy_grid_model.state_dict(),
+                                    'occ_optimizer_state_dict': self._optimizer._occupancy_grid_optimizer.state_dict()}
                 print("Sending KF Update")
                 self._keyframe_update_signal.emit(pose_state)
                 
