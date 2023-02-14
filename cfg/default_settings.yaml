@@ -76,7 +76,7 @@ mapper:
     window_selection:
       strategy: HYBRID
       hybrid_settings:
-        num_recent_frames: 3
+        num_recent_frames: 5
       window_size: 10
     sample_allocation:
       strategy: UNIFORM

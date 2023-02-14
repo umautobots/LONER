@@ -184,6 +184,7 @@ class Optimizer:
     def _do_iterate_optimizer(self, keyframe_window: List[KeyFrame], iteration_schedule: dict, profiler: profile = None) -> float:
         
         use_simple_frame = keyframe_window[0]._use_simple_frame
+        breakpoint()
 
         if len(keyframe_window) == 1:
             keyframe_window[0].is_anchored = True

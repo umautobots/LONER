@@ -1,12 +1,3 @@
-# mapper:
-#   keyframe_manager:
-#     window_selection:
-#       hybrid_settings:
-#         num_recent_frames: [1, 3, 5, 10]
-#   optimizer:
-#     model_config:
-#       train:
-#         lrate_gamma: [0.95, 0.9]
 tracker:
   motion_compensation:
-    use_gpu: [False, True]
+    use_gpu: [False, False,False,False,False,False,False,False,False,False,False,False,False,False,False,False,False,False,False,False,False,False,False,False,False]
