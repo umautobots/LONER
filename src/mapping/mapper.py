@@ -74,7 +74,7 @@ class Mapper:
 
                 pose_state = self._keyframe_manager.get_poses_state()
                 
-                if self._optimizer._keyframe_count % 10 == 0:
+                if self._optimizer._keyframe_count % 10 == 0 or self._settings.log_verbose:
                     ckpt = {'global_step': self._optimizer._global_step,
                             'network_state_dict': self._optimizer._model.state_dict(),
                             'optimizer_state_dict': self._optimizer._optimizer.state_dict(),

@@ -202,7 +202,10 @@ class KeyFrame:
 
         # N x 4 x 4
         if self._use_simple_frame:
-            lidar_poses = self._frame.get_lidar_pose().get_transformation_matrix()
+            if use_gt_poses:
+                lidar_poses = self._frame._gt_lidar_pose.get_transformation_matrix()
+            else:
+                lidar_poses = self._frame.get_lidar_pose().get_transformation_matrix()
         else:
             lidar_poses = self.interpolate_lidar_poses(timestamps, use_gt_poses)
 

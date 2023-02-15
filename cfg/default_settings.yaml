@@ -28,6 +28,7 @@ debug:
 
 system:
   single_threaded: True
+  log_dir_prefix: "~/ClonerSLAM/outputs"
 
 # ros_names:
 #   camera: "ego_vehicle/rgb_front"
@@ -38,7 +39,7 @@ ros_names:
   camera: "stereo/frame_left"
   lidar: "os_cloud_node/points"
   camera_suffix: "image_raw"
-  topic_prefix: ""
+  topic_prefix: "" 
 # ros_names:
 #   camera: "ego_vehicle/camera/rgb"
 #   lidar: "ego_vehicle/lidar/center"
@@ -68,6 +69,7 @@ tracker:
 mapper:
   device: 0 # don't change this, use CUDA_VISIBLE_DEVICES
   data_prep_on_cpu: &data_prep_on_cpu True
+  log_verbose: False
   keyframe_manager:
     keyframe_selection:
       strategy: TEMPORAL

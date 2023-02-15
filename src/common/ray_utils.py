@@ -246,7 +246,6 @@ class CameraRayDirections:
             remainder = total_grid_samples - samples_per_cell.sum()
 
             while remainder > len(samples_per_cell):
-                breakpoint()
                 samples_per_cell += 1
                 remainder -= len(samples_per_cell)
 

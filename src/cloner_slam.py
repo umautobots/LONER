@@ -93,9 +93,9 @@ class ClonerSLAM:
             
         self._experiment_name = f"{expname}_{now_str}"
         if ablation_name is None:
-            self._log_directory = os.path.expanduser(f"/mnt/ws-frb/users/sethgi/outputs/{self._experiment_name}/")
+            self._log_directory = os.path.expanduser(f"{self._settings.system.log_dir_prefix}/{self._experiment_name}/")
         else:
-            self._log_directory = os.path.expanduser(f"/mnt/ws-frb/users/sethgi/outputs/{ablation_name}/trial_{trial_idx}")
+            self._log_directory = os.path.expanduser(f"{self._settings.system.log_dir_prefix}/{ablation_name}/trial_{trial_idx}")
 
 
         os.makedirs(self._log_directory, exist_ok=True)
