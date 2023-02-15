@@ -263,6 +263,9 @@ def run_trial(args, settings, settings_description = None, idx = None):
     cloner_slam.stop()
     end_clock = time.time()
 
+    print("Saving Last Checkpoint to", f"{cloner_slam._mapper._optimizer._settings.log_directory}/checkpoints/ckpt_{cloner_slam._mapper._optimizer._keyframe_count}.tar")
+    torch.save(cloner_slam._mapper.last_ckpt, f"{cloner_slam._mapper._optimizer._settings.log_directory}/checkpoints/ckpt_{cloner_slam._mapper._optimizer._keyframe_count}.tar")
+
     with open(f"{cloner_slam._log_directory}/runtime.txt", 'w+') as runtime_f:
         runtime_f.write(f"Execution Time (With Overhead): {end_clock - init_clock}\n")
         runtime_f.write(f"Execution Time (Without Overhead): {end_clock - start_clock}\n")
