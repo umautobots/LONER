@@ -39,15 +39,23 @@ parser.add_argument("--title", type=str, default=None)
 
 args = parser.parse_args()
 
+
+all_gts = []
+all_ests = []
+all_relatives = []
+all_rmses = []
+
 for experiment_directory in args.experiment_directories:
     print(experiment_directory)
     checkpoints = os.listdir(f"{experiment_directory}/checkpoints")
-
     if args.ckpt_id is None:
-        #https://stackoverflow.com/a/2669120
-        convert = lambda text: int(text) if text.isdigit() else text 
-        alphanum_key = lambda key: [ convert(c) for c in re.split('([0-9]+)', key) ] 
-        checkpoint = sorted(checkpoints, key = alphanum_key)[-1]
+        if "final.tar" in checkpoints:
+            checkpoint = "final.tar"
+        else:
+            #https://stackoverflow.com/a/2669120
+            convert = lambda text: int(text) if text.isdigit() else text 
+            alphanum_key = lambda key: [ convert(c) for c in re.split('([0-9]+)', key) ] 
+            checkpoint = sorted(checkpoints, key = alphanum_key)[-1]
     else:
         checkpoint = f"ckpt_{args.ckpt_id}.tar"
 
@@ -56,6 +64,7 @@ for experiment_directory in args.experiment_directories:
     if not checkpoint_path.exists():
         print(f'Checkpoint {checkpoint_path} does not exist. Quitting.')
         exit()
+    print("Loading checkpoint from", checkpoint_path.as_posix())
     ckpt = torch.load(str(checkpoint_path))
 
     kfs = ckpt["poses"]
@@ -110,9 +119,11 @@ for experiment_directory in args.experiment_directories:
     tracked = torch.stack(tracked).detach().cpu()
     est = torch.stack(est).detach().cpu()
 
-    tracked_rmse = torch.sqrt(torch.mean(np.square(torch.linalg.norm(tracked-gt, dim=1)))).item()
+    tracked_rmse = torch.sqrt(torch.mean(torch.square(torch.linalg.norm(tracked-gt, dim=1)))).item()
     est_rmse = torch.sqrt(torch.mean(torch.square(torch.linalg.norm(est-gt, dim=1)))).item()
 
+    all_relatives.append(rmse_rel_err)
+    all_rmses.append(est_rmse)
 
 
     ax = plt.gca()
@@ -139,3 +150,22 @@ for experiment_directory in args.experiment_directories:
 
     plt.savefig(f"{experiment_directory}/poses.png")
     plt.clf()
+    
+    all_gts.append(gt)
+    all_ests.append(est)
+
+fig, ax = plt.subplots(5,5)
+# plt.tight_layout()
+
+for idx, (gt, est) in enumerate(zip(all_gts, all_ests)):
+    row = idx // 5
+    col = idx % 5
+
+    ax[row][col].plot(gt[:,0], gt[:,1], label="Ground Truth")
+    ax[row][col].plot(est[:,0], est[:,1], label="Optimized")
+    ax[row][col].scatter(gt[0,0],gt[0,1], s=20, color='red', label="Start Point")
+    ax[row][col].tick_params(left = False, right = False , labelleft = False ,
+                labelbottom = False, bottom = False)
+    fig.subplots_adjust(left=0, bottom=0, right=1, top=1, wspace=0, hspace=0)
+
+plt.savefig("all_plots.svg")

@@ -48,6 +48,21 @@ class Mapper:
         os.makedirs(f"{self._settings.log_directory}/checkpoints", exist_ok=True)
         self.last_ckpt = {}
 
+
+    def finish(self) -> None:
+        pose_state = self._keyframe_manager.get_poses_state()
+
+        last_ckpt = {'global_step': self._optimizer._global_step,
+                     'network_state_dict': self._optimizer._model.state_dict(),
+                     'optimizer_state_dict': self._optimizer._optimizer.state_dict(),
+                     'poses': pose_state,
+                     'occ_model_state_dict': self._optimizer._occupancy_grid_model.state_dict(),
+                     'occ_optimizer_state_dict': self._optimizer._occupancy_grid_optimizer.state_dict()}
+
+        final_kf_count = self._optimizer._keyframe_count
+        print("Saving Last Checkpoint to", f"{self._settings.log_directory}/checkpoints/final.tar")
+        torch.save(last_ckpt, f"{self._settings.log_directory}/checkpoints/final.tar")
+
     def update(self) -> None:
         if self._processed_stop_signal.value:
             print("Not updating mapper: Mapping already done.")
@@ -75,7 +90,7 @@ class Mapper:
 
                 pose_state = self._keyframe_manager.get_poses_state()
                 
-                if self._optimizer._keyframe_count % 10 == 0 or self._settings.log_verbose:
+                if self._optimizer._keyframe_count % 25 == 0 or self._settings.log_verbose:
                     ckpt = {'global_step': self._optimizer._global_step,
                             'network_state_dict': self._optimizer._model.state_dict(),
                             'optimizer_state_dict': self._optimizer._optimizer.state_dict(),
@@ -84,17 +99,8 @@ class Mapper:
                             'occ_optimizer_state_dict': self._optimizer._occupancy_grid_optimizer.state_dict()}
                 else:
                     ckpt = {'global_step': self._optimizer._global_step,
-                            # 'network_state_dict': self._optimizer._model.state_dict(),
-                            # 'optimizer_state_dict': self._optimizer._optimizer.state_dict(),
-                            'poses': pose_state,
-                            'occ_model_state_dict': self._optimizer._occupancy_grid_model.state_dict(),
-                            'occ_optimizer_state_dict': self._optimizer._occupancy_grid_optimizer.state_dict()}
-                self.last_ckpt = {'global_step': self._optimizer._global_step,
-                                    'network_state_dict': self._optimizer._model.state_dict(),
-                                    'optimizer_state_dict': self._optimizer._optimizer.state_dict(),
-                                    'poses': pose_state,
-                                    'occ_model_state_dict': self._optimizer._occupancy_grid_model.state_dict(),
-                                    'occ_optimizer_state_dict': self._optimizer._occupancy_grid_optimizer.state_dict()}
+                            'poses': pose_state}
+                            
                 print("Sending KF Update")
                 self._keyframe_update_signal.emit(pose_state)
                 

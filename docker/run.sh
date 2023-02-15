@@ -6,13 +6,19 @@ CONTAINER_NAME=cloner_slam
 
 capabilities_str=\""capabilities=compute,utility,graphics,display\""
 
+cp /etc/passwd $SCRIPT_DIR/.etc_group
+cp /etc/passwd $SCRIPT_DIR/.etc_passwd
+getent group $(whoami) >> $SCRIPT_DIR/.etc_group
+getent passwd $(whoami) >> $SCRIPT_DIR/.etc_passwd
+
 DOCKER_OPTIONS=""
 DOCKER_OPTIONS+="-it "
 DOCKER_OPTIONS+="-v $SCRIPT_DIR/../:/home/$(whoami)/ClonerSLAM "
 DOCKER_OPTIONS+="-e DISPLAY=$DISPLAY "
 DOCKER_OPTIONS+="-v /tmp/.X11-unix:/tmp/.X11-unix "
 DOCKER_OPTIONS+="-v $HOME/.Xauthority:/home/$(whoami)/.Xauthority "
-DOCKER_OPTIONS+="-v /home/$USER/Documents/ClonerSlamData:/home/$(whoami)/data "
+DOCKER_OPTIONS+="-v /home/$USER/ClonerSlamData:/home/$(whoami)/data "
+DOCKER_OPTIONS+="-v /mnt/ws-frb:/mnt/ws-frb "
 DOCKER_OPTIONS+="--name $CONTAINER_NAME "
 DOCKER_OPTIONS+="--privileged "
 DOCKER_OPTIONS+="--gpus=all "
@@ -20,10 +26,11 @@ DOCKER_OPTIONS+="-e NVIDIA_DRIVER_CAPABILITIES=video,compute,utility "
 DOCKER_OPTIONS+="--net=host "
 DOCKER_OPTIONS+="--runtime=nvidia "
 DOCKER_OPTIONS+="-e SDL_VIDEODRIVER=x11 "
-DOCKER_OPTIONS+="-v /etc/passwd:/etc/passwd:ro -v /etc/group:/etc/group:ro "
-DOCKER_OPTIONS+="-u $(id -u) "
+DOCKER_OPTIONS+="-v $SCRIPT_DIR/.etc_passwd:/etc/passwd:ro -v $SCRIPT_DIR/.etc_group:/etc/group:ro "
+DOCKER_OPTIONS+="-u $(id -u):$(id -g) "
 DOCKER_OPTIONS+="--shm-size 32G "
-DOCKER_OPTIONS+="$(id --groups | sed 's/\(\b\w\)/--group-add \1/g') "
+
+# DOCKER_OPTIONS+="$(id --groups | sed 's/\(\b\w\)/--group-add \1/g') "
 
 for cam in /dev/video*; do
   DOCKER_OPTIONS+="--device=${cam} "

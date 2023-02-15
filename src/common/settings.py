@@ -113,3 +113,26 @@ class Settings(AttrDict):
             settings_descriptions.append(settings_description)
 
         return settings_options, settings_descriptions
+
+
+
+    def generate_bounds(bounds: str):
+    
+        with open(bounds) as overrides_file:
+            overrides_data = yaml.full_load(overrides_file)
+
+        bounds = {}
+
+        # Recursively parse overrides looking for leaf elements. 
+        # build options as (path_to_setting: List[str], options: List[Any])
+        def _generate_options_helper(data, stack):
+            if isinstance(data, list):
+                bounds[tuple(stack)] = tuple(data)
+                return
+            
+            for element in data:
+                _generate_options_helper(data[element], stack + [element])
+        
+        _generate_options_helper(overrides_data, [])
+
+        return bounds

@@ -52,10 +52,13 @@ args = parser.parse_args()
 checkpoints = os.listdir(f"{args.experiment_directory}/checkpoints")
 
 if args.ckpt_id is None:
-    #https://stackoverflow.com/a/2669120
-    convert = lambda text: int(text) if text.isdigit() else text 
-    alphanum_key = lambda key: [ convert(c) for c in re.split('([0-9]+)', key) ] 
-    checkpoint = sorted(checkpoints, key = alphanum_key)[-1]
+    if "final.tar" in checkpoints:
+        checkpoint = "final.tar"
+    else:
+        #https://stackoverflow.com/a/2669120
+        convert = lambda text: int(text) if text.isdigit() else text 
+        alphanum_key = lambda key: [ convert(c) for c in re.split('([0-9]+)', key) ] 
+        checkpoint = sorted(checkpoints, key = alphanum_key)[-1]
 else:
     checkpoint = f"ckpt_{args.ckpt_id}.tar"
 

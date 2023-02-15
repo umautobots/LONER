@@ -1,17 +1,14 @@
 #!/usr/bin/env python3
 
 import argparse
+import datetime
 import glob
 import os
 import shutil
 import sys
 import re
 import pathlib
-from bayes_opt import BayesianOptimization
-from bayes_opt.logger import JSONLogger
-from bayes_opt.event import Events
-import torch.multiprocessing as mp
-import pickle
+import time
 
 import cv2
 import pandas as pd
@@ -26,6 +23,10 @@ from geometry_msgs.msg import TransformStamped
 from pathlib import Path
 from sensor_msgs.msg import Image, PointCloud2
 import pytorch3d.transforms
+import torch.multiprocessing as mp
+from bayes_opt import UtilityFunction
+from bayes_opt import BayesianOptimization
+
 
 # autopep8: off
 # Linting needs to be disabled here or it'll try to move includes before path.
@@ -35,7 +36,9 @@ IM_SCALE_FACTOR = 0.5
 
 PROJECT_ROOT = os.path.abspath(os.path.join(
     os.path.dirname(__file__),
+    os.pardir,
     os.pardir))
+
 sys.path.append(PROJECT_ROOT)
 sys.path.append(PROJECT_ROOT + "/src")
 
@@ -43,11 +46,8 @@ from fusion_portable_calibration import FusionPortableCalibration
 
 from src.cloner_slam import ClonerSLAM
 from src.common.pose import Pose
-from src.common.pose_utils import WorldCube
 from src.common.sensors import Image, LidarScan
 from src.common.settings import Settings
-from src.logging.default_logger import DefaultLogger
-from src.logging.draw_frames_to_ros import FrameDrawer
 
 # autopep8: on
 
@@ -78,7 +78,7 @@ def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time) -> LidarS
     dists = dists[indices]
     directions = directions[:, indices]
 
-    return LidarScan(directions.float(), dists.float(), torch.eye(4).float(), timestamps.float())
+    return LidarScan(directions.float(), dists.float(), timestamps.float())
 
 
 def tf_to_settings(tf_msg):
@@ -146,188 +146,283 @@ def build_poses_from_buffer(tf_buffer, timestamps, cam_to_lidar):
     return torch.stack(lidar_poses).float()
 
 
+
+def run_trial(args, settings, settings_description = None, idx = None):
+    init = False
+    prev_time = None
+
+    init_clock = time.time()
+
+    calibration = FusionPortableCalibration(args.calibration_path)
+
+    tf_buffer = tf2_py.BufferCore(rospy.Duration(10000))
+
+    ego_pose_timestamps = []
+
+    camera = settings.ros_names.camera
+    lidar = settings.ros_names.lidar
+    camera_suffix = settings.ros_names.camera_suffix
+    topic_prefix = settings.ros_names.topic_prefix
+
+    camera_info_topic = f"{topic_prefix}/{camera}/camera_info" 
+    image_topic = f"{topic_prefix}/{camera}/{camera_suffix}"
+    lidar_topic = f"{topic_prefix}/{lidar}"
+
+    K = torch.from_numpy(calibration.left_cam_intrinsic["K"]).float()
+    K[:2, :] *= IM_SCALE_FACTOR
+
+    settings["calibration"]["camera_intrinsic"]["k"] = K
+
+    settings["calibration"]["camera_intrinsic"]["distortion"] = \
+        torch.from_numpy(calibration.left_cam_intrinsic["distortion_coeffs"]).float()
+
+    settings["calibration"]["camera_intrinsic"]["width"] = int(calibration.left_cam_intrinsic["width"] // (1/IM_SCALE_FACTOR))
+    
+    settings["calibration"]["camera_intrinsic"]["height"] = int(calibration.left_cam_intrinsic["height"] // (1/IM_SCALE_FACTOR))
+
+    ray_range = settings.mapper.optimizer.model_config.data.ray_range
+    image_size = (settings.calibration.camera_intrinsic.height,
+                settings.calibration.camera_intrinsic.width)
+
+    lidar_to_camera = Pose.from_settings(calibration.t_lidar_to_left_cam).get_transformation_matrix()
+    camera_to_lidar = lidar_to_camera.inverse()
+
+    settings["calibration"]["lidar_to_camera"] = Pose(lidar_to_camera).to_settings()
+    settings["experiment_name"] = args.experiment_name
+
+    cloner_slam = ClonerSLAM(settings)
+
+    # Get ground truth trajectory. This is only used to construct the world cube.
+    rosbag_path = Path(args.rosbag_path)
+    ground_truth_file = rosbag_path.parent / "ground_truth_traj.txt"
+    ground_truth_df = pd.read_csv(ground_truth_file, names=["timestamp","x","y","z","q_x","q_y","q_z","q_w"], delimiter=" ")
+    tf_buffer, timestamps = build_buffer_from_df(ground_truth_df)
+    lidar_poses = build_poses_from_buffer(tf_buffer, timestamps, camera_to_lidar)
+    
+    if idx is None:
+        ablation_name = None
+    else:
+        ablation_name = args.experiment_name
+
+    cloner_slam.initialize(camera_to_lidar, lidar_poses, settings.calibration.camera_intrinsic.k,
+                            ray_range, image_size, args.rosbag_path, ablation_name, idx)
+
+    logdir = cloner_slam._log_directory
+
+    if settings_description is not None:
+        with open(f"{logdir}/configuration.txt", 'w+') as desc_file:
+            desc_file.write(settings_description)
+
+    for f in glob.glob("../outputs/frame*"):
+        shutil.rmtree(f)
+
+    bag = rosbag.Bag(args.rosbag_path, 'r')
+
+    cloner_slam.start()
+
+    start_time = None
+    start_timestamp = None
+
+    start_lidar_pose = None
+
+    start_clock = time.time()
+    for topic, msg, timestamp in bag.read_messages(topics=[lidar_topic, image_topic]):        
+        # Wait for lidar to init
+        if topic == lidar_topic and not init:
+            init = True
+            start_time = timestamp
+        if not init:
+            continue
+
+        timestamp -= start_time
+
+        if args.duration is not None and timestamp.to_sec() > args.duration:
+            break
+
+        if topic == image_topic:
+            image = build_image_from_msg(msg, timestamp)
+
+            try:
+                lidar_tf = tf_buffer.lookup_transform_core('map', "lidar", timestamp + start_time)
+            except tf2_py.ExtrapolationException as e:
+                print("Skipping camera message: No valid TF")
+                continue
+
+            T_lidar = msg_to_transformation_mat(lidar_tf)
+
+            if start_lidar_pose is None:
+                start_lidar_pose = T_lidar
+
+            gt_lidar_pose = start_lidar_pose.inverse() @ T_lidar
+            gt_cam_pose = Pose(gt_lidar_pose @ camera_to_lidar.inverse())
+
+            cloner_slam.process_rgb(image, gt_cam_pose)
+        elif topic == lidar_topic:
+            lidar_scan = build_scan_from_msg(msg, timestamp)
+            cloner_slam.process_lidar(lidar_scan)
+        else:
+            raise Exception("Should be unreachable")
+
+    cloner_slam.stop()
+    end_clock = time.time()
+
+
+    with open(f"{cloner_slam._log_directory}/runtime.txt", 'w+') as runtime_f:
+        runtime_f.write(f"Execution Time (With Overhead): {end_clock - init_clock}\n")
+        runtime_f.write(f"Execution Time (Without Overhead): {end_clock - start_clock}\n")
+
+
+    checkpoints = os.listdir(f"{logdir}/checkpoints")
+    if len(checkpoints) == 0:
+        return
+
+
+    #https://stackoverflow.com/a/2669120
+    convert = lambda text: int(text) if text.isdigit() else text 
+    alphanum_key = lambda key: [ convert(c) for c in re.split('([0-9]+)', key) ] 
+    checkpoint = sorted(checkpoints, key = alphanum_key)[-1]
+    checkpoint_path = pathlib.Path(f"{logdir}/checkpoints/{checkpoint}")
+    ckpt = torch.load(str(checkpoint_path))
+
+    kfs = ckpt["poses"]
+
+    gt = []
+    est = []
+
+    for kf in kfs:
+        if "gt_start_lidar_pose" in kf:
+            gt_pose = Pose(pose_tensor = kf["gt_start_lidar_pose"])
+            est_pose = Pose(pose_tensor = kf["start_lidar_pose"])
+        else:
+            gt_pose = Pose(pose_tensor=kf["gt_lidar_pose"])
+            est_pose = Pose(pose_tensor=kf["lidar_pose"])
+            
+        gt.append(gt_pose.get_translation())
+        est.append(est_pose.get_translation())
+
+    gt = torch.stack(gt).detach().cpu()
+    est = torch.stack(est).detach().cpu()
+
+    diff = gt - est
+    dist = torch.linalg.norm(diff, dim=1)
+    rmse = torch.sqrt(torch.mean(dist**2))
+
+    print(f"RMSE: {rmse:.3f}")
+    return rmse
+# 
+# Implements a single worker in a thread-pool model.
+def _gpu_worker(settings, args, job_queue: mp.Queue, result_queue: mp.Queue) -> None:
+
+    while True:
+        data = job_queue.get()
+        if data is None:
+            return
+
+        options, trial_idx = data
+
+        descriptions = [f"{k}={v}" for k,v in options.items()]
+        description = "\n".join(descriptions)
+
+        # Generate the final settings
+        for option, value in options.items():
+            option_stack = option.split(".")
+            element = settings
+            for attr in option_stack[:-1]:
+                element = element[attr]
+            element[option_stack[-1]] = value
+
+        rmse = run_trial(args, settings, description, trial_idx)
+
+        result_queue.put((options, rmse))
+
 if __name__ == "__main__":
 
+    parser = argparse.ArgumentParser("Run ClonerSLAM on RosBag")
+    parser.add_argument("rosbag_path")
+    parser.add_argument("calibration_path")
+    parser.add_argument("experiment_name", nargs="?", default="experiment")
+    parser.add_argument("--bounds", type=str, default=None, required=True)
+    parser.add_argument("--gpu_ids", nargs="*", required=True, default = [0], help="Which GPUs to use. Defaults to parallel if set")
+
+    parser.add_argument("--duration", help="How long to run for (in input data time, sec)", type=float, default=None)
+    parser.add_argument("--num_initial_probe", default=25, required=False, type=int)
+    parser.add_argument("--num_iterations", default=100, required=False, type=int)
+
+    args = parser.parse_args()
+
+    baseline_settings = Settings.load_from_file(os.path.expanduser("~/ClonerSLAM/cfg/default_settings.yaml"))
+    bounds = Settings.generate_bounds(os.path.expanduser(args.bounds))
+    
+    pbounds = {".".join(k):v for k,v in bounds.items()}
+
+    now = datetime.datetime.now()
+    now_str = now.strftime("%m%d%y_%H%M%S")
+    args.experiment_name = f"{args.experiment_name}_{now_str}"
     
     mp.set_start_method('spawn')
 
-    pbounds = {
-        'lrate_mlp': (0.001, 0.1),
-        'lrate_pose': (0.001, 0.1),
-        'lrate_gamma': (0.75, 1)
-    }
+    job_queue = mp.Queue()
+    result_queue = mp.Queue()
 
-    def run_trial(lrate_mlp, lrate_pose, lrate_gamma):
-        print("Running Trial")
-        parser = argparse.ArgumentParser("Run ClonerSLAM on RosBag")
-        parser.add_argument("rosbag_path")
-        parser.add_argument("calibration_path")
-        parser.add_argument("experiment_name", nargs="?", default="experiment")
-        args = parser.parse_args()
+    # Create the workers
+    gpu_worker_processes = []
+    for gpu_id in args.gpu_ids:
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
+        gpu_worker_processes.append(mp.Process(target =_gpu_worker, args=(baseline_settings,args,job_queue,result_queue,)))
+        gpu_worker_processes[-1].start()
 
-        calibration = FusionPortableCalibration(args.calibration_path)
-
-        settings = Settings.load_from_file("../cfg/default_settings.yaml")
-
-        init = False
-        prev_time = None
-
-        tf_buffer = tf2_py.BufferCore(rospy.Duration(10000))
-
-        ego_pose_timestamps = []
-
-        camera = settings.ros_names.camera
-        lidar = settings.ros_names.lidar
-        camera_suffix = settings.ros_names.camera_suffix
-        topic_prefix = settings.ros_names.topic_prefix
-
-        camera_info_topic = f"{topic_prefix}/{camera}/camera_info" 
-        image_topic = f"{topic_prefix}/{camera}/{camera_suffix}"
-        lidar_topic = f"{topic_prefix}/{lidar}"
-
-
-        K = torch.from_numpy(calibration.left_cam_intrinsic["K"]).float()
-        K[:2, :] *= IM_SCALE_FACTOR
-
-        settings["calibration"]["camera_intrinsic"]["k"] = K
-
-        settings["calibration"]["camera_intrinsic"]["distortion"] = \
-            torch.from_numpy(calibration.left_cam_intrinsic["distortion_coeffs"]).float()
-
-        settings["calibration"]["camera_intrinsic"]["width"] = int(calibration.left_cam_intrinsic["width"] // (1/IM_SCALE_FACTOR))
-        
-        settings["calibration"]["camera_intrinsic"]["height"] = int(calibration.left_cam_intrinsic["height"] // (1/IM_SCALE_FACTOR))
-
-        ray_range = settings.mapper.optimizer.model_config.data.ray_range
-        image_size = (settings.calibration.camera_intrinsic.height,
-                    settings.calibration.camera_intrinsic.width)
-
-        lidar_to_camera = Pose.from_settings(calibration.t_lidar_to_left_cam).get_transformation_matrix()
-        camera_to_lidar = lidar_to_camera.inverse()
-
-        settings["calibration"]["lidar_to_camera"] = Pose(lidar_to_camera).to_settings()
-        settings["experiment_name"] = args.experiment_name
-
-
-        if lrate_mlp is not None:
-            settings["mapper"]["optimizer"]["model_config"]["train"]["lrate_mlp"] = lrate_mlp
-            settings["mapper"]["optimizer"]["model_config"]["train"]["lrate_pose"] = lrate_pose
-            settings["mapper"]["optimizer"]["model_config"]["train"]["lrate_gamma"] = lrate_gamma
-
-        # Get ground truth trajectory
-        rosbag_path = Path(args.rosbag_path)
-        ground_truth_file = rosbag_path.parent / "ground_truth_traj.txt"
-        ground_truth_df = pd.read_csv(ground_truth_file, names=["timestamp","x","y","z","q_x","q_y","q_z","q_w"], delimiter=" ")
-        tf_buffer, timestamps = build_buffer_from_df(ground_truth_df)
-        lidar_poses = build_poses_from_buffer(tf_buffer, timestamps, camera_to_lidar)
-
-        cloner_slam = ClonerSLAM(settings)
-
-
-        cloner_slam.initialize(camera_to_lidar, lidar_poses, settings.calibration.camera_intrinsic.k,
-                            ray_range, image_size, args.rosbag_path)
-
-        # if PUB_ROS:
-        #     rospy.init_node('cloner_slam')
-        #     drawer = FrameDrawer(cloner_slam._frame_signal,
-        #                         cloner_slam._rgb_signal,
-        #                         cloner_slam.get_world_cube())
-        # else:
-        #     drawer = MplFrameDrawer(cloner_slam._frame_signal,
-        #                             cloner_slam.get_world_cube(),
-        #                             settings.calibration)
-
-        for f in glob.glob("../outputs/frame*"):
-            shutil.rmtree(f)
-
-        # TODO: Prevent duplicate opens
-        bag = rosbag.Bag(args.rosbag_path, 'r')
-
-        cloner_slam.start()
-
-        start_time = None
-        start_timestamp = None
-
-        start_lidar_pose = None
-        lidar_count = 0
-        for topic, msg, timestamp in bag.read_messages(topics=[lidar_topic, image_topic]):        
-            # Wait for lidar to init
-            if topic == lidar_topic and not init:
-                init = True
-                start_time = timestamp
-            if not init:
-                continue
-
-            timestamp -= start_time
-
-            if timestamp.to_sec() > 60:
-                break
-
-            if topic == image_topic:
-                image = build_image_from_msg(msg, timestamp)
-
-                try:
-                    lidar_tf = tf_buffer.lookup_transform_core('map', "lidar", timestamp + start_time)
-                except tf2_py.ExtrapolationException as e:
-                    print("Skipping camera message: No valid TF")
-                    continue
-
-                T_lidar = msg_to_transformation_mat(lidar_tf)
-
-                if start_lidar_pose is None:
-                    start_lidar_pose = T_lidar
-
-                gt_lidar_pose = start_lidar_pose.inverse() @ T_lidar
-                gt_cam_pose = Pose(gt_lidar_pose @ camera_to_lidar.inverse())
-
-                cloner_slam.process_rgb(image, gt_cam_pose)
-            elif topic == lidar_topic:
-                if lidar_count % 2 == 0:
-                    lidar_scan = build_scan_from_msg(msg, timestamp)
-                    cloner_slam.process_lidar(lidar_scan)
-                lidar_count += 1
-            else:
-                raise Exception("Should be unreachable")
-
-        cloner_slam.stop()
-
-        logdir = cloner_slam._log_directory
-        checkpoints = os.listdir(f"{logdir}/checkpoints")
-        #https://stackoverflow.com/a/2669120
-        convert = lambda text: int(text) if text.isdigit() else text 
-        alphanum_key = lambda key: [ convert(c) for c in re.split('([0-9]+)', key) ] 
-        checkpoint = sorted(checkpoints, key = alphanum_key)[-1]
-        checkpoint_path = pathlib.Path(f"{logdir}/checkpoints/{checkpoint}")
-        ckpt = torch.load(str(checkpoint_path))
-
-        kfs = ckpt["poses"]
-
-        gt = []
-        est = []
-
-        for kf in kfs:
-            gt_pose = Pose(pose_tensor = kf["gt_start_lidar_pose"])
-            est_pose = Pose(pose_tensor = kf["start_lidar_pose"])
-
-            gt.append(gt_pose.get_translation())
-            est.append(est_pose.get_translation())
-
-        gt = torch.stack(gt).detach().cpu()
-        est = torch.stack(est).detach().cpu()
-
-        diff = gt - est
-        dist = torch.linalg.norm(diff, dim=1)
-        rmse = torch.sqrt(torch.mean(dist**2))
-        return -rmse
 
     optimizer = BayesianOptimization(
-        f = run_trial,
-        pbounds=pbounds,
+        f = None,
+        pbounds = pbounds,
+        verbose=2,
         random_state=1
     )
 
-    logger = JSONLogger(path="./bayes_logs.json")
-    optimizer.subscribe(Events.OPTIMIZATION_STEP, logger)
 
-    optimizer.maximize(init_points = 10, n_iter=100)
-    print(optimizer.max)
+    ## Initial probe of random points
+    for trial_idx in range(args.num_initial_probe):
+        # generate random bounds
+        options = {}
+        for bound, (min_val,max_val) in pbounds.items():
+            options[bound] = (torch.rand(1)*(max_val-min_val) + min_val).item()
+        
+        job_queue.put((options, trial_idx))
+
+    num_results_received = 0
+
+    while num_results_received < args.num_initial_probe:
+        tested_bounds, rmse = result_queue.get()
+        print("Probing optimizer with", tested_bounds, -rmse.item())
+        optimizer.probe(tested_bounds, -rmse.item())
+        num_results_received += 1
+
+    print("Finished initial probe")
+
+    ## Now run the optimization
+    utility = UtilityFunction(kind="ucb", kappa=2.5, xi=0.0)
+        
+    # Now we get results and start a new task every time one is recieved
+    for trial_idx in range(args.num_iterations):
+        # Start by just filling the GPUs. After that, we wait to get a response before
+        # sending a new job.
+        if trial_idx >= len(args.gpu_ids):
+            tested_bounds, rmse = result_queue.get()
+            print("Probing optimizer with", tested_bounds, -rmse.item())
+
+            optimizer.probe(tested_bounds, -rmse.item())
+
+
+        options = optimizer.suggest(utility)
+        print("Optimizer suggests", options)
+        job_queue.put((options, trial_idx + args.num_initial_probe))
+
+
+    # Send stop to processes
+    for _ in range(len(args.gpu_ids)):
+        job_queue.put(None)
+
+    # Sync
+    for process in gpu_worker_processes:
+        process.join()
+    

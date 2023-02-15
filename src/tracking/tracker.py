@@ -72,7 +72,10 @@ class Tracker:
         self._frame_count = 0
 
 
+    def finish(self):
+        pass
 
+    
     def update(self):
         if self._processed_stop_signal.value:
             print("Not updating tracker: Tracker already done.")

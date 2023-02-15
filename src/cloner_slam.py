@@ -203,6 +203,8 @@ class ClonerSLAM:
         if self._settings.debug.profile:
             self._profiler.stop()
 
+        self._mapper.finish()
+        self._tracker.finish()
         self._logger.finish()
 
         if not self._single_threaded:
