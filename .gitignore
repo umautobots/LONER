@@ -13,3 +13,5 @@ graphs/
 *.ply
 
 test/outputs/
+
+docker/.etc*
