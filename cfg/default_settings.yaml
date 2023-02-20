@@ -28,7 +28,7 @@ debug:
 
 system:
   single_threaded: True
-  log_dir_prefix: "~/ClonerSLAM/outputs"
+  log_dir_prefix: "/mnt/ws-frb/users/sethgi/outputs"
 
 # ros_names:
 #   camera: "ego_vehicle/rgb_front"
@@ -107,12 +107,12 @@ mapper:
       fix_sigma_mlp: False
       fix_rgb_mlp: False
     detach_rgb_from_poses: True
-    skip_pose_refinement: False # If set, skips the tracking refinement part of the optimization
+    skip_pose_refinement: True # If set, skips the tracking refinement part of the optimization
     keyframe_schedule:
       - 
         num_keyframes: 1
         iteration_schedule:
-          - num_iterations: 10
+          - num_iterations: 1000
             stage: 3
             fix_poses: True
             fix_sigma_mlp: False
@@ -120,16 +120,16 @@ mapper:
       -
         num_keyframes: -1
         iteration_schedule:
-          # First refine the tracking
+          # First refine the tracking (skipped by default)
           - stage: 1
-            num_iterations: 5
+            num_iterations: 50
             fix_poses: False
             latest_kf_only: True
             fix_sigma_mlp: True
             fix_rgb_mlp: True
           # Now joint optimization
           - stage: 3
-            num_iterations: 5
+            num_iterations: 150
             fix_poses: False
             fix_sigma_mlp: False
             fix_rgb_mlp: False

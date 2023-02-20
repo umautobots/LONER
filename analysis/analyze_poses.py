@@ -45,7 +45,12 @@ all_ests = []
 all_relatives = []
 all_rmses = []
 
-for experiment_directory in args.experiment_directories:
+convert = lambda text: int(text) if text.isdigit() else text 
+alphanum_key = lambda key: [ convert(c) for c in re.split('([0-9]+)', key) ] 
+experiment_directories = sorted(args.experiment_directories, key = alphanum_key)
+print(experiment_directories)
+
+for experiment_directory in experiment_directories:
     print(experiment_directory)
     checkpoints = os.listdir(f"{experiment_directory}/checkpoints")
     if args.ckpt_id is None:
@@ -112,6 +117,10 @@ for experiment_directory in args.experiment_directories:
 
     translation_rel_errs = torch.tensor(translation_rel_errs)
     rmse_rel_err = torch.sqrt(torch.mean(translation_rel_errs**2))
+    
+    with open(f"{experiment_directory}/configuration.txt") as f:
+        cfg = f.read()
+        print(f"\n\n===Configuration:===\n{cfg}")
 
     print("RMSE Relative Error:", rmse_rel_err)
 
@@ -121,7 +130,8 @@ for experiment_directory in args.experiment_directories:
 
     tracked_rmse = torch.sqrt(torch.mean(torch.square(torch.linalg.norm(tracked-gt, dim=1)))).item()
     est_rmse = torch.sqrt(torch.mean(torch.square(torch.linalg.norm(est-gt, dim=1)))).item()
-
+    
+    print("Est RMSE: ", est_rmse)
     all_relatives.append(rmse_rel_err)
     all_rmses.append(est_rmse)
 
@@ -153,19 +163,3 @@ for experiment_directory in args.experiment_directories:
     
     all_gts.append(gt)
     all_ests.append(est)
-
-fig, ax = plt.subplots(5,5)
-# plt.tight_layout()
-
-for idx, (gt, est) in enumerate(zip(all_gts, all_ests)):
-    row = idx // 5
-    col = idx % 5
-
-    ax[row][col].plot(gt[:,0], gt[:,1], label="Ground Truth")
-    ax[row][col].plot(est[:,0], est[:,1], label="Optimized")
-    ax[row][col].scatter(gt[0,0],gt[0,1], s=20, color='red', label="Start Point")
-    ax[row][col].tick_params(left = False, right = False , labelleft = False ,
-                labelbottom = False, bottom = False)
-    fig.subplots_adjust(left=0, bottom=0, right=1, top=1, wspace=0, hspace=0)
-
-plt.savefig("all_plots.svg")

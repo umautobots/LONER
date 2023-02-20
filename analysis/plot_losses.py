@@ -31,24 +31,6 @@ def sort_alphanum(input):
     alphanum_key = lambda key: [ convert(c) for c in re.split('([0-9]+)', key) ] 
     return sorted(input, key = alphanum_key)
 
-def save_logs(kf_schedule_logs, schedule_idx, super_verbose=False):
-    for phase_idx, phase in enumerate(kf_schedule_logs):
-        
-        if super_verbose:
-            trials = phase
-        else:
-            phase = np.vstack(phase)
-            mean_loss = np.mean(phase, axis=0)
-            trials = [mean_loss]
-        
-        for trial_idx, trial in enumerate(trials):
-            plt.plot(trial)
-            plt.xlabel("Iteration")
-            plt.ylabel("Loss")
-            plt.title(f"Stage {schedule_idx}, Phase {phase_idx}")
-            plt.savefig(f"{args.experiment_directory}/loss_plots/stage_{schedule_idx}_phase_{phase_idx}_trial_{trial_idx}")
-            plt.clf()
-
 parser = argparse.ArgumentParser(description="Render ground truth maps using trained nerf models")
 parser.add_argument("experiment_directory", type=str, help="folder in outputs with all results")
 
@@ -66,34 +48,58 @@ os.makedirs(f"{args.experiment_directory}/loss_plots", exist_ok=True)
 
 
 
-prev_kf_schedule_idx = -1
-current_kf_schedule_logs = []
+# prev_kf_schedule_idx = -1
+# for kf_idx, keyframe in enumerate(keyframe_folders):
+
+#     phases = sort_alphanum(os.listdir(f"{args.experiment_directory}/losses/{keyframe}"))
+     
+#     for phase_idx, phase_file in enumerate(phases):
+#         fname = f"{args.experiment_directory}/losses/{keyframe}/{phase_file}"
+        
+#         data = pd.read_csv(fname,names=["L"])["L"].to_numpy()
+
+#         plt.plot(data)
+#         plt.xlabel("Iteration")
+#         plt.ylabel("Loss")
+#         plt.title(f"KeyFrame {kf_idx}, Phase {phase_idx}")
+#         os.makedirs(f"{args.experiment_directory}/loss_plots/keyframe_{kf_idx}", exist_ok=True)
+
+#         plt.savefig(f"{args.experiment_directory}/loss_plots/keyframe_{kf_idx}/phase_{phase_idx}.png")
+#         plt.clf()
+    
+            
+fig, ax = plt.subplots(2, 3)
 for kf_idx, keyframe in enumerate(keyframe_folders):
 
-    cumulative_kf_idx = 0
-    for kf_schedule_idx, item in enumerate(keyframe_schedule):
-        kf_count = item["num_keyframes"]
-        iteration_schedule = item["iteration_schedule"]
+    if kf_idx < 100:
+        continue
 
-        cumulative_kf_idx += kf_count
-        if cumulative_kf_idx >= kf_idx + 1 or kf_count == -1:
-            break
+
 
     phases = sort_alphanum(os.listdir(f"{args.experiment_directory}/losses/{keyframe}"))
      
-    if prev_kf_schedule_idx != kf_schedule_idx:
-
-        if len(current_kf_schedule_logs) > 0:
-            save_logs(current_kf_schedule_logs, prev_kf_schedule_idx)
-
-        current_kf_schedule_logs = [[] for _ in range(len(phases))]    
 
     for phase_idx, phase_file in enumerate(phases):
         fname = f"{args.experiment_directory}/losses/{keyframe}/{phase_file}"
         
         data = pd.read_csv(fname,names=["L"])["L"].to_numpy()
-        current_kf_schedule_logs[phase_idx].append(data)
+        if phase_idx == 0:
+            continue
 
-    prev_kf_schedule_idx = kf_schedule_idx
+        col = (kf_idx-100) % 3
+        row = (kf_idx-100) // 3
 
-save_logs(current_kf_schedule_logs, prev_kf_schedule_idx, True)
+        ax[row][col].plot(data)
+        ax[row][col].set_xlabel("Iteration")
+        ax[row][col].set_ylabel("Loss")
+        ax[row][col].set_title(f"KeyFrame {kf_idx}")
+        os.makedirs(f"{args.experiment_directory}/loss_plots/keyframe_{kf_idx}", exist_ok=True)
+        
+    if kf_idx == 105:
+        break
+
+plt.tight_layout()
+plt.savefig(f"{args.experiment_directory}/loss_plots/late_8.png")
+plt.clf()
+    
+            

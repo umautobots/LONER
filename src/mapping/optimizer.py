@@ -603,6 +603,7 @@ class Optimizer:
         #     wandb.log(wandb_logs, commit=False)
 
         # wandb.log({}, commit=True)
+        assert not torch.isnan(loss), "NaN Loss Encountered"
         return loss, depth_eps
 
     # @precond: This MUST be called after compute_loss!!

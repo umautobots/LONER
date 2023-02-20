@@ -326,6 +326,7 @@ if __name__ == "__main__":
     parser.add_argument("--overrides", type=str, default=None, required=False)
     parser.add_argument("--duration", help="How long to run for (in input data time, sec)", type=float, default=None)
     parser.add_argument("--gpu_ids", nargs="*", required=False, default = [0], help="Which GPUs to use. Defaults to parallel if set")
+    parser.add_argument("--num_repeats", type=int, required=False, default=1, help="How many times to run the experiment")
 
     args = parser.parse_args()
 
@@ -333,14 +334,17 @@ if __name__ == "__main__":
         settings_options, settings_descriptions = \
             Settings.generate_options(os.path.expanduser("~/ClonerSLAM/cfg/default_settings.yaml"), 
                                       os.path.expanduser(args.overrides))
+        
+        settings_options = settings_options * args.num_repeats
+        settings_descriptions = settings_descriptions * args.num_repeats
             
         now = datetime.datetime.now()
         now_str = now.strftime("%m%d%y_%H%M%S")
         args.experiment_name = f"{args.experiment_name}_{now_str}"
         
     else:
-        settings_descriptions = [None]
-        settings_options = [Settings.load_from_file(os.path.expanduser("~/ClonerSLAM/cfg/default_settings.yaml"))]
+        settings_descriptions = [None] * args.num_repeats
+        settings_options = [Settings.load_from_file(os.path.expanduser("~/ClonerSLAM/cfg/default_settings.yaml"))] * args.num_repeats
 
 
     if args.gpu_ids != [0]:
