@@ -28,7 +28,7 @@ debug:
 
 system:
   single_threaded: True
-  log_dir_prefix: "/mnt/ws-frb/users/sethgi/outputs"
+  log_dir_prefix: "~/ClonerSLAM/outputs"
 
 # ros_names:
 #   camera: "ego_vehicle/rgb_front"
