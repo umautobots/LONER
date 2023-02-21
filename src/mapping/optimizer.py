@@ -293,7 +293,6 @@ class Optimizer:
                         lidar_samples = (uniform_lidar_rays.to(self._device).float(), uniform_lidar_depths.to(self._device).float())
     
                     if self.should_enable_camera():
-                        
                         # Get all the uniform samples first
                         start_idxs = torch.randint(len(self._rgb_shuffled_indices), (2,))
 

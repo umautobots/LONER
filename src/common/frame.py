@@ -250,7 +250,11 @@ class SimpleFrame:
             lidar_timestamps = self.lidar_points.timestamps
             middle_time = (lidar_timestamps[0] + lidar_timestamps[-1])/2
             start_index = torch.argmax((lidar_timestamps - middle_time >= -time_per_scan/2).float())
-            final_index = torch.argmax((lidar_timestamps - middle_time >= time_per_scan/2).float())
+
+            if lidar_timestamps[-1] < middle_time + time_per_scan/2:
+                final_index = len(lidar_timestamps)
+            else:
+                final_index = torch.argmax((lidar_timestamps - middle_time >= time_per_scan/2).float())
         else:
             start_index = 0
             final_index = len(self.lidar_points.timestamps)
@@ -261,6 +265,10 @@ class SimpleFrame:
             step_size = torch.div(
                 final_index-start_index, target_points, rounding_mode='floor')
 
+        if step_size == 0:
+            breakpoint()
+            step_size = 1
+            
         end_points_local = self.lidar_points.ray_directions[..., start_index:final_index:step_size] * \
             self.lidar_points.distances[start_index:final_index:step_size]
         end_points_homog = torch.vstack(

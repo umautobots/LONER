@@ -39,8 +39,7 @@
       "program": "${workspaceFolder}/examples/fusion_portable/run_fusion_portable.py",
       "console": "integratedTerminal",
       "args": ["${workspaceFolder}/../data/fusion_portable/20220216_canteen_day/20220216_canteen_day_ref.bag",
-               "${workspaceFolder}/../data/fusion_portable/calibration/20220209_calib/",
-              "--duration", "10"],
+               "${workspaceFolder}/../data/fusion_portable/calibration/20220209_calib/"],
       "cwd": "${workspaceFolder}/examples/fusion_portable",
       "subProcess": true
     },

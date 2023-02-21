@@ -118,9 +118,10 @@ for experiment_directory in experiment_directories:
     translation_rel_errs = torch.tensor(translation_rel_errs)
     rmse_rel_err = torch.sqrt(torch.mean(translation_rel_errs**2))
     
-    with open(f"{experiment_directory}/configuration.txt") as f:
-        cfg = f.read()
-        print(f"\n\n===Configuration:===\n{cfg}")
+    if os.path.exists(f"{experiment_directory}/configuration.txt"):
+        with open(f"{experiment_directory}/configuration.txt") as f:
+            cfg = f.read()
+            print(f"\n\n===Configuration:===\n{cfg}")
 
     print("RMSE Relative Error:", rmse_rel_err)
 
