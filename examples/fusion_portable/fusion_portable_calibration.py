@@ -42,7 +42,6 @@ class FusionPortableCalibration:
         with open(f"{calibration_path}/calib/ouster00.yaml") as lidar_cal_file:
             lidar_cal = yaml.load(lidar_cal_file, Loader=CvMatLoader)
             frame_0_quat = lidar_cal["quaternion_sensor_frame_cam00"]
-            frame_0_quat[0], frame_0_quat[3] = frame_0_quat[3], frame_0_quat[0]
             frame_0_trans = lidar_cal["translation_sensor_frame_cam00"]
 
             self.t_lidar_to_left_cam = {"xyz": frame_0_trans,
@@ -86,7 +85,6 @@ class FusionPortableCalibration:
             }
 
             stereo_rotation = frame1_cal["quaternion_stereo"]
-            stereo_rotation[0], stereo_rotation[3] = stereo_rotation[3], stereo_rotation[0]
             frame1_cal["quaternion_stereo"]
             self.t_left_cam_to_right_cam = {
                 "xyz": frame1_cal["translation_stereo"],

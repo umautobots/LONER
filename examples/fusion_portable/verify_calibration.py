@@ -19,7 +19,7 @@ from utils import *
 from more_itertools import peekable
 
 LIDAR_MIN_RANGE = 0.3 #http://www.oxts.com/wp-content/uploads/2021/01/Ouster-datasheet-revc-v2p0-os0.pdf
-MOTION_COMPENSATE = True
+MOTION_COMPENSATE = False
 
 parser = argparse.ArgumentParser("Verify Calibration")
 parser.add_argument("rosbag_path", type=str)
@@ -40,7 +40,7 @@ lidar_to_left_cam = calibration.t_lidar_to_left_cam
 xyz = lidar_to_left_cam["xyz"]
 xyz = np.array(xyz).reshape(3,1)
 rotation = lidar_to_left_cam["orientation"]
-rotation[0], rotation[3] = rotation[3], rotation[0]
+rotation = [rotation[i] for i in [1,2,3,0]]
 rotmat = Rotation.from_quat(rotation).as_matrix()
 lidar_to_left_cam = np.hstack((rotmat, xyz))
 lidar_to_left_cam = np.vstack((lidar_to_left_cam, [0,0,0,1]))  
@@ -72,6 +72,7 @@ if bag.get_message_count(cam_topics) == 0:
     exit()
 
 for idx in tqdm.trange(bag.get_message_count(cam_topics)//2):
+
     try:
         # Get left and right image, plus a lidar scan. Imperfect time sync is handled with global motion compensation
         lidar_msg = None
@@ -93,6 +94,8 @@ for idx in tqdm.trange(bag.get_message_count(cam_topics)//2):
     except StopIteration:
         break
 
+    if idx % 100 != 0:
+        continue
 
     # Make sure the image pair is actually synchronized
     if (timestamp2 - timestamp1).to_sec() > 0.02:
@@ -120,9 +123,6 @@ for idx in tqdm.trange(bag.get_message_count(cam_topics)//2):
         continue
     if lidar_msg is None or (MOTION_COMPENSATE and (lidar_ts.to_sec() < gt_timestamps[0] or lidar_ts.to_sec() + 0.1 > gt_timestamps[-1])):
         continue
-
-    # Undistort the images
-    left_im = cv2.undistort(left_im, K_left, distortion_left)
 
     # Get lidar points
     lidar_data = ros_numpy.point_cloud2.pointcloud2_to_array(lidar_msg)

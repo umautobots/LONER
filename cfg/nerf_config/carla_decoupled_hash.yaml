@@ -3,7 +3,7 @@ dir_encoding_intensity:
   otype: SphericalHarmonics
 intensity_network:
   activation: ReLU
-  n_hidden_layers: 2
+  n_hidden_layers: 4
   n_neurons: 64
   otype: FullyFusedMLP
   output_activation: None

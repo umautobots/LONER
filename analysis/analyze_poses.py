@@ -36,6 +36,7 @@ parser = argparse.ArgumentParser(description="Render ground truth maps using tra
 parser.add_argument("experiment_directories", nargs='+', type=str, help="folder in outputs with all results")
 parser.add_argument("--ckpt_id", type=str, default=None)
 parser.add_argument("--title", type=str, default=None)
+parser.add_argument("--plot_tracked", action='store_true', default=False)
 
 args = parser.parse_args()
 
@@ -100,6 +101,7 @@ for experiment_directory in experiment_directories:
     else:
         pose_key = "start_lidar_pose"
     translation_rel_errs = []
+    rel_errs_tracked = []
     for kf_a, kf_b in zip(kfs[:-1], kfs[1:]):
         est_start = Pose(pose_tensor = kf_a[pose_key])
         est_end = Pose(pose_tensor = kf_b[pose_key])
@@ -107,16 +109,28 @@ for experiment_directory in experiment_directories:
         gt_start = Pose(pose_tensor = kf_a["gt_" + pose_key])
         gt_end = Pose(pose_tensor = kf_b["gt_" + pose_key])
 
+        print(gt_start, gt_end)
+
         est_delta = est_start.inv() * est_end
         gt_delta = gt_start.inv() * gt_end
 
         est_xyz = est_delta.get_translation()
         gt_xyz = gt_delta.get_translation()
         
+        tracked_start = Pose(pose_tensor=kf_a["tracked_pose"])
+        tracked_end = Pose(pose_tensor=kf_b["tracked_pose"])
+        tracked_delta = tracked_start.inv() * tracked_end
+        tracked_xyz = tracked_delta.get_translation()
+
+
         translation_rel_errs.append((gt_xyz - est_xyz).norm())
+        rel_errs_tracked.append((gt_xyz - tracked_xyz).norm())
 
     translation_rel_errs = torch.tensor(translation_rel_errs)
     rmse_rel_err = torch.sqrt(torch.mean(translation_rel_errs**2))
+
+    rel_errs_tracked = torch.tensor(rel_errs_tracked)
+    rmse_rel_err_tracked = torch.sqrt(torch.mean(translation_rel_errs**2))
     
     if os.path.exists(f"{experiment_directory}/configuration.txt"):
         with open(f"{experiment_directory}/configuration.txt") as f:
@@ -136,31 +150,74 @@ for experiment_directory in experiment_directories:
     all_relatives.append(rmse_rel_err)
     all_rmses.append(est_rmse)
 
+    if args.plot_tracked:
+        fig, ax = plt.subplots(2,1)
+        ax[0].set_aspect('equal')
+        ax[1].set_aspect('equal')
 
-    ax = plt.gca()
-    ax.set_aspect('equal')
 
-    plt.plot(gt[:,0], gt[:,1], label="Ground Truth")
-    plt.plot(est[:,0], est[:,1], label="Optimized")
-    plt.scatter(gt[0,0],gt[0,1], s=20, color='red', label="Start Point")
+        ax[0].plot(gt[:,0], gt[:,1], label="Ground Truth")
+        ax[1].plot(gt[:,0], gt[:,1], label="Ground Truth")
+        
+        ax[0].plot(tracked[:,0], tracked[:,1], label="Tracked")
+        ax[1].plot(est[:,0], est[:,1], label="Optimized")
+        
+        
+        ax[0].scatter(gt[0,0],gt[0,1], s=20, color='red', label="Start Point")
+        ax[1].scatter(gt[0,0],gt[0,1], s=20, color='red', label="Start Point")
+
+        text_box = AnchoredText(f"RMSE Rel Err: {rmse_rel_err_tracked:.3f}\nRMSE ATE:{tracked_rmse:.3f}", 
+                        frameon=True, loc=4, pad=0.5)
+        plt.setp(text_box.patch, facecolor='white', alpha=0.5)
+        ax[0].add_artist(text_box)
+
+
+        text_box = AnchoredText(f"RMSE Rel Err: {rmse_rel_err:.3f}\nRMSE ATE:{est_rmse:.3f}", 
+                                frameon=True, loc=4, pad=0.5)
+
+        plt.setp(text_box.patch, facecolor='white', alpha=0.5)
+        ax[1].add_artist(text_box)
+
+        ax[0].set_xlabel("X (m)")
+        ax[1].set_xlabel("X (m)")
+        ax[0].set_ylabel("Y (m)")
+        ax[1].set_ylabel("Y (m)")
+        
+        ax[0].set_title("ICP Tracking Performance")
+        ax[1].set_title("Optimized Performance")
+        if args.title is not None:
+            plt.suptitle(args.title)
+
+        ax[0].legend(bbox_to_anchor=(1., 1.05))
+        plt.tight_layout()
+
+        plt.savefig(f"{experiment_directory}/poses.png", dpi=1000)
+        plt.clf()
+    else:
+        ax = plt.gca()
+        ax.set_aspect('equal')
+        breakpoint()
+        plt.plot(gt[:,0], gt[:,1], label="Ground Truth")
+        plt.plot(est[:,0], est[:,1], label="Optimized")
+        plt.scatter(gt[0,0],gt[0,1], s=20, color='red', label="Start Point")
     # plt.plot(tracked[:,0], tracked[:,1], color='g',label="Tracked", linestyle="dashed")
 
-    text_box = AnchoredText(f"KF Relative RMSE: {rmse_rel_err:.3f}\nOptimized RMSE:{est_rmse:.3f}", 
-                            frameon=True, loc=4, pad=0.5)
-    plt.setp(text_box.patch, facecolor='white', alpha=0.5)
-    ax.add_artist(text_box)
+        text_box = AnchoredText(f"KF Relative RMSE: {rmse_rel_err:.3f}\nOptimized RMSE:{est_rmse:.3f}", 
+                                frameon=True, loc=4, pad=0.5)
+        plt.setp(text_box.patch, facecolor='white', alpha=0.5)
+        ax.add_artist(text_box)
 
-    plt.xlabel("X (m)")
-    plt.ylabel("Y (m)")
+        plt.xlabel("X (m)")
+        plt.ylabel("Y (m)")
 
-    if args.title is not None:
-        plt.title(args.title)
+        if args.title is not None:
+            plt.title(args.title)
 
-    plt.legend()
-    plt.tight_layout()
+        plt.legend()
+        plt.tight_layout()
 
-    plt.savefig(f"{experiment_directory}/poses.png")
-    plt.clf()
+        plt.savefig(f"{experiment_directory}/poses.png")
+        plt.clf()
     
     all_gts.append(gt)
     all_ests.append(est)

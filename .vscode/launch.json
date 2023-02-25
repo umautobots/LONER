@@ -44,6 +44,18 @@
       "subProcess": true
     },
     {
+      "name": "Verify Calib Raw",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/examples/fusion_portable/verify_calib_raw.py",
+      "console": "integratedTerminal",
+      "args": ["/mnt/ws-frb/projects/cloner_slam/fusion_portable/20220216_canteen_day/000000.pcd",
+               "/mnt/ws-frb/projects/cloner_slam/fusion_portable/20220216_canteen_day/000000.png",
+              "../../../data/fusion_portable/calibration/20220209_calib/"],
+      "cwd": "${workspaceFolder}/examples/fusion_portable",
+      "subProcess": true
+    },
+    {
       "name": "Test Ray Logic",
       "type": "python",
       "request": "launch",

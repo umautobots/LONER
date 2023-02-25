@@ -100,6 +100,7 @@ class Optimizer:
         # Main Model
         self._model = Model(self._model_config.model)
 
+
         # Occupancy grid
         self._occupancy_grid_model = OccupancyGridModel(
             self._model_config.model.occ_model).to(self._device)
@@ -354,10 +355,10 @@ class Optimizer:
                     
                         camera_samples = (uniform_camera_rays.to(self._device).float(), uniform_camera_intensities.to(self._device).float())
 
-                loss, depth_eps = self.compute_loss(camera_samples, lidar_samples, it_idx)
+                loss = self.compute_loss(camera_samples, lidar_samples, it_idx)
 
                 losses_log[-1].append(loss.detach().cpu().item())
-                depth_eps_log[-1].append(depth_eps)
+                depth_eps_log[-1].append(self._depth_eps)
 
                 if self._settings.debug.draw_comp_graph:
                     graph_dir = f"{self._settings.log_directory}/graphs"
@@ -425,7 +426,7 @@ class Optimizer:
             cam_rays = cam_rays.to(self._device)
             cam_intensities = cam_intensities.to(self._device)
 
-            chunk_loss, depth_eps = self.compute_loss((cam_rays,cam_intensities), None, True)
+            chunk_loss = self.compute_loss((cam_rays,cam_intensities), None, True)
             losses.append(chunk_loss)
 
         losses = torch.stack(losses)
@@ -461,7 +462,6 @@ class Optimizer:
             # Rendering lidar rays. Results need to be in class for occ update to happen
             self._results_lidar = self._model(
                 lidar_rays, self._ray_sampler, scale_factor, camera=False)
-
             # (N_rays, N_samples)
             # Depths along ray
             self._lidar_depth_samples_fine = self._results_lidar['samples_fine'] * \
@@ -488,7 +488,7 @@ class Optimizer:
                 js_score[js_score>max_js_score] = max_js_score
                 eps_dynamic = eps_min*(1+(alpha * js_score))
                 eps_dynamic = torch.unsqueeze(eps_dynamic, dim=-1).detach()
-                depth_eps = float(np.average(eps_dynamic.detach().cpu().numpy()))
+                self._depth_eps = float(np.average(eps_dynamic.detach().cpu().numpy()))
                 weights_gt_lidar = get_weights_gt(self._lidar_depth_samples_fine, self._lidar_depths_gt, eps=eps_dynamic) # [N_rays, N_samples]
                 if self._model_config.loss.visualize_loss:
                     # viz_idx = np.where(js_score.detach().cpu().numpy() == max_js_score)[0] # show rays that haven't converged
@@ -498,19 +498,19 @@ class Optimizer:
                                 self._lidar_depth_samples_fine.detach().cpu().numpy(), self._lidar_depths_gt.detach().cpu().numpy(), eps_dynamic.detach().cpu().numpy())
             else:
                 if self._model_config.loss.decay_depth_eps:
-                    depth_eps = max(self._model_config.loss.depth_eps * (self._model_config.train.decay_rate ** (
+                    self._depth_eps = max(self._model_config.loss.depth_eps * (self._model_config.train.decay_rate ** (
                                     iteration_idx / (self._model_config.loss.depth_eps_decay_steps))), self._model_config.loss.min_depth_eps)
                 else:
-                    depth_eps = self._model_config.loss.depth_eps
+                    self._depth_eps = self._model_config.loss.depth_eps
                 weights_gt_lidar = get_weights_gt(
-                    self._lidar_depth_samples_fine, self._lidar_depths_gt, eps=depth_eps)
+                    self._lidar_depth_samples_fine, self._lidar_depths_gt, eps=self._depth_eps)
                 
                 if self._model_config.loss.visualize_loss:
                     # viz_idx = np.where(js_score.detach().cpu().numpy() == max_js_score)[0] # show rays that haven't converged
                     viz_idx = np.array([0]) # show the first ray
                     self.visualize_loss(iteration_idx, viz_idx, opaque_rays.detach().cpu().numpy(), weights_gt_lidar.detach().cpu().numpy(), weights_pred_lidar.detach().cpu().numpy(), \
                                     mean.detach().cpu().numpy(), var.detach().cpu().numpy(), js_score.detach().cpu().numpy(), \
-                                    self._lidar_depth_samples_fine.detach().cpu().numpy(), self._lidar_depths_gt.detach().cpu().numpy(), depth_eps)
+                                    self._lidar_depth_samples_fine.detach().cpu().numpy(), self._lidar_depths_gt.detach().cpu().numpy(), self._depth_eps)
             
             weights_gt_lidar[~opaque_rays, :] = 0
 
@@ -546,7 +546,7 @@ class Optimizer:
                     (self._global_step + 1) / (self._model_config.loss.depth_lambda_decay_steps))), self._model_config.loss.min_depth_lambda)
 
             wandb_logs['depth_lambda'] = depth_lambda
-            wandb_logs['depth_eps'] = depth_eps
+            wandb_logs['depth_eps'] = self._depth_eps
 
         if (override_enables or self.should_enable_camera()) and camera_samples is not None:
             # camera_samples is organized as [cam_rays, cam_intensities]
@@ -603,7 +603,7 @@ class Optimizer:
 
         # wandb.log({}, commit=True)
         assert not torch.isnan(loss), "NaN Loss Encountered"
-        return loss, depth_eps
+        return loss
 
     # @precond: This MUST be called after compute_loss!!
     def _step_occupancy_grid(self):
