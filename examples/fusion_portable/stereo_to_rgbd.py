@@ -40,7 +40,6 @@ parser = argparse.ArgumentParser("stereo to rgbd")
 parser.add_argument("rosbag_path", type=str)
 parser.add_argument("calib_path", type=str)
 parser.add_argument("--gui", action="store_true",default=False)
-parser.add_argument("--autotune", action="store_true",default=False)
 parser.add_argument("--raft", action="store_true",default=False)
 parser.add_argument("--build_rosbag", action="store_true", default=False)
 parser.add_argument("--log_lidar", action="store_true", default=False)
@@ -458,7 +457,7 @@ elif args.build_rosbag:
 
     bag_it = peekable(bag.read_messages(topics=["/stereo/frame_left/image_raw", "/stereo/frame_right/image_raw", "/os_cloud_node/points"]))
     
-    output_bag = rosbag.Bag("canteen_rgbd.bag", 'w')
+    output_bag = rosbag.Bag(f"/mnt/ws-frb/projects/cloner_slam/fusion_portable/{rosbag_path.parent.name}/{rosbag_path.stem}_rgbd.bag", 'w')
 
     msg_seq = 0
     lidar_seq = 0
@@ -491,7 +490,10 @@ elif args.build_rosbag:
         except StopIteration:
             break
 
-        assert (timestamp2 - timestamp1).to_sec() < 0.02, "Timestamps too far apart"
+        if (timestamp2 - timestamp1).to_sec() > 0.05:
+            breakpoint()
+
+        assert (timestamp2 - timestamp1).to_sec() < 0.05, "Timestamps too far apart"
 
         if "left" in topic1:
             left_im = bridge.imgmsg_to_cv2(msg1)
