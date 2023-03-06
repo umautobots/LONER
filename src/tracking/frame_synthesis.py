@@ -44,11 +44,24 @@ class FrameSynthesis:
         self._lidar_queue = LidarScan()
 
         self._use_simple_frames = self._settings.use_simple_frames
+        self._split_lidar_scans = self._settings.split_lidar_scans
+
+        assert not(not self._use_simple_frames and self._split_lidar_scans), \
+                "split_lidar_scans can't be True if use_simple_frames is False"
+
+        self._lidar_scans = []
+        self._lidar_scan_timestamps = torch.Tensor()
 
     ## Reads data from the @p lidar_scan and adds the points to the appropriate frame(s)
     # @param lidar_scan: Set of lidar points to add to the in-progress frames(s)
     def process_lidar(self, lidar_scan: LidarScan) -> List[int]:
-        self._lidar_queue.merge(lidar_scan)
+        if self._split_lidar_scans:
+            self._lidar_queue.merge(lidar_scan)
+        else:
+            self._lidar_scans.append(lidar_scan)
+            scan_ts = torch.Tensor([lidar_scan.timestamps[0], lidar_scan.timestamps[-1]]).view(2,1)
+            self._lidar_scan_timestamps = torch.hstack((self._lidar_scan_timestamps, scan_ts))
+
         self.dequeue_lidar_points()
 
     # Enqueues image from @p image.
@@ -84,70 +97,83 @@ class FrameSynthesis:
     ## Assigns lidar points from the queue to frames
     def dequeue_lidar_points(self):
         completed_frames = 0
-        for frame in self._in_progress_frames:
-            if self._use_simple_frames:
-                start_time = frame.image.timestamp - self._frame_delta_t_sec / 2
-                end_time = frame.image.timestamp + self._frame_delta_t_sec / 2
-            else:
-                start_time = frame.start_image.timestamp - self._frame_epislon_t_sec
-                end_time = frame.end_image.timestamp + self._frame_epislon_t_sec
+        if self._split_lidar_scans:
+            for frame in self._in_progress_frames:
+                if self._use_simple_frames:
+                    start_time = frame.image.timestamp - self._frame_delta_t_sec / 2
+                    end_time = frame.image.timestamp + self._frame_delta_t_sec / 2
+                else:
+                    start_time = frame.start_image.timestamp - self._frame_epislon_t_sec
+                    end_time = frame.end_image.timestamp + self._frame_epislon_t_sec
 
-            # If there aren't lidar points to process, skip
-            if len(self._lidar_queue) == 0:
-                return
+                # If there aren't lidar points to process, skip
+                if len(self._lidar_queue) == 0:
+                    return
 
-            # If the start time of the frame is after the last lidar point, then the
-            # lidar queue is useless. Clear it out.
-            if start_time > self._lidar_queue.get_end_time():
-                print(
-                    "Warning: Got an image that starts after all queued lidar points. Dropping lidar points")
-                self._lidar_queue.clear()
-                return
+                # If the start time of the frame is after the last lidar point, then the
+                # lidar queue is useless. Clear it out.
+                if start_time > self._lidar_queue.get_end_time():
+                    print(
+                        "Warning: Got an image that starts after all queued lidar points. Dropping lidar points")
+                    self._lidar_queue.clear()
+                    return
 
-            # If the end time of the frame comes before all of the lidar points,
-            # then the frame is assumed done. Mark it complete and move on.
-            if end_time < self._lidar_queue.get_start_time():
-                completed_frames += 1
-                continue
+                # If the end time of the frame comes before all of the lidar points,
+                # then the frame is assumed done. Mark it complete and move on.
+                if end_time < self._lidar_queue.get_start_time():
+                    completed_frames += 1
+                    continue
 
-            # If there are some points we need to skip
-            if self._lidar_queue.get_start_time() < start_time:
-                first_valid_idx = torch.argmax(
-                    (self._lidar_queue.timestamps >= start_time).float())
-            else:
-                first_valid_idx = 0
+                # If there are some points we need to skip
+                if self._lidar_queue.get_start_time() < start_time:
+                    first_valid_idx = torch.argmax(
+                        (self._lidar_queue.timestamps >= start_time).float())
+                else:
+                    first_valid_idx = 0
 
-            # It's possible some of the input points should actually be added to future scans
-            if self._lidar_queue.get_end_time() > end_time:
-                last_valid_idx = torch.argmax(
-                    (self._lidar_queue.timestamps > end_time).float())
-            else:
-                last_valid_idx = len(self._lidar_queue)
+                # It's possible some of the input points should actually be added to future scans
+                if self._lidar_queue.get_end_time() > end_time:
+                    last_valid_idx = torch.argmax(
+                        (self._lidar_queue.timestamps > end_time).float())
+                else:
+                    last_valid_idx = len(self._lidar_queue)
 
-            point_step = self._settings.lidar_point_step
+                point_step = self._settings.lidar_point_step
 
-            # Get the points from the queue that need to be moved to the current frame
-            new_ray_directions = self._lidar_queue.ray_directions[..., first_valid_idx:last_valid_idx:point_step]
-            new_distances = self._lidar_queue.distances[first_valid_idx:last_valid_idx:point_step]
-            new_timestamps = self._lidar_queue.timestamps[first_valid_idx:last_valid_idx:point_step]
+                # Get the points from the queue that need to be moved to the current frame
+                new_ray_directions = self._lidar_queue.ray_directions[..., first_valid_idx:last_valid_idx:point_step]
+                new_distances = self._lidar_queue.distances[first_valid_idx:last_valid_idx:point_step]
+                new_timestamps = self._lidar_queue.timestamps[first_valid_idx:last_valid_idx:point_step]
 
 
-            frame.lidar_points.add_points(
-                new_ray_directions, new_distances, new_timestamps)
+                frame.lidar_points.add_points(
+                    new_ray_directions, new_distances, new_timestamps)
 
-            self._lidar_queue.remove_points(last_valid_idx)
+                self._lidar_queue.remove_points(last_valid_idx)
 
-            # If any points remain in the queue, then the frame must be done since the remaining points
-            # imply the existance of points that come after the frame.
-            if len(self._lidar_queue) > 0:
-                completed_frames += 1
+                # If any points remain in the queue, then the frame must be done since the remaining points
+                # imply the existance of points that come after the frame.
+                if len(self._lidar_queue) > 0:
+                    completed_frames += 1
 
-        # For all the frames that are now complete, bundle them up and send off for tracking
-        for _ in range(completed_frames):
-            frame = self._in_progress_frames.pop(0)
-            if len(frame.lidar_points) == 0:
-                continue
-            self._completed_frames.append(frame)
+            # For all the frames that are now complete, bundle them up and send off for tracking
+            for _ in range(completed_frames):
+                frame = self._in_progress_frames.pop(0)
+                if len(frame.lidar_points) == 0:
+                    continue
+                self._completed_frames.append(frame)
+        else:
+            for frame in self._in_progress_frames:
+                lidar_start_times = self._lidar_scan_timestamps[0] - self._settings.frame_match_tolerance
+                lidar_end_times = self._lidar_scan_timestamps[1] + self._settings.frame_match_tolerance
+
+                valid_start = frame.image.timestamp >= lidar_start_times
+                valid_end = frame.image.timestamp <= lidar_end_times
+
+                chosen_scan_idx = torch.argmax(torch.bitwise_and(valid_start, valid_end))
+
+                
+
 
     ## Check if a frame exists to be returned
     def has_frame(self) -> bool:

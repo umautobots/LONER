@@ -9,6 +9,7 @@ docs/latex
 outputs/
 graphs/
 *.png
+*.bag
 *.pcd
 *.ply
 

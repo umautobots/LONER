@@ -71,6 +71,7 @@ class TestFrameSynthesis(unittest.TestCase):
         fs_settings = settings.tracker.frame_synthesis
 
         fs_settings.use_simple_frames = False
+        fs_settings.split_lidar_scans = True
 
         fs_settings.frame_decimation_rate_hz = 1
         fs_settings.lidar_point_step = 1
@@ -159,6 +160,7 @@ class TestFrameSynthesis(unittest.TestCase):
 
         fs_settings = settings.tracker.frame_synthesis
         fs_settings.use_simple_frames = False
+        fs_settings.split_lidar_scans = True
 
         fs_settings.frame_decimation_rate_hz = 1
         fs_settings.lidar_point_step = 1
@@ -269,6 +271,8 @@ class TestFrameSynthesis(unittest.TestCase):
         fs_settings.frame_decimation_rate_hz = 1
         fs_settings.lidar_point_step = 1
         fs_settings.use_simple_frames = False
+        fs_settings.split_lidar_scans = True
+
         extrinsics = Pose.from_settings(settings.calibration.lidar_to_camera)
 
         fs = FrameSynthesis(fs_settings, extrinsics)
@@ -310,6 +314,7 @@ class TestFrameSynthesis(unittest.TestCase):
         settings = Settings.load_from_file("../cfg/default_settings.yaml")
         fs_settings = settings.tracker.frame_synthesis
         fs_settings.use_simple_frames = False
+        fs_settings.split_lidar_scans = True
 
         fs_settings.frame_decimation_rate_hz = 1
         fs_settings.lidar_point_step = 1
@@ -367,6 +372,8 @@ class TestSimpleFrameSynthesis(unittest.TestCase):
         fs_settings.frame_decimation_rate_hz = 1
         fs_settings.lidar_point_step = 1
         fs_settings.use_simple_frames = True
+        fs_settings.split_lidar_scans = True
+
         extrinsics = Pose.from_settings(settings.calibration.lidar_to_camera)
 
         fs = FrameSynthesis(fs_settings, extrinsics)
@@ -399,6 +406,7 @@ class TestSimpleFrameSynthesis(unittest.TestCase):
         settings = Settings.load_from_file("../cfg/default_settings.yaml")
         fs_settings = settings.tracker.frame_synthesis
         fs_settings.use_simple_frames = True
+        fs_settings.split_lidar_scans = True
 
         fs_settings.frame_decimation_rate_hz = 1
         fs_settings.lidar_point_step = 1
@@ -438,6 +446,7 @@ class TestSimpleFrameSynthesis(unittest.TestCase):
 
         fs_settings = settings.tracker.frame_synthesis
         fs_settings.use_simple_frames = True
+        fs_settings.split_lidar_scans = True
 
         fs_settings.frame_decimation_rate_hz = 1
         fs_settings.lidar_point_step = 1
@@ -466,6 +475,7 @@ class TestSimpleFrameSynthesis(unittest.TestCase):
         
         fs_settings = settings.tracker.frame_synthesis
         fs_settings.use_simple_frames = True
+        fs_settings.split_lidar_scans = True
 
         fs_settings.frame_decimation_rate_hz = 1
         fs_settings.lidar_point_step = 1

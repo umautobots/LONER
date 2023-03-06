@@ -53,6 +53,8 @@ tracker:
     frame_decimation_rate_hz: 10
     eps_t_over_delta_t: 0.5 # epsilon_t = <this number> * (1/frame_decimation_rate_hz). Maximum/Default 0.5.
     use_simple_frames: True
+    split_lidar_scans: False
+    frame_match_tolerance: 0.01
     lidar_point_step: 10 # Only keep 1 out of this many lidar points
   icp:
     threshold: 0.25
