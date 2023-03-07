@@ -193,9 +193,6 @@ class KeyFrame:
 
         lidar_scan = self.get_lidar_scan()
 
-        rotate_lidar_opengl = torch.eye(4).to(self._device)
-        rotate_lidar_points_opengl = torch.eye(3).to(self._device)
-
         depths = lidar_scan.distances[lidar_indices] / world_cube.scale_factor
         directions = lidar_scan.ray_directions[:, lidar_indices]
         timestamps = lidar_scan.timestamps[lidar_indices]
@@ -213,7 +210,6 @@ class KeyFrame:
         ray_origins: torch.Tensor = lidar_poses[..., :3, 3]
         ray_origins = ray_origins + world_cube.shift
         ray_origins = ray_origins / world_cube.scale_factor
-        ray_origins = ray_origins @ rotate_lidar_opengl[:3,:3]
 
         if self._use_simple_frame:
             ray_origins = ray_origins.tile(len(timestamps), 1)
@@ -229,8 +225,6 @@ class KeyFrame:
 
         # ray_directions is now Nx3x1, we want Nx3.
         ray_directions = ray_directions.squeeze()
-        # Only now we swap it to opengl coordinates
-        ray_directions = ray_directions @ rotate_lidar_points_opengl.T
 
         # Note to self: don't use /= here. Breaks autograd.
         ray_directions = ray_directions / \

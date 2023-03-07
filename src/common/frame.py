@@ -211,7 +211,7 @@ class SimpleFrame:
         if isinstance(im_str, torch.Tensor):
             im_str = im_str.item()
 
-        return f"<SimpleFrame {im_str}, {len(self.lidar_points.timestamps)} points)>"
+        return f"<SimpleFrame; Im: {im_str}, Pts: ({self.lidar_points.get_start_time()},{self.lidar_points.get_end_time()}))>"
 
     def __repr__(self):
         return self.__str__()

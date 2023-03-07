@@ -184,7 +184,7 @@ def run_trial(args, settings, settings_description = None, idx = None):
     lidar_to_camera = Pose.from_settings(calibration.t_lidar_to_left_cam).get_transformation_matrix()
     camera_to_lidar = lidar_to_camera.inverse()
 
-    settings["calibration"]["lidar_to_camera"] = Pose(lidar_to_camera).to_settings()
+    settings["calibration"]["lidar_to_camera"] = calibration.t_lidar_to_left_cam
     settings["experiment_name"] = args.experiment_name
 
     cloner_slam = ClonerSLAM(settings)
@@ -251,7 +251,7 @@ def run_trial(args, settings, settings_description = None, idx = None):
                 start_lidar_pose = T_lidar
 
             gt_lidar_pose = start_lidar_pose.inverse() @ T_lidar
-            gt_cam_pose = Pose(gt_lidar_pose @ camera_to_lidar.inverse())
+            gt_cam_pose = Pose(gt_lidar_pose @ lidar_to_camera)
 
             cloner_slam.process_rgb(image, gt_cam_pose)
         elif topic == lidar_topic:

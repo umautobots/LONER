@@ -196,7 +196,6 @@ for experiment_directory in experiment_directories:
     else:
         ax = plt.gca()
         ax.set_aspect('equal')
-        breakpoint()
         plt.plot(gt[:,0], gt[:,1], label="Ground Truth")
         plt.plot(est[:,0], est[:,1], label="Optimized")
         plt.scatter(gt[0,0],gt[0,1], s=20, color='red', label="Start Point")

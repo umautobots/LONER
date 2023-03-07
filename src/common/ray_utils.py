@@ -96,8 +96,9 @@ def get_ray_directions(H, W, newK, dist=None, K=None, sppd=1, with_indices=False
         new_grid_x = grid_x
         new_grid_y = grid_y
 
-    directions = torch.cat([(new_grid_x-newK[0, 2])/newK[0, 0], -(
-        new_grid_y-newK[1, 2])/newK[1, 1], -torch.ones_like(grid_x)], -1)  # (H*W, 3)
+    directions = torch.cat([(new_grid_x-newK[0, 2])/newK[0, 0],
+                            (new_grid_y-newK[1, 2])/newK[1, 1],
+                            torch.ones_like(grid_x)], -1)  # (H*W, 3)
 
     if with_indices:
         # returns directions computed from undistorted pixel locations along with the pixel locations in the original distorted image
@@ -158,22 +159,15 @@ class CameraRayDirections:
         directions = self.directions[camera_indices]
         ray_i_grid = self.i_meshgrid[camera_indices]
         ray_j_grid = self.j_meshgrid[camera_indices]
-
-        # T_camera_opengl = torch.Tensor([[1, 0, 0, 0],
-        #                                 [0, -1, 0, 0],
-        #                                 [0, 0, -1, 0],
-        #                                 [0, 0, 0, 1]]).to(directions.device)
-
-        T_camera_opengl = torch.eye(4).to(directions.device)
                 
-        world_to_camera_opengl = pose.get_transformation_matrix() @ T_camera_opengl
+        world_to_camera = pose.get_transformation_matrix()
 
-        # Now that we're in OpenGL frame, we can apply world cube transformation
-        world_to_camera_opengl[:3, 3] = world_to_camera_opengl[:3, 3] + world_cube.shift
-        world_to_camera_opengl[:3, 3] = world_to_camera_opengl[:3, 3] / world_cube.scale_factor
+        world_to_camera[:3, 3] = world_to_camera[:3, 3] + world_cube.shift
+        world_to_camera[:3, 3] = world_to_camera[:3, 3] / world_cube.scale_factor
         
         
-        ray_directions = directions @ world_to_camera_opengl[:3, :3].T
+        ray_directions = directions @ world_to_camera[:3, :3].T
+        
         # Note to self: don't use /= here. Breaks autograd.
         ray_directions = ray_directions / \
             torch.norm(ray_directions, dim=-1, keepdim=True)
@@ -182,7 +176,7 @@ class CameraRayDirections:
         ray_origins = torch.zeros_like(ray_directions)
         ray_origins_homo = torch.cat(
             [ray_origins, torch.ones_like(ray_origins[:, :1])], dim=-1)
-        ray_origins = ray_origins_homo @ world_to_camera_opengl[:3, :].T
+        ray_origins = ray_origins_homo @ world_to_camera[:3, :].T
         ray_origins = ray_origins
 
         view_directions = -ray_directions
