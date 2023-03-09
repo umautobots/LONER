@@ -222,17 +222,21 @@ def run_trial(args, settings, settings_description = None, idx = None):
 
     start_lidar_pose = None
 
-    start_clock = time.time()
+    start_clock = None
+    last_send = time.time()
+    prev_timestamp = None
+
     for topic, msg, timestamp in bag.read_messages(topics=[lidar_topic, image_topic]):        
         # Wait for lidar to init
         if topic == lidar_topic and not init:
             init = True
             start_time = timestamp
+        
         if not init:
             continue
 
         timestamp -= start_time
-
+        
         if args.duration is not None and timestamp.to_sec() > args.duration:
             break
 
@@ -252,13 +256,24 @@ def run_trial(args, settings, settings_description = None, idx = None):
 
             gt_lidar_pose = start_lidar_pose.inverse() @ T_lidar
             gt_cam_pose = Pose(gt_lidar_pose @ lidar_to_camera)
-
+            
+            if prev_timestamp is not None:
+                time.sleep(max(0,(timestamp - prev_timestamp).to_sec() - (time.time() - last_send)))
             cloner_slam.process_rgb(image, gt_cam_pose)
         elif topic == lidar_topic:
             lidar_scan = build_scan_from_msg(msg, timestamp)
+
+            if prev_timestamp is not None:
+                time.sleep(max(0,(timestamp - prev_timestamp).to_sec() - (time.time() - last_send)))
+
             cloner_slam.process_lidar(lidar_scan)
         else:
             raise Exception("Should be unreachable")
+        last_send = time.time()
+        prev_timestamp = timestamp
+
+        if start_clock is None:
+            start_clock = time.time()
 
     cloner_slam.stop()
     end_clock = time.time()

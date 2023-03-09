@@ -162,6 +162,7 @@ def compute_world_cube(camera_to_lidar, intrinsic_mats, image_sizes, lidar_poses
     """
     assert 0 <= padding < 1
 
+
     lidar_poses = lidar_poses @ lidar_poses[0,:,:].inverse()
     camera_poses = lidar_poses @ camera_to_lidar.inverse()
 

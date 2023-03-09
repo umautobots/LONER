@@ -49,10 +49,8 @@ all_rmses = []
 convert = lambda text: int(text) if text.isdigit() else text 
 alphanum_key = lambda key: [ convert(c) for c in re.split('([0-9]+)', key) ] 
 experiment_directories = sorted(args.experiment_directories, key = alphanum_key)
-print(experiment_directories)
 
 for experiment_directory in experiment_directories:
-    print(experiment_directory)
     checkpoints = os.listdir(f"{experiment_directory}/checkpoints")
     if args.ckpt_id is None:
         if "final.tar" in checkpoints:
@@ -108,9 +106,7 @@ for experiment_directory in experiment_directories:
         
         gt_start = Pose(pose_tensor = kf_a["gt_" + pose_key])
         gt_end = Pose(pose_tensor = kf_b["gt_" + pose_key])
-
-        print(gt_start, gt_end)
-
+        
         est_delta = est_start.inv() * est_end
         gt_delta = gt_start.inv() * gt_end
 
@@ -151,7 +147,7 @@ for experiment_directory in experiment_directories:
     all_rmses.append(est_rmse)
 
     if args.plot_tracked:
-        fig, ax = plt.subplots(2,1)
+        fig, ax = plt.subplots(1,2)
         ax[0].set_aspect('equal')
         ax[1].set_aspect('equal')
 
@@ -189,9 +185,10 @@ for experiment_directory in experiment_directories:
             plt.suptitle(args.title)
 
         ax[0].legend(bbox_to_anchor=(1., 1.05))
-        plt.tight_layout()
+        # plt.tight_layout()
 
         plt.savefig(f"{experiment_directory}/poses.png", dpi=1000)
+        plt.show()
         plt.clf()
     else:
         ax = plt.gca()
@@ -214,8 +211,9 @@ for experiment_directory in experiment_directories:
 
         plt.legend()
         plt.tight_layout()
-
+        
         plt.savefig(f"{experiment_directory}/poses.png")
+        plt.show()
         plt.clf()
     
     all_gts.append(gt)

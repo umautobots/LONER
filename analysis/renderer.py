@@ -210,9 +210,10 @@ with torch.no_grad():
         if start_key in kf:
             start_lidar_pose = Pose(pose_tensor=kf[start_key])
             end_lidar_pose = Pose(pose_tensor=kf[end_key])
+
             start_camera_pose = start_lidar_pose * lidar_to_camera
             end_camera_pose = end_lidar_pose * lidar_to_camera
-
+        
             start_rendered, start_depth_rendered, _ = render_dataset_frame(start_camera_pose.to(_DEVICE))
             end_rendered, end_depth_rendered, _ = render_dataset_frame(end_camera_pose.to(_DEVICE))
             

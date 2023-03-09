@@ -23,7 +23,7 @@ debug:
     profile_optimizer: False
     use_groundtruth_poses: False
     draw_loss_distribution: False
-    log_losses: True
+    log_losses: False
     profile: False
 
 system:
@@ -53,20 +53,20 @@ tracker:
     frame_decimation_rate_hz: 10
     eps_t_over_delta_t: 0.5 # epsilon_t = <this number> * (1/frame_decimation_rate_hz). Maximum/Default 0.5.
     use_simple_frames: True
-    split_lidar_scans: True
+    split_lidar_scans: False
     frame_match_tolerance: 0.01
     lidar_point_step: 10 # Only keep 1 out of this many lidar points
   icp:
-    threshold: 0.25
-    max_iterations: 10
-    relative_fitness: 1.e-8
-    relative_rmse: 1.e-8
+    threshold: 5.0
+    max_iterations: 20
+    relative_fitness: 1.e-16
+    relative_rmse: 1.e-16
     downsample:
       type: UNIFORM
-      target_uniform_point_count: 10000
+      target_uniform_point_count: 15000
       voxel_downsample_size: 0.1
   motion_compensation:
-    enabled: True
+    enabled: False
     use_gpu: True
 mapper:
   device: 0 # don't change this, use CUDA_VISIBLE_DEVICES
@@ -80,24 +80,24 @@ mapper:
     window_selection:
       strategy: HYBRID
       hybrid_settings:
-        num_recent_frames: 5
-      window_size: 10
+        num_recent_frames: 4
+      window_size: 8
     sample_allocation:
-      strategy: UNIFORM
+      rgb_strategy: UNIFORM
+      lidar_strategy: UNIFORM
 
       # How many samples to take uniformly across non-sky regions. 
       # Remember 2 images per frame, so this is doubled.
-      num_rgb_uniform_samples: 256
+      num_rgb_uniform_samples: 128
       
       # How many to use strategy to choose. This is an average since it may vary by image. 
-      avg_rgb_strategy_samples: 256
+      avg_rgb_strategy_samples: 128
 
       # Same, for lidar
       num_lidar_uniform_samples: 512
       avg_lidar_strategy_samples: 0
       
-      num_keyframes_to_keep: 10
-
+      num_keyframes_to_keep: 8
   optimizer:
     data_prep_on_cpu: *data_prep_on_cpu
     k_test: 0
@@ -115,7 +115,7 @@ mapper:
         num_keyframes: 1
         iteration_schedule:
           - num_iterations: 1000
-            stage: 3
+            stage: 1
             fix_poses: True
             fix_sigma_mlp: False
             fix_rgb_mlp: False
@@ -130,8 +130,8 @@ mapper:
             fix_sigma_mlp: True
             fix_rgb_mlp: True
           # Now joint optimization
-          - stage: 3
-            num_iterations: 150
+          - stage: 1
+            num_iterations: 50
             fix_poses: False
             fix_sigma_mlp: False
             fix_rgb_mlp: False

@@ -26,9 +26,15 @@ class DefaultLogger:
         self._frame_slot = frame_signal.register()
         self._keyframe_update_slot = keyframe_update_signal.register()
         
-        self._timestamps = []
-        self._tracked_path = torch.tensor([])
-        self._gt_path = torch.tensor([])
+        self._timestamps = torch.Tensor([])
+
+        # ICP Only
+        self._tracked_path = torch.Tensor([])
+
+        self._gt_path = torch.Tensor([])
+        
+        # Result of propagating tracking to the most recent keyframe
+        self._track_log = torch.Tensor([])
 
         self._frame_done = False
         self._keyframe_done = False
@@ -36,13 +42,15 @@ class DefaultLogger:
 
         self._calibration = calibration    
 
-        self._log_directory = log_directory    
+        self._log_directory = log_directory
+
+        self._t_world_to_kf = torch.eye(4)
+        self._t_kf_to_frame = torch.eye(4)
 
     def update(self):        
         if self._frame_done:
             while self._frame_slot.has_value():
                 self._frame_slot.get_value()
-            return
 
         while self._frame_slot.has_value():
             frame: Union[Frame, SimpleFrame] = self._frame_slot.get_value()
@@ -65,27 +73,31 @@ class DefaultLogger:
                 self._gt_pose_offset = start_pose.inv()
 
             if use_simple_frame:
-                new_pose = frame.get_lidar_pose().get_transformation_matrix().detach().cpu()
+                tracked_pose = frame.get_lidar_pose().get_transformation_matrix().detach().cpu()
                 gt_pose_raw = frame._gt_lidar_pose
                 frame_time = frame.get_time()
             else:
-                new_pose = frame.get_start_lidar_pose().get_transformation_matrix().detach().cpu()
+                tracked_pose = frame.get_start_lidar_pose().get_transformation_matrix().detach().cpu()
                 gt_pose_raw = frame._gt_lidar_start_pose
                 frame_time = frame.get_start_time()
 
             gt_pose = (self._gt_pose_offset * gt_pose_raw).get_transformation_matrix().detach()
 
-            self._tracked_path = torch.cat([self._tracked_path, new_pose.unsqueeze(0)])
+            self._tracked_path = torch.cat([self._tracked_path, tracked_pose.unsqueeze(0)])
             self._gt_path = torch.cat([self._gt_path, gt_pose.unsqueeze(0)])
 
-            self._timestamps.append(frame_time)
-
-            if self._tracked_path.shape[0] < 2:
-                self._optimized_path = new_pose.unsqueeze(0)
-            else:
+            self._timestamps = torch.cat([self._timestamps, torch.tensor([frame_time])])
+            
+            if len(self._tracked_path) > 1:
                 relative_transform = self._tracked_path[-2].inverse() @  self._tracked_path[-1]
-                self._optimized_path = torch.cat([self._optimized_path, (self._optimized_path[-1] @ relative_transform).unsqueeze(0)])
+            else:
+                relative_transform = tracked_pose
 
+            self._t_kf_to_frame = self._t_kf_to_frame @ relative_transform
+
+            optimized_keyframe_pose = self._t_world_to_kf @ self._t_kf_to_frame
+            
+            self._track_log = torch.cat([self._track_log, optimized_keyframe_pose.unsqueeze(0)])
 
         while self._keyframe_update_slot.has_value():
             keyframe_state = self._keyframe_update_slot.get_value()
@@ -93,43 +105,55 @@ class DefaultLogger:
             if isinstance(keyframe_state, StopSignal):
                 self._frame_done = True
                 break
-
-            keyframe_timestamps = torch.tensor([kf["timestamp"] for kf in keyframe_state]).reshape(-1, 1)
-
-            pose_timestamps = torch.tensor(self._timestamps)
-
-            tiled_pose_timestamps = pose_timestamps.expand(len(keyframe_timestamps), -1)
             
-            pose_kf_indices = torch.argmin(torch.abs(tiled_pose_timestamps - keyframe_timestamps))
+            self._last_recv_keyframe_state = keyframe_state
             
-            # List of lists, where each sublist i is the index of poses [kf_i, kf_{i} + 1, kf_{i} + 2, ...].
-            # Basically, index of poses starting with a KF and including every pose until (not including) the next KF
-            idx_chunks = list(torch.tensor_split(torch.arange(len(self._timestamps)), pose_kf_indices.reshape(1,)))
-            idx_chunks = [c for c in idx_chunks if len(c) > 0]
+            most_recent_kf = keyframe_state[-1]
+
+            kf_time = most_recent_kf["timestamp"]
+            kf_pose_tensor = most_recent_kf["lidar_pose"] if "lidar_pose" in most_recent_kf else most_recent_kf["start_lidar_pose"] # depends on simple frame
+
+            kf_idx = torch.argmin(torch.abs(self._timestamps - kf_time)).item()
+
+            self._t_world_to_kf = Pose(pose_tensor=kf_pose_tensor).get_transformation_matrix()
+
+            tracked_pose = self._tracked_path[kf_idx]
+            most_recent_tracked_pose = self._tracked_path[-1]
             
-            self._optimized_path = torch.zeros_like(self._tracked_path)
-
-            for chunk_idx, chunk in enumerate(idx_chunks):
-                if len(chunk) == 0:
-                    continue
-                
-                poses = self._tracked_path[chunk[0]:chunk[-1]+1]
-                relative_poses = poses @ torch.linalg.inv(poses[0])
-
-                if "start_lidar_pose" in keyframe_state[chunk_idx]: 
-                    reference_pose_tensor = keyframe_state[chunk_idx]["start_lidar_pose"]
-                else:
-                    reference_pose_tensor = keyframe_state[chunk_idx]["lidar_pose"]
-
-                reference_pose = tensor_to_transform(reference_pose_tensor).cpu()
-                corrected_poses = reference_pose @ relative_poses
-                self._optimized_path[chunk[0]:chunk[-1]+1] = corrected_poses
+            self._t_kf_to_frame = tracked_pose.inverse() @ most_recent_tracked_pose
 
     def finish(self):
         self.update()
 
+        keyframe_timestamps = torch.tensor([kf["timestamp"] for kf in self._last_recv_keyframe_state])
+
+        pose_key = "lidar_pose" if "lidar_pose" in self._last_recv_keyframe_state[0] else "start_lidar_pose"
+        keyframe_trajectory = torch.stack([Pose(pose_tensor=kf[pose_key]).get_transformation_matrix() for kf in self._last_recv_keyframe_state])
+
+        # Which kf each pose is closest (temporally) to
+        pose_kf_indices = torch.bucketize(self._timestamps, keyframe_timestamps, right=False).long() - 1
+        pose_kf_indices[pose_kf_indices < 0] = 0
+        
+        optimized_trajectory = torch.Tensor([])
+
+        reference_pose = torch.eye(4)
+        reference_kf_idx = None
+        reference_kf_pose_idx = None
+        for pose_idx, pose in enumerate(self._tracked_path):
+            if pose_kf_indices[pose_idx] != reference_kf_idx:
+                reference_kf_idx = pose_kf_indices[pose_idx]
+                reference_pose = keyframe_trajectory[reference_kf_idx]
+                reference_kf_pose_idx = pose_idx
+
+            kf_to_frame = self._tracked_path[reference_kf_pose_idx].inverse() @ self._tracked_path[pose_idx]
+            optimized_frame_estimate = reference_pose @ kf_to_frame
+
+            optimized_trajectory = torch.cat([optimized_trajectory, optimized_frame_estimate.unsqueeze(0)])
+            
+
         # Dump it all to TUM format
         os.makedirs(f"{self._log_directory}/trajectory", exist_ok=True)
-        pose_timestamps = torch.tensor(self._timestamps)
-        dump_trajectory_to_tum(self._tracked_path, pose_timestamps, f"{self._log_directory}/trajectory/tracked.txt")
-        dump_trajectory_to_tum(self._optimized_path, pose_timestamps, f"{self._log_directory}/trajectory/optimized.txt")
+        dump_trajectory_to_tum(self._tracked_path, self._timestamps, f"{self._log_directory}/trajectory/tracking_only.txt")
+        dump_trajectory_to_tum(self._track_log, self._timestamps, f"{self._log_directory}/trajectory/online_estimates.txt")
+        dump_trajectory_to_tum(optimized_trajectory, self._timestamps, f"{self._log_directory}/trajectory/estimated_trajectory.txt")
+        dump_trajectory_to_tum(keyframe_trajectory, keyframe_timestamps, f"{self._log_directory}/trajectory/keyframe_trajectory.txt")

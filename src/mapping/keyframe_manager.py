@@ -20,6 +20,8 @@ class WindowSelectionStrategy(Enum):
 class SampleAllocationStrategy(Enum):
     UNIFORM = 0
     ACTIVE = 1
+    ACTIVE_LIDAR = 2
+    ACTIVE_CAMERA = 3
 
 class KeyFrameManager:
     """ The KeyFrame Manager class creates and manages KeyFrames and passes 
@@ -34,15 +36,17 @@ class KeyFrameManager:
             settings.keyframe_selection.strategy]
         self._window_selection_strategy = WindowSelectionStrategy[
             settings.window_selection.strategy]
-        self._sample_allocation_strategy = SampleAllocationStrategy[
-            settings.sample_allocation.strategy]
+        self._rgb_sample_allocation_strategy = SampleAllocationStrategy[
+            settings.sample_allocation.rgb_strategy]
+        self._lidar_sample_allocation_strategy = SampleAllocationStrategy[
+            settings.sample_allocation.lidar_strategy]
 
         self._device = device
 
         # Keep track of the start image timestamp
         self._last_accepted_frame_ts = None
 
-        self._keyframes = []
+        self._keyframes: List[KeyFrame] = []
 
         self._global_step = 0
 
@@ -94,6 +98,9 @@ class KeyFrameManager:
                     end_mat = reference_kf.get_end_lidar_pose().get_transformation_matrix().detach() @ T_track_end
                     new_keyframe._frame._lidar_end_pose = Pose(end_mat, requires_tensor=True)
 
+            if self._lidar_sample_allocation_strategy == SampleAllocationStrategy.ACTIVE:
+                new_keyframe.compute_lidar_buckets()
+            
             self._keyframes.append(new_keyframe)
 
         return new_keyframe if should_use_frame else None 
@@ -158,16 +165,60 @@ class KeyFrameManager:
         num_temporal_frames = min(num_temporal_frames, len(self._keyframes))
 
         allocated_keyframes = []
-        if self._sample_allocation_strategy == SampleAllocationStrategy.UNIFORM:
+        allocated_keyframe_idxs = []
+
+        if self._lidar_sample_allocation_strategy == SampleAllocationStrategy.UNIFORM:
             for kf in keyframes[-num_kfs:]:
-                kf.num_uniform_rgb_samples = uniform_rgb_samples
-                kf.num_strategy_rgb_samples = avg_rgb_samples
                 kf.num_uniform_lidar_samples = uniform_lidar_samples
                 kf.num_strategy_lidar_samples = avg_lidar_samples
                 allocated_keyframes.append(kf)
-        elif self._sample_allocation_strategy == SampleAllocationStrategy.ACTIVE:
+
+        elif self._lidar_sample_allocation_strategy == SampleAllocationStrategy.ACTIVE:
             loss_distributions = []
-            for kf in keyframes[:len(keyframes)-num_temporal_frames]:
+            for kf in keyframes:
+                with torch.no_grad():
+                    loss_distribution = optimizer.compute_lidar_loss_distribution(kf)
+                    loss_distributions.append(loss_distribution)
+
+            loss_distributions = torch.stack(loss_distributions)
+            
+            if loss_distributions.dim() == 2:
+                loss_distributions = loss_distributions.unsqueeze(0)
+
+            losses = torch.sum(loss_distributions, dim=(1,2))
+            losses_dist = losses / losses.sum()
+            _, kept_kf_indices = losses[:-num_temporal_frames].topk(num_kfs - num_temporal_frames)
+
+            kept_kf_indices = kept_kf_indices.tolist() + list(range(-num_temporal_frames, 0))
+
+            total_strategy_lidar_samples = avg_lidar_samples * num_kfs
+            lidar_strategy_samples = losses_dist * total_strategy_lidar_samples
+            lidar_strategy_samples = lidar_strategy_samples.to(torch.int32)
+
+            for kf_idx in kept_kf_indices:
+                kf = keyframes[kf_idx]
+                kf.num_uniform_lidar_samples = uniform_lidar_samples
+                
+                total_loss = loss_distributions[kf_idx].sum()
+                kf.lidar_loss_distribution = loss_distributions[kf_idx] / total_loss
+                kf.lidar_loss_distribution = kf.lidar_loss_distribution.cpu()
+                
+                kf.num_strategy_lidar_samples = (losses_dist[kf_idx] * total_strategy_lidar_samples).to(torch.int32)
+                allocated_keyframes.append(kf)
+
+        else:
+            raise ValueError(
+                f"Can't use unknown SampleAllocationStrategy {self._lidar_sample_allocation_strategy}")
+  
+
+        if self._rgb_sample_allocation_strategy == SampleAllocationStrategy.UNIFORM:
+            for kf in allocated_keyframes:
+                kf.num_uniform_rgb_samples = uniform_rgb_samples
+                kf.num_strategy_rgb_samples = avg_rgb_samples
+
+        elif self._rgb_sample_allocation_strategy == SampleAllocationStrategy.ACTIVE:
+            loss_distributions = []
+            for kf in allocated_keyframes:
                 with torch.no_grad():
                     loss_distribution = optimizer.compute_rgb_loss_distribution(kf)
                 loss_distributions.append(loss_distribution)
@@ -175,49 +226,30 @@ class KeyFrameManager:
             loss_distributions = torch.stack(loss_distributions)
 
             losses = torch.sum(loss_distributions, dim=1)
-            _, kept_kf_indices = losses.topk(num_kfs)
-
-            kept_kf_indices = kept_kf_indices.tolist() + list(range(-num_temporal_frames, 0))
-
-            print(kept_kf_indices, len(losses))
-            print([keyframes[i].get_start_time() for i in kept_kf_indices])
             losses_dist = losses / losses.sum()
 
-            total_strategy_rgb_samples = avg_rgb_samples * len(kept_kf_indices)
+            total_strategy_rgb_samples = avg_rgb_samples * num_kfs
             rgb_strategy_samples = losses_dist * total_strategy_rgb_samples
             rgb_strategy_samples = rgb_strategy_samples.to(torch.int32)
             
-            if self._settings.debug.draw_loss_distribution:
-                kfs_to_compute = torch.arange(len(keyframes))
-            else:
-                kfs_to_compute = kept_kf_indices
-
-            for kf_idx in kfs_to_compute:
-                kf = keyframes[kf_idx]
-                kf.num_uniform_lidar_samples = uniform_lidar_samples
+            for kf_idx in range(len(allocated_keyframes)):
+                kf: KeyFrame = allocated_keyframes[kf_idx]
                 kf.num_uniform_rgb_samples = uniform_rgb_samples
 
                 total_loss = loss_distributions[kf_idx].sum()
-                kf.loss_distribution = loss_distributions[kf_idx] / total_loss
-                kf.loss_distribution = kf.loss_distribution.cpu()
-
-                kf.num_strategy_lidar_samples = avg_lidar_samples
+                kf.rgb_loss_distribution = loss_distributions[kf_idx] / total_loss
+                kf.rgb_loss_distribution = kf.rgb_loss_distribution.cpu()
+                
                 
                 kf.num_strategy_rgb_samples = (losses_dist[kf_idx] * total_strategy_rgb_samples).to(torch.int32)
 
                 if self._settings.debug.draw_loss_distribution:
                     im_path = f"{self._settings.log_directory}/sample_alloc/allocation_{self._global_step}/keyframe_{kf_idx}.png"
-                    kept = kf_idx in kept_kf_indices.cpu()
-                    kf.draw_loss_distribution(im_path, total_loss, kept)
-
-                    if kept:
-                        allocated_keyframes.append(kf)
-                else:
-                    allocated_keyframes.append(kf)
+                    kf.draw_loss_distribution(im_path, total_loss)
 
         else:
             raise ValueError(
-                f"Can't use unknown SampleAllocationStrategy {self._sample_allocation_strategy}")
+                f"Can't use unknown SampleAllocationStrategy {self._rgb_sample_allocation_strategy}")
 
         self._global_step += 1
         return allocated_keyframes

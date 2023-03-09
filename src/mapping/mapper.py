@@ -41,27 +41,14 @@ class Mapper:
         self._optimizer = Optimizer(
             settings.optimizer, calibration, self._world_cube, 0,
             settings.debug.use_groundtruth_poses,
-            settings.keyframe_manager.sample_allocation.strategy)
+            settings.keyframe_manager.sample_allocation.rgb_strategy,
+            settings.keyframe_manager.sample_allocation.lidar_strategy)
 
         self._term_signal = mp.Value('i', 0)
         self._processed_stop_signal = mp.Value('i', 0)
         os.makedirs(f"{self._settings.log_directory}/checkpoints", exist_ok=True)
         self.last_ckpt = {}
 
-
-    def finish(self) -> None:
-        pose_state = self._keyframe_manager.get_poses_state()
-
-        last_ckpt = {'global_step': self._optimizer._global_step,
-                     'network_state_dict': self._optimizer._model.state_dict(),
-                     'optimizer_state_dict': self._optimizer.state_dict(),
-                     'poses': pose_state,
-                     'occ_model_state_dict': self._optimizer._occupancy_grid_model.state_dict(),
-                     'occ_optimizer_state_dict': self._optimizer._occupancy_grid_optimizer.state_dict()}
-
-        final_kf_count = self._optimizer._keyframe_count
-        print("Saving Last Checkpoint to", f"{self._settings.log_directory}/checkpoints/final.tar")
-        torch.save(last_ckpt, f"{self._settings.log_directory}/checkpoints/final.tar")
 
     def update(self) -> None:
         if self._processed_stop_signal.value:
@@ -125,7 +112,20 @@ class Mapper:
         self.has_written = False
         while not self._processed_stop_signal.value:
             self.update()
-            
+        
+        pose_state = self._keyframe_manager.get_poses_state()
+
+        last_ckpt = {'global_step': self._optimizer._global_step,
+                     'network_state_dict': self._optimizer._model.state_dict(),
+                     'optimizer_state_dict': self._optimizer._optimizer.state_dict(),
+                     'poses': pose_state,
+                     'occ_model_state_dict': self._optimizer._occupancy_grid_model.state_dict(),
+                     'occ_optimizer_state_dict': self._optimizer._occupancy_grid_optimizer.state_dict()}
+
+        final_kf_count = self._optimizer._keyframe_count
+        print("Saving Last Checkpoint to", f"{self._settings.log_directory}/checkpoints/final.tar")
+        torch.save(last_ckpt, f"{self._settings.log_directory}/checkpoints/final.tar")
+
         print("Mapping Done. Waiting to terminate.")
         # Wait until an external terminate signal has been sent.
         # This is used to prevent race conditions at shutdown

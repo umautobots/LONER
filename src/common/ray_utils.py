@@ -160,7 +160,7 @@ class CameraRayDirections:
         ray_i_grid = self.i_meshgrid[camera_indices]
         ray_j_grid = self.j_meshgrid[camera_indices]
                 
-        world_to_camera = pose.get_transformation_matrix()
+        world_to_camera = pose.get_transformation_matrix().clone()
 
         world_to_camera[:3, 3] = world_to_camera[:3, 3] + world_cube.shift
         world_to_camera[:3, 3] = world_to_camera[:3, 3] / world_cube.scale_factor

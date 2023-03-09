@@ -70,11 +70,6 @@ class Tracker:
         self._reference_time = None
 
         self._frame_count = 0
-
-
-    def finish(self):
-        pass
-
     
     def update(self):
         if self._processed_stop_signal.value:
@@ -210,6 +205,8 @@ class Tracker:
         if use_simple_frame:
             new_reference_time = frame.image.timestamp
             frame._lidar_pose = Pose(tracked_position.float().to(device), requires_tensor=True)
+            
+            print(self._frame_count, registration_result[:3,3].norm())
 
             if self._settings.motion_compensation.enabled:
                 mocomp_poses = (self._reference_pose, frame._lidar_pose)

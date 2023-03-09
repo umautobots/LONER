@@ -52,7 +52,10 @@ class KeyFrame:
 
         self.is_anchored = False
 
-        self.loss_distribution = None
+        self.rgb_loss_distribution = None
+        self.lidar_loss_distribution = None
+
+        self.lidar_buckets = None
 
     def to(self, device) -> "KeyFrame":
         self._frame.to(device)
@@ -312,6 +315,55 @@ class KeyFrame:
 
             return torch.vstack((first_rays, second_rays)), torch.vstack((first_intensities, second_intensities))
 
+    def compute_lidar_buckets(self):
+        theta_boundaries = torch.linspace(0, 2*torch.pi, 9)[1:]
+
+        # TODO (seth): Get rid of magic numbers (computed offline with percentiles)
+        phi_boundaries = torch.Tensor([-0.1644,  0.0238,  0.213,  0.48])
+
+        dirs = self.get_lidar_scan().ray_directions
+
+        x = dirs[0]
+        y = dirs[1]
+        z = dirs[2]
+
+        theta = torch.atan2(y, x)
+        theta[theta < 0] = (2*torch.pi + theta)[theta<0]
+        phi = torch.asin(z)
+
+        theta_buckets = torch.bucketize(theta, theta_boundaries)
+        phi_buckets = torch.bucketize(phi, phi_boundaries)
+    
+        assignments = torch.vstack((theta_buckets, phi_buckets))
+
+        self.lidar_buckets = [[None for _ in range(8)] for _ in range(4)]
+
+        for x in range(8):
+            for y in range(4):
+                bucket_idx = torch.where(torch.all(assignments == torch.tensor([x,y])\
+                    .view(-1, 1), dim=0))[0]
+
+                if len(bucket_idx) == 0:
+                    continue
+                
+                self.lidar_buckets[y][x] = bucket_idx
+
+    def sample_lidar_buckets(self):
+        sample_distribution = 1 - self.lidar_loss_distribution
+        sample_distribution /= sample_distribution.sum()
+
+        samples_per_cell = sample_distribution * self.num_strategy_lidar_samples
+
+        all_indices = torch.Tensor([])
+        for x in range(8):
+            for y in range(4):
+                num_samples: torch.Tensor = samples_per_cell[y,x]
+                bucket = self.lidar_buckets[y][x]
+                bucket_indices = bucket[torch.randint(0,len(bucket), (min(len(bucket), num_samples.int().item()),) )]
+                all_indices = torch.cat([all_indices, bucket_indices])
+
+        return all_indices.to(torch.int64)
+
     def get_pose_state(self) -> dict:
         state_dict = {
             "timestamp": self.get_start_time(),
@@ -355,7 +407,7 @@ class KeyFrame:
         for row in range(8):
             for col in range(8):
                 idx = row * 8 + col
-                val = self.loss_distribution[idx]
+                val = self.rgb_loss_distribution[idx]
 
                 top_left = (int(col*dx), int(row*dy))
                 bottom_right = (int(col*dx + 35), int(row*dy + 20))

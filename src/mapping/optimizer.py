@@ -65,14 +65,16 @@ class Optimizer:
     # @param world_cube: The world cube pre-computed that is used to scale the world.
     # @param device: Which device to put the data on and run the optimizer on
     def __init__(self, settings: Settings, calibration: Settings, world_cube: WorldCube, device: int,
-                 use_gt_poses: bool = False, sample_allocation_strategy: str = "UNIFORM"):
+                 use_gt_poses: bool = False, rgb_sample_allocation_strategy: str = "UNIFORM",
+                 lidar_sample_allocation_strategy: str = "UNIFORM"):
         self._settings = settings
         self._calibration = calibration
         self._device = device
         
         self._use_gt_poses = use_gt_poses
 
-        self._sample_allocation_strategy = SampleAllocationStrategy[sample_allocation_strategy]
+        self._rgb_sample_allocation_strategy = SampleAllocationStrategy[rgb_sample_allocation_strategy]
+        self._lidar_sample_allocation_strategy = SampleAllocationStrategy[lidar_sample_allocation_strategy]
 
         opt_settings = settings.default_optimizer_settings
         self._optimization_settings = OptimizationSettings(
@@ -100,10 +102,10 @@ class Optimizer:
         # Main Model
         self._model = Model(self._model_config.model)
 
-
         # Occupancy grid
         self._occupancy_grid_model = OccupancyGridModel(
             self._model_config.model.occ_model).to(self._device)
+
         self._occupancy_grid = self._occupancy_grid_model()
 
         occ_grid_parameters = [
@@ -121,6 +123,8 @@ class Optimizer:
 
         self._keyframe_schedule = self._settings["keyframe_schedule"]
 
+        self._optimizer = None
+
         # TODO: This breaks multiprocessing
         # self._wandb_mode = "online" if ENABLE_WANDB else "disabled"
         # self._wandb = wandb.init(project='cloner_slam', config=self._model_config,
@@ -129,7 +133,7 @@ class Optimizer:
     ## Run one or more iterations of the optimizer, as specified by the stored settings
     # @param keyframe_window: The set of keyframes to use in the optimization.
     def iterate_optimizer(self, keyframe_window: List[KeyFrame]) -> float:
-                
+
         # Look at the keyframe schedule and figure out which iteration schedule to use
         cumulative_kf_idx = 0
         for item in self._keyframe_schedule:
@@ -261,8 +265,8 @@ class Optimizer:
             lrate_scheduler = torch.optim.lr_scheduler.ExponentialLR(self._optimizer, self._model_config.train.lrate_gamma)
 
             for it_idx in tqdm.tqdm(range(self._optimization_settings.num_iterations)):
-                uniform_lidar_rays, uniform_lidar_depths = None, None
-                uniform_camera_rays, uniform_camera_intensities = None, None
+                lidar_rays, lidar_depths = None, None
+                camera_rays, camera_intensities = None, None
                 
                 # Bookkeeping for occ update
                 # TODO: Find a better solution to this.
@@ -273,7 +277,13 @@ class Optimizer:
                 for kf_idx, kf in enumerate(active_keyframe_window):                
                     if self.should_enable_lidar():
 
-                        lidar_indices = torch.randint(len(kf.get_lidar_scan()), (kf.num_uniform_lidar_samples,))
+                        # TODO (seth): fix bucket/chunk naming throughout code
+                        if self._lidar_sample_allocation_strategy == SampleAllocationStrategy.UNIFORM:
+                            lidar_indices = torch.randint(len(kf.get_lidar_scan()), (kf.num_uniform_lidar_samples + kf.num_strategy_lidar_samples,))
+                        elif self._lidar_sample_allocation_strategy == SampleAllocationStrategy.ACTIVE:
+                            uniform_lidar_indices = torch.randint(len(kf.get_lidar_scan()), (kf.num_uniform_lidar_samples,))
+                            strategy_lidar_indices = kf.sample_lidar_buckets()
+                            lidar_indices = torch.cat([uniform_lidar_indices, strategy_lidar_indices])
 
                         new_rays, new_depths = kf.build_lidar_rays(lidar_indices, self._ray_range, self._world_cube, self._use_gt_poses)
                     
@@ -284,16 +294,17 @@ class Optimizer:
                             origins_fname = f"{self._settings['log_directory']}/rays/lidar/kf_{kf_idx}_origins/origins_{self._global_step}_{it_idx}.pcd"
                             rays_to_pcd(new_rays, new_depths, rays_fname, origins_fname)
 
-                        if uniform_lidar_rays is None:
-                            uniform_lidar_rays = new_rays
-                            uniform_lidar_depths = new_depths
+                        if lidar_rays is None:
+                            lidar_rays = new_rays
+                            lidar_depths = new_depths
                         else:
-                            uniform_lidar_rays = torch.vstack((uniform_lidar_rays, new_rays))
-                            uniform_lidar_depths = torch.vstack((uniform_lidar_depths, new_depths))
+                            lidar_rays = torch.vstack((lidar_rays, new_rays))
+                            lidar_depths = torch.cat((lidar_depths, new_depths))
                         
-                        lidar_samples = (uniform_lidar_rays.to(self._device).float(), uniform_lidar_depths.to(self._device).float())
-    
+                        lidar_samples = (lidar_rays.to(self._device).float(), lidar_depths.to(self._device).float())
+
                     if self.should_enable_camera():
+                        assert False
                         # Get all the uniform samples first
                         start_idxs = torch.randint(len(self._rgb_shuffled_indices), (2,))
 
@@ -307,7 +318,7 @@ class Optimizer:
                             second_im_uniform_indices = second_im_uniform_indices % len(self._rgb_shuffled_indices)
 
                         # Next based on strategy get the rest
-                        if self._sample_allocation_strategy == SampleAllocationStrategy.UNIFORM:
+                        if self._rgb_sample_allocation_strategy == SampleAllocationStrategy.UNIFORM:
                             start_idxs = torch.randint(len(self._rgb_shuffled_indices), (2,))
 
                             first_im_end_idx = start_idxs[0] + kf.num_strategy_rgb_samples
@@ -322,10 +333,12 @@ class Optimizer:
 
                                 second_im_strategy_indices = second_im_strategy_indices % len(self._rgb_shuffled_indices)
 
-                        elif self._sample_allocation_strategy == SampleAllocationStrategy.ACTIVE:
-                            first_im_strategy_indices = self._cam_ray_directions.sample_chunks(kf.loss_distribution, kf.num_strategy_rgb_samples.item()).flatten()
+                        elif self._rgb_sample_allocation_strategy == SampleAllocationStrategy.ACTIVE:
+                            sample_distribution = 1 - kf.rgb_loss_distribution
+                            sample_distribution /= sample_distribution.sum()
+                            first_im_strategy_indices = self._cam_ray_directions.sample_chunks(sample_distribution, kf.num_strategy_rgb_samples.item()).flatten()
                             if not use_simple_frame:
-                                second_im_strategy_indices = self._cam_ray_directions.sample_chunks(kf.loss_distribution, kf.num_strategy_rgb_samples.item()).flatten()
+                                second_im_strategy_indices = self._cam_ray_directions.sample_chunks(sample_distribution, kf.num_strategy_rgb_samples.item()).flatten()
 
                         first_im_indices = torch.cat((first_im_uniform_indices, first_im_strategy_indices))
                         
@@ -340,11 +353,11 @@ class Optimizer:
                             self._use_gt_poses,
                             self._settings.detach_rgb_from_poses)
 
-                        if uniform_camera_rays is None:
-                            uniform_camera_rays, uniform_camera_intensities = new_cam_rays, new_cam_intensities
+                        if camera_rays is None:
+                            camera_rays, camera_intensities = new_cam_rays, new_cam_intensities
                         else:
-                            uniform_camera_rays = torch.vstack((uniform_camera_rays, new_cam_rays))
-                            uniform_camera_intensities = torch.vstack((uniform_camera_intensities, new_cam_intensities))
+                            camera_rays = torch.vstack((camera_rays, new_cam_rays))
+                            camera_intensities = torch.vstack((camera_intensities, new_cam_intensities))
 
                         if self._settings.debug.write_ray_point_clouds:
                             os.makedirs(f"{self._settings['log_directory']}/rays/camera/kf_{kf_idx}_rays", exist_ok=True)
@@ -353,7 +366,7 @@ class Optimizer:
                             origins_fname = f"{self._settings['log_directory']}/rays/camera/kf_{kf_idx}_origins/origins_{self._global_step}_{it_idx}.pcd"
                             rays_to_pcd(new_cam_rays, torch.ones_like(new_cam_rays[:,0]) * .1, rays_fname, origins_fname, new_cam_intensities)
                     
-                        camera_samples = (uniform_camera_rays.to(self._device).float(), uniform_camera_intensities.to(self._device).float())
+                        camera_samples = (camera_rays.to(self._device).float(), camera_intensities.to(self._device).float())
 
                 loss = self.compute_loss(camera_samples, lidar_samples, it_idx)
 
@@ -414,8 +427,6 @@ class Optimizer:
         # TODO: For simplicity, this only computes losses for the first image. Is this OK?
         chunk_indices = self._cam_ray_directions.sample_chunks()
 
-        losses = []
-
         # TODO: Remove this for loop, do with pytorch operations instead
         for chunk in chunk_indices:
             cam_rays,cam_intensities = keyframe.build_camera_rays(
@@ -430,6 +441,30 @@ class Optimizer:
             losses.append(chunk_loss)
 
         losses = torch.stack(losses)
+        return losses
+
+    def compute_lidar_loss_distribution(self, keyframe: KeyFrame):
+        
+        losses = [[None for _ in range(8)] for _ in range(4)]
+        for x in range(8):
+            for y in range(4):
+                chunk_indices = keyframe.lidar_buckets[y][x]
+                if chunk_indices is None:
+                    losses[y][x] = -1
+                    print("Skipping a chunk!", x, y)
+                    continue
+
+                # TODO (seth) 25 should be a parameter
+                chunk_indices = chunk_indices[torch.randint(0, len(chunk_indices), (min(len(chunk_indices), 25), ))]
+                
+                rays, depths = keyframe.build_lidar_rays(chunk_indices, self._ray_range, self._world_cube, self._use_gt_poses)
+
+                chunk_loss = self.compute_loss(None, (rays.to(self._device), depths.to(self._device)), None, True).cpu()
+
+                losses[y][x] = chunk_loss
+
+        losses = torch.tensor(losses)
+        losses[losses == -1] = losses[losses != -1].mean()
         return losses
 
     ## For the given camera and lidar rays, compute and return the differentiable loss

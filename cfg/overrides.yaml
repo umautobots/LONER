@@ -1,3 +1,0 @@
-mapper:
-  optimizer:
-    skip_pose_refinement: [False, True]
