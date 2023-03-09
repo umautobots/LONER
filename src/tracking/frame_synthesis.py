@@ -8,7 +8,6 @@ from common.pose import Pose
 from common.pose_utils import WorldCube
 from common.sensors import Image, LidarScan
 from common.settings import Settings
-from tracking.sky_removal import SkyRemoval
 
 FRAME_TOLERANCE = 0.01
 
@@ -20,8 +19,6 @@ class FrameSynthesis:
     # @param settings: Settings for the tracker (which includes frame synthesis)
     def __init__(self, settings: Settings, T_lidar_to_camera: Pose) -> None:
         self._settings = settings
-
-        self._sky_remover = SkyRemoval(settings.sky_removal)
 
         self._t_lidar_to_camera = T_lidar_to_camera
         self._t_camera_to_lidar = self._t_lidar_to_camera.inv()

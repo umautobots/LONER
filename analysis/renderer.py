@@ -136,7 +136,7 @@ def render_dataset_frame(pose: Pose):
 
     for chunk_idx in range(ray_directions.num_chunks):
         # tic = time.time()
-        eval_rays = ray_directions.fetch_chunk_rays(chunk_idx, pose, world_cube, ray_range)
+        eval_rays = ray_directions.fetch_chunk_rays(chunk_idx, pose.clone(), world_cube, ray_range)
         eval_rays = eval_rays.to(_DEVICE)
 
         results = model(eval_rays, ray_sampler, scale_factor, testing=True)

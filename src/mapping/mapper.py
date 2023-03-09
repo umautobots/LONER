@@ -47,6 +47,8 @@ class Mapper:
         os.makedirs(f"{self._settings.log_directory}/checkpoints", exist_ok=True)
         self.last_ckpt = {}
 
+        self._last_mapped_frame_id = None
+
 
     def update(self) -> None:
         if self._processed_stop_signal.value:
@@ -87,8 +89,9 @@ class Mapper:
                 else:
                     ckpt = {'global_step': self._optimizer._global_step,
                             'poses': pose_state}
+                    
+                self._last_mapped_frame_id.value = new_keyframe._frame._id
                             
-                print("Sending KF Update")
                 self._keyframe_update_signal.emit(pose_state)
                 
                 print("Saving Checkpoint to", f"{self._settings.log_directory}/checkpoints/ckpt_{kf_idx}.tar")
@@ -102,7 +105,8 @@ class Mapper:
                 self._optimizer._global_step += 1
 
     ## Spins by reading frames from the @m frame_slot as inputs.
-    def run(self) -> None:
+    def run(self, last_mapped_frame_id) -> None:
+        self._last_mapped_frame_id = last_mapped_frame_id
 
         if self._settings.debug.pytorch_detect_anomaly:
             torch.autograd.set_detect_anomaly(True)

@@ -13,7 +13,7 @@ from torch.profiler import ProfilerActivity, profile
 
 from common.pose import Pose
 from common.pose_utils import compute_world_cube, WorldCube
-from common.signals import Slot, Signal, StopSignal
+from common.signals import Signal, StopSignal
 from common.sensors import Image, LidarScan
 from common.settings import Settings
 from mapping.mapper import Mapper
@@ -70,13 +70,16 @@ class ClonerSLAM:
         self._world_cube = None
 
         # To initialize, call initialize
-        self._initialized = False        
+        self._initialized = False
+
+        self._last_mapped_frame_id = mp.Value('i', -1)
 
     def initialize(self, camera_to_lidar: torch.Tensor, all_lidar_poses: torch.Tensor,
                               K_camera: torch.Tensor, camera_range: List,
                               image_size: torch.Tensor,
                               dataset_path: str,
-                              ablation_name: str = None,
+                              experiment_name: str = None,
+                              config_idx: int = None,
                               trial_idx: int = None):
         self._world_cube = compute_world_cube(
             camera_to_lidar, K_camera, image_size, all_lidar_poses, camera_range, padding=0.3)
@@ -92,11 +95,14 @@ class ClonerSLAM:
             expname = "experiment"
             
         self._experiment_name = f"{expname}_{now_str}"
-        if ablation_name is None:
+        if experiment_name is None:
             self._log_directory = os.path.expanduser(f"{self._settings.system.log_dir_prefix}/{self._experiment_name}/")
         else:
-            self._log_directory = os.path.expanduser(f"{self._settings.system.log_dir_prefix}/{ablation_name}/trial_{trial_idx}")
-
+            self._log_directory = os.path.expanduser(f"{self._settings.system.log_dir_prefix}/{experiment_name}/")
+            if config_idx is not None:
+                self._log_directory += f"config_{config_idx}/"
+            if trial_idx is not None:
+                self._log_directory += f"trial_{trial_idx}/"
 
         os.makedirs(self._log_directory, exist_ok=True)
 
@@ -169,9 +175,11 @@ class ClonerSLAM:
         print("Starting Cloner SLAM")
 
         if not self._single_threaded:
+
             # Start the children
-            self._tracking_process = mp.Process(target=self._tracker.run)
-            self._mapping_process = mp.Process(target=self._mapper.run)
+            self._tracking_process = mp.Process(target=self._tracker.run, args=(self._last_mapped_frame_id,))
+            self._mapping_process = mp.Process(target=self._mapper.run, args=(self._last_mapped_frame_id,))
+    
             self._tracking_process.daemon = True
             self._mapping_process.daemon = True
             self._tracking_process.start()
@@ -211,8 +219,6 @@ class ClonerSLAM:
             self._tracking_process.join()
             self._mapping_process.join()
             print("Sub-processes Exited")
-
-
 
     # For use in single-threaded system. 
     def _system_update(self):

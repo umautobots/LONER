@@ -490,9 +490,6 @@ elif args.build_rosbag:
         except StopIteration:
             break
 
-        if (timestamp2 - timestamp1).to_sec() > 0.05:
-            breakpoint()
-
         assert (timestamp2 - timestamp1).to_sec() < 0.05, "Timestamps too far apart"
 
         if "left" in topic1:

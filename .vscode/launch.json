@@ -13,117 +13,14 @@
       "justMyCode": true
     },
     {
-      "name": "ClonerSLAM: Carla Loops",
-      "type": "python",
-      "request": "launch",
-      "program": "${workspaceFolder}/examples/run_carla_rosbag.py",
-      "console": "integratedTerminal",
-      "args": ["${workspaceFolder}/../data/cloner_carla_dataset.bag"],
-      "cwd": "${workspaceFolder}/examples",
-      "subProcess": true
-    },
-    {
-      "name": "ClonerSLAM: Carla Forward",
-      "type": "python",
-      "request": "launch",
-      "program": "${workspaceFolder}/examples/run_carla_rosbag.py",
-      "console": "integratedTerminal",
-      "args": ["${workspaceFolder}/../data/carla_forward_no_sky.bag"],
-      "cwd": "${workspaceFolder}/examples",
-      "subProcess": true
-    },
-    {
       "name": "ClonerSLAM: Fusion Portable",
       "type": "python",
       "request": "launch",
       "program": "${workspaceFolder}/examples/fusion_portable/run_fusion_portable.py",
       "console": "integratedTerminal",
-      "args": ["${workspaceFolder}/../data/fusion_portable/20220216_canteen_day/20220216_canteen_day_ref.bag",
-               "${workspaceFolder}/../data/fusion_portable/calibration/20220209_calib/",
-              "--duration", "5"],
+      "args": ["${workspaceFolder}/cfg/fusion_portable/canteen.yaml"],
       "cwd": "${workspaceFolder}/examples/fusion_portable",
       "subProcess": true
-    },
-    {
-      "name": "Renderer",
-      "type": "python",
-      "request": "launch",
-      "program": "${workspaceFolder}/analysis/renderer.py",
-      "console": "integratedTerminal",
-      "args": ["${workspaceFolder}/outputs/test_active_lidar/all_uniform"],
-      "cwd": "${workspaceFolder}/",
-      "subProcess": true
-    },
-    {
-      "name": "Verify Calib Raw",
-      "type": "python",
-      "request": "launch",
-      "program": "${workspaceFolder}/examples/fusion_portable/verify_calib_raw.py",
-      "console": "integratedTerminal",
-      "args": ["/mnt/ws-frb/projects/cloner_slam/fusion_portable/20220216_canteen_day/000000.pcd",
-               "/mnt/ws-frb/projects/cloner_slam/fusion_portable/20220216_canteen_day/000000.png",
-              "../../../data/fusion_portable/calibration/20220209_calib/"],
-      "cwd": "${workspaceFolder}/examples/fusion_portable",
-      "subProcess": true
-    },
-    {
-      "name": "Test Ray Logic",
-      "type": "python",
-      "request": "launch",
-      "program": "${workspaceFolder}/test/ray_logic_test.py",
-      "console": "integratedTerminal",
-      "args": ["${workspaceFolder}/../data/fusion_portable/20220216_canteen_day/20220216_canteen_day_ref.bag",
-               "${workspaceFolder}/../data/fusion_portable/calibration/20220209_calib/"],
-      "cwd": "${workspaceFolder}/test",
-      "subProcess": true
-    },
-    {
-      "name": "Stereo To RGBD",
-      "type": "python",
-      "request": "launch",
-      "program": "${workspaceFolder}/examples/fusion_portable/stereo_to_rgbd.py",
-      "console": "integratedTerminal",
-      "args": ["${workspaceFolder}/../data/fusion_portable/20220216_canteen_day/20220216_canteen_day_ref.bag",
-               "${workspaceFolder}/../data/fusion_portable/calibration/20220209_calib/",
-              "--gui", "--raft"],
-      "cwd": "${workspaceFolder}/examples/fusion_portable",
-      "subProcess": true
-    },
-    {
-      "name": "Reprojection",
-      "type": "python",
-      "request": "launch",
-      "program": "${workspaceFolder}/examples/fusion_portable/reprojection.py",
-      "console": "integratedTerminal",
-      "args": ["${workspaceFolder}/../data/fusion_portable/20220216_canteen_day/20220216_canteen_day_ref.bag",
-               "${workspaceFolder}/../data/fusion_portable/calibration/20220209_calib/"],
-      "cwd": "${workspaceFolder}/examples/fusion_portable",
-      "subProcess": true
-    },
-    {
-      "name": "Reprojection Simplified",
-      "type": "python",
-      "request": "launch",
-      "program": "${workspaceFolder}/examples/fusion_portable/reprojection_simplified.py",
-      "console": "integratedTerminal",
-      "args": ["${workspaceFolder}/../data/Recalib_LargeCheckerboard.bag",
-               "${workspaceFolder}/../data/fusion_portable/calibration/20220209_calib/"],
-      "cwd": "${workspaceFolder}/examples/fusion_portable",
-      "subProcess": true
-    },
-    {
-      "name": "AutoTune Fusion Portable",
-      "type": "python",
-      "request": "launch",
-      "program": "${workspaceFolder}/examples/fusion_portable/autotune_fusion_portable.py",
-      "console": "integratedTerminal",
-      "args": ["${workspaceFolder}/../data/fusion_portable/20220216_canteen_day/20220216_canteen_day_ref.bag",
-               "${workspaceFolder}/../data/fusion_portable/calibration/20220209_calib/",
-               "--bounds", "${workspaceFolder}/cfg/bounds.yaml",
-               "--gpu_ids", "0 1",
-              "--duration", "10"],
-      "cwd": "${workspaceFolder}/examples/fusion_portable",
-      "subProcess": true
-    },
+    }
   ]
 }

@@ -34,10 +34,12 @@ class Settings(AttrDict):
             return Settings(yaml.load(f, SettingsLoader))
 
     
-    def generate_options(filename: str, overrides: str):
+    def generate_options(filename: str, overrides: str, run_all_combos: bool = False):
         """
         @param filename: Baseline settings
         @param overrides: Path to file specifying which parameters to change, and what possible values.
+
+        When run_all_combos is false, it will run the baselines and change one thing at a time.
 
         Given a settings file and overrides, computes all possible combinations of settings.
 
@@ -76,7 +78,10 @@ class Settings(AttrDict):
         # Recursively parse overrides looking for leaf elements. 
         # build options as (path_to_setting: List[str], options: List[Any])
         def _generate_options_helper(data, stack):
-            if isinstance(data, list):
+            if not isinstance(data, dict):
+                if not isinstance(data, list):
+                    data = [data]
+
                 options.append((tuple(stack), data))
                 return
             
@@ -85,54 +90,56 @@ class Settings(AttrDict):
         
         _generate_options_helper(overrides_data, [])
 
-        # How many choices are there for each override
-        option_counts = [len(o[1]) for o in options]
+        if run_all_combos:
+            # How many choices are there for each override
+            option_counts = [len(o[1]) for o in options]
 
-        # Build combinations of overrides, as indices in the array
-        all_index_options = tuple(np.arange(o) for o in option_counts)
-        all_idx_combos = np.array(np.meshgrid(*all_index_options)).T.reshape(-1,len(all_index_options))
+            # Build combinations of overrides, as indices in the array
+            all_index_options = tuple(np.arange(o) for o in option_counts)
+            all_idx_combos = np.array(np.meshgrid(*all_index_options)).T.reshape(-1,len(all_index_options))
 
-        attr_stacks = [o[0] for o in options]
+            attr_stacks = [o[0] for o in options]
 
-        # Make a copy of the settings for each combo of settings 
-        settings_options = []
-        settings_descriptions = []
-        for idx_combo in all_idx_combos:
-            settings_copy = copy.deepcopy(baseline)
-            settings_description = ""
-            for attr_idx, (option_idx, attr_stack) in enumerate(zip(idx_combo, attr_stacks)):
-                element = settings_copy
-                for attr in attr_stack[:-1]:
-                    element = element[attr]
-                attr_val = options[attr_idx][1][option_idx]
-                element[attr_stack[-1]] = attr_val
+            # Make a copy of the settings for each combo of settings 
+            settings_options = []
+            settings_descriptions = []
+            for idx_combo in all_idx_combos:
+                settings_copy = copy.deepcopy(baseline)
+                settings_description = ""
+                for attr_idx, (option_idx, attr_stack) in enumerate(zip(idx_combo, attr_stacks)):
+                    element = settings_copy
+                    for attr in attr_stack[:-1]:
+                        element = element[attr]
+                    attr_val = options[attr_idx][1][option_idx]
+                    element[attr_stack[-1]] = attr_val
 
-                attr_path = ".".join(attr_stack)
-                settings_description += f"{attr_path}={attr_val}\n"
-            settings_options.append(settings_copy)
-            settings_descriptions.append(settings_description)
+                    attr_path = ".".join(attr_stack)
+                    settings_description += f"{attr_path}={attr_val}\n"
+                settings_options.append(settings_copy)
+                settings_descriptions.append(settings_description)
 
-        return settings_options, settings_descriptions
+            return settings_options, settings_descriptions
 
+        else:
+            settings_options = []
+            settings_descriptions = []
+            for attr_stack, values in options:
+                for value in values:
+                    settings_copy = copy.deepcopy(baseline)
+                    settings_description = ""
 
+                    element = settings_copy
+                    for attr in attr_stack[:-1]:
+                        element = element[attr]
+                    element[attr_stack[-1]] = value
 
-    def generate_bounds(bounds: str):
-    
-        with open(bounds) as overrides_file:
-            overrides_data = yaml.full_load(overrides_file)
+                    attr_path = ".".join(attr_stack)
+                    settings_description = f"{attr_path}={value}"
+                    
+                    settings_options.append(settings_copy)
+                    settings_descriptions.append(settings_description)
 
-        bounds = {}
+            settings_options.append(baseline)
+            settings_descriptions.append("BASELINE")
 
-        # Recursively parse overrides looking for leaf elements. 
-        # build options as (path_to_setting: List[str], options: List[Any])
-        def _generate_options_helper(data, stack):
-            if isinstance(data, list):
-                bounds[tuple(stack)] = tuple(data)
-                return
-            
-            for element in data:
-                _generate_options_helper(data[element], stack + [element])
-        
-        _generate_options_helper(overrides_data, [])
-
-        return bounds
+            return settings_options, settings_descriptions 

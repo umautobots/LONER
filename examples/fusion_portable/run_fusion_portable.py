@@ -85,7 +85,7 @@ def build_image_from_msg(image_msg, timestamp) -> Image:
     return Image(pytorch_img, timestamp.to_sec())
 
 
-def run_trial(config, settings, settings_description = None, idx = None):
+def run_trial(config, settings, settings_description = None, config_idx = None, trial_idx = None):
 
     rosbag_path = Path(os.path.expanduser(config["dataset"]))
     
@@ -132,23 +132,24 @@ def run_trial(config, settings, settings_description = None, idx = None):
     tf_buffer, timestamps = build_buffer_from_df(ground_truth_df)
     lidar_poses = build_poses_from_buffer(tf_buffer, timestamps)
     
-    if idx is None:
+    if config_idx is None and trial_idx is None:
         ablation_name = None
     else:
         ablation_name = config["experiment_name"]
 
     cloner_slam.initialize(camera_to_lidar, lidar_poses, settings.calibration.camera_intrinsic.k,
-                            ray_range, image_size, rosbag_path.as_posix(), ablation_name, idx)
+                            ray_range, image_size, rosbag_path.as_posix(), ablation_name, config_idx, trial_idx)
 
     logdir = cloner_slam._log_directory
 
     if settings_description is not None:
-        with open(f"{logdir}/configuration.txt", 'w+') as desc_file:
-            desc_file.write(settings_description)
-
-    for f in glob.glob("../outputs/frame*"):
-        shutil.rmtree(f)
-
+        if trial_idx == 0:
+            with open(f"{logdir}/../configuration.txt", 'w+') as desc_file:
+                desc_file.write(settings_description)
+        elif trial_idx is None:
+            with open(f"{logdir}/configuration.txt", 'w+') as desc_file:
+                desc_file.write(settings_description)
+    
     bag = rosbag.Bag(rosbag_path.as_posix(), 'r')
 
     cloner_slam.start()
@@ -262,18 +263,19 @@ def _gpu_worker(args, gpu_id: int, job_queue: mp.Queue) -> None:
         if data is None:
             return
 
-        settings, description, trial_idx = data
-        run_trial(args, settings, description, trial_idx)
+        settings, description, config_idx, trial_idx = data
+        run_trial(args, settings, description, config_idx, trial_idx)
 
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser("Run ClonerSLAM on RosBag")
     parser.add_argument("configuration_path")
     parser.add_argument("experiment_name", nargs="?", default=None)
-    parser.add_argument("--ignore_overrides", action="store_true", default=False)
     parser.add_argument("--duration", help="How long to run for (in input data time, sec)", type=float, default=None)
     parser.add_argument("--gpu_ids", nargs="*", required=False, default = [0], help="Which GPUs to use. Defaults to parallel if set")
     parser.add_argument("--num_repeats", type=int, required=False, default=1, help="How many times to run the experiment")
+    parser.add_argument("--run_all_combos", action="store_true",default=False, help="If set, all combinations of overrides will be run. Otherwise, one changed at a time.")
+    parser.add_argument("--overrides", type=str, default=None, help="File specifying parameters to vary for ablation study or testing")
 
     args = parser.parse_args()
 
@@ -283,21 +285,23 @@ if __name__ == "__main__":
     if args.experiment_name is not None:
         config["experiment_name"] = args.experiment_name
 
-    if len(config["overrides"]) > 0 and not args.ignore_overrides:
+    if args.overrides is not None:
         settings_options, settings_descriptions = \
             Settings.generate_options(os.path.expanduser("~/ClonerSLAM/cfg/default_settings.yaml"), 
-                                      os.path.expanduser(args.overrides))
+                                      args.overrides,
+                                      args.run_all_combos)
         
-        settings_options = settings_options * args.num_repeats
-        settings_descriptions = settings_descriptions * args.num_repeats
-            
+        settings_options = settings_options
+        settings_descriptions = settings_descriptions
+    else:
+        settings_descriptions = [None]
+        settings_options = [Settings.load_from_file(os.path.expanduser("~/ClonerSLAM/cfg/default_settings.yaml"))]            
+
+    if args.overrides is not None or args.num_repeats > 1:
         now = datetime.datetime.now()
         now_str = now.strftime("%m%d%y_%H%M%S")
-        args.experiment_name = f"{args.experiment_name}_{now_str}"
-        
-    else:
-        settings_descriptions = [None] * args.num_repeats
-        settings_options = [Settings.load_from_file(os.path.expanduser("~/ClonerSLAM/cfg/default_settings.yaml"))] * args.num_repeats
+        config["experiment_name"] += f"_{now_str}"
+
 
     global IM_SCALE_FACTOR
     IM_SCALE_FACTOR = settings_options[0].system.image_scale_factor
@@ -309,7 +313,11 @@ if __name__ == "__main__":
 
         job_queue = mp.Queue()
         for element in job_queue_data:
-            job_queue.put(element)
+            if args.num_repeats == 1:
+                job_queue.put(element + (None,))
+            else:
+                for trial_idx in range(args.num_repeats):
+                    job_queue.put(element + (trial_idx,))
         
         for _ in args.gpu_ids:
             job_queue.put(None)
@@ -327,7 +335,10 @@ if __name__ == "__main__":
         
                 
     else:
-        for idx, (settings, description) in enumerate(zip(settings_options, settings_descriptions)):
+        for config_idx, (settings, description) in enumerate(zip(settings_options, settings_descriptions)):
             if len(settings_options) == 1:
-                idx = None
-            run_trial(config, settings, description, idx)
+                config_idx = None
+            for trial_idx in range(args.num_repeats):
+                if args.num_repeats == 1:
+                    trial_idx = None
+                run_trial(config, settings, description, config_idx, trial_idx)

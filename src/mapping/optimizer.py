@@ -67,10 +67,7 @@ class Optimizer:
         
         self._use_gt_poses = use_gt_poses
 
-        opt_settings = settings.default_optimizer_settings
-        self._optimization_settings = OptimizationSettings(
-            opt_settings.stage, opt_settings.num_iterations, opt_settings.fix_poses,
-            opt_settings.fix_sigma_mlp, opt_settings.fix_rgb_mlp)
+        self._optimization_settings = OptimizationSettings()
 
         # We pre-create random numbers to lookup at runtime to save runtime.
         # This kills a lot of memory, but saves a ton of runtime
@@ -185,7 +182,7 @@ class Optimizer:
             losses_log.append([])
             depth_eps_log.append([])
 
-            self._optimization_settings.freeze_poses = iteration_config["fix_poses"]
+            self._optimization_settings.freeze_poses = iteration_config["fix_poses"] or self._settings.fix_poses
             
             if "latest_kf_only" in iteration_config:
                 self._optimization_settings.latest_kf_only = iteration_config["latest_kf_only"]

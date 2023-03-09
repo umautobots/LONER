@@ -29,37 +29,12 @@ debug:
     log_losses: False
     profile: False
 
-system:
-  single_threaded: False
-  log_dir_prefix: "~/ClonerSLAM/outputs"
-  image_scale_factor: 0.5 # Setting is put here to emphasize that it needs to influence calibration loading
-
 ros_names:
   camera: "stereo/frame_left"
   lidar: "os_cloud_node/points"
   camera_suffix: "image_raw"
   topic_prefix: "" 
 
-tracker:
-  frame_synthesis:
-    strategy: NULL
-    sky_removal: NULL
-    frame_decimation_rate_hz: 10
-    split_lidar_scans: False
-    frame_match_tolerance: 0.01
-    lidar_point_step: 10 # Only keep 1 out of this many lidar points
-  icp:
-    threshold: 0.25
-    max_iterations: 20
-    relative_fitness: 1.e-16
-    relative_rmse: 1.e-16
-    downsample:
-      type: UNIFORM
-      target_uniform_point_count: 10000
-      voxel_downsample_size: 0.1
-  motion_compensation:
-    enabled: False
-    use_gpu: True
 mapper:
   device: 0 # don't change this, use CUDA_VISIBLE_DEVICES
   data_prep_on_cpu: &data_prep_on_cpu True
@@ -68,22 +43,17 @@ mapper:
     keyframe_selection:
       strategy: TEMPORAL
       temporal:
-        time_diff_seconds: 2
+        time_diff_seconds: &keyframe_interval 3
     window_selection:
       strategy: HYBRID
       hybrid_settings:
         num_recent_frames: 5
       window_size: 10
   optimizer:
+    fix_poses: False # Overrides all other related settings and disables poses
     data_prep_on_cpu: *data_prep_on_cpu
     k_test: 0
     enabled: True
-    default_optimizer_settings:
-      stage: 1
-      num_iterations: 5
-      fix_poses: False
-      fix_sigma_mlp: False
-      fix_rgb_mlp: False
     detach_rgb_from_poses: True
     skip_pose_refinement: True # If set, skips the tracking refinement part of the optimization
     num_samples:
@@ -117,3 +87,40 @@ mapper:
 
     model_config: !include model_config/default_model_config.yaml
   
+system:
+  single_threaded: False
+  log_dir_prefix: "~/ClonerSLAM/outputs"
+  image_scale_factor: 0.5 # Setting is put here to emphasize that it needs to influence calibration loading
+
+  synchronization: &synchronization
+    enabled: True
+    max_time_delta: *keyframe_interval
+tracker:
+  synchronization: *synchronization
+  frame_synthesis:
+    strategy: NULL
+    sky_removal: NULL
+    frame_decimation_rate_hz: 10
+    split_lidar_scans: False
+    frame_match_tolerance: 0.01
+    lidar_point_step: 10 # Only keep 1 out of this many lidar points
+  icp:
+    schedule:
+      - 
+        threshold: 1.5
+        max_iterations: 5
+        relative_fitness: 1.e-8
+        relative_rmse: 1.e-8
+      - 
+        threshold: 0.125
+        max_iterations: 7
+        relative_fitness: 1.e-8
+        relative_rmse: 1.e-8
+    downsample:
+      type: UNIFORM
+      target_uniform_point_count: 7000
+      voxel_downsample_size: 0.1
+  motion_compensation:
+    enabled: True
+    use_gpu: True
+

@@ -1,13 +1,11 @@
-import cProfile
 import copy
 import os
-from typing import Union
+import time
 
 import numpy as np
 import open3d as o3d
 import torch
 import torch.multiprocessing as mp
-from scipy.spatial.transform import Rotation as R
 
 from common.frame import Frame
 from common.pose import Pose
@@ -20,9 +18,7 @@ from tracking.frame_synthesis import FrameSynthesis
 def transform_cloud(source, transformation):
 
     source_temp = o3d.cuda.pybind.geometry.PointCloud()
-
     source_temp.points = copy.deepcopy(source.points)
-
     source_temp.paint_uniform_color([1, 0.706, 0])
     source_temp.transform(transformation)
 
@@ -70,8 +66,20 @@ class Tracker:
         self._reference_time = None
 
         self._frame_count = 0
-    
+        self._last_mapped_frame_id = None
+
     def update(self):
+        
+        if self._settings.synchronization.enabled:
+        
+            max_frames_ahead = self._settings.frame_synthesis.frame_decimation_rate_hz * \
+                                self._settings.synchronization.max_time_delta                                
+            
+            while self._frame_count >= (self._last_mapped_frame_id.value + 2) * max_frames_ahead:
+                time.sleep(0.1)
+                print("Can't track yet!", self._frame_count, self._last_mapped_frame_id.value, max_frames_ahead)
+    
+
         if self._processed_stop_signal.value:
             print("Not updating tracker: Tracker already done.")
 
@@ -97,6 +105,7 @@ class Tracker:
 
         while self._frame_synthesizer.has_frame():
             frame = self._frame_synthesizer.pop_frame()
+            frame._id = self._frame_count
             tracked = self.track_frame(frame)
 
             if not tracked:
@@ -111,9 +120,11 @@ class Tracker:
                     f"{logdir}/cloud_{self._frame_count}.pcd", pcd)
 
             self._frame_signal.emit(frame)
+            self._frame_count += 1
 
     ## Run spins and processes incoming data while putting resulting frames into the queue
-    def run(self) -> None:
+    def run(self, last_mapped_id) -> None:
+        self._last_mapped_frame_id = last_mapped_id
         while not self._processed_stop_signal.value:
             self.update()
 
@@ -141,8 +152,7 @@ class Tracker:
         elif downsample_type == "UNIFORM":
             target_points = self._settings.icp.downsample.target_uniform_point_count
 
-            frame_point_cloud = frame.build_point_cloud(
-                0.09, target_points=target_points)
+            frame_point_cloud = frame.build_point_cloud(0.09, target_points=target_points)
         else:
             raise Exception(f"Unrecognized downsample type {downsample_type}")
 
@@ -150,6 +160,7 @@ class Tracker:
         if self._reference_point_cloud is None:
             frame._lidar_pose = self._reference_pose.clone(fixed=True, requires_tensor=True)
             self._reference_point_cloud = frame_point_cloud
+            self._reference_point_cloud.estimate_normals()
 
             self._reference_time = frame.image.timestamp
 
@@ -162,32 +173,27 @@ class Tracker:
         # Future Iterations: Actually do ICP
         initial_guess = np.eye(4)
 
-        # TODO: See the estimate normals section of http://www.open3d.org/docs/release/python_api/open3d.t.geometry.PointCloud.html#
-        # They recommend doing it a different way by setting a radius, but I don't know what radius to use
-        self._reference_point_cloud.estimate_normals()
         frame_point_cloud.estimate_normals()
 
-        convergence_criteria = (
-            o3d.cuda.pybind.pipelines.registration.ICPConvergenceCriteria(
-                self._settings.icp.relative_fitness,
-                self._settings.icp.relative_rmse,
-                self._settings.icp.max_iterations,
+        for icp_settings in self._settings.icp.schedule:
+            convergence_criteria = (
+                o3d.cuda.pybind.pipelines.registration.ICPConvergenceCriteria(
+                    icp_settings.relative_fitness,
+                    icp_settings.relative_rmse,
+                    icp_settings.max_iterations,
+                )
             )
-        )
+            registration = o3d.pipelines.registration.registration_icp(
+                frame_point_cloud,
+                self._reference_point_cloud,
+                icp_settings.threshold,
+                initial_guess,
+                o3d.pipelines.registration.TransformationEstimationPointToPlane(),
+                criteria=convergence_criteria,
+            )
+            initial_guess = registration.transformation.copy()
 
-        registration = o3d.pipelines.registration.registration_icp(
-            frame_point_cloud,
-            self._reference_point_cloud,
-            self._settings.icp.threshold,
-            initial_guess,
-            o3d.pipelines.registration.TransformationEstimationPointToPlane(),
-            criteria=convergence_criteria,
-        )
-
-        registration_result = (
-            torch.from_numpy(registration.transformation.copy()
-                             ).float().to(device)
-        )
+        registration_result = torch.from_numpy(initial_guess).float().to(device)
 
         reference_pose_mat = self._reference_pose.get_transformation_matrix().detach()
 
@@ -200,8 +206,9 @@ class Tracker:
             mocomp_poses = (self._reference_pose, frame._lidar_pose)
             mocomp_times = (self._reference_time, new_reference_time)
             use_gpu = self._settings.motion_compensation.use_gpu
-            frame.lidar_points.motion_compensate(mocomp_poses, mocomp_times, frame._lidar_pose, use_gpu)
 
+            frame.lidar_points.motion_compensate(mocomp_poses, mocomp_times, frame._lidar_pose, use_gpu)
+                
         if self._settings.debug.write_icp_point_clouds:
             logdir = f"{self._settings.log_directory}/clouds/frame_{self._frame_count}"
             os.makedirs(logdir, exist_ok=True)
@@ -217,6 +224,5 @@ class Tracker:
         self._reference_time = new_reference_time
         self._reference_pose = Pose(tracked_position, fixed=True)
         self._reference_point_cloud = frame_point_cloud
-
-        self._frame_count += 1
+        
         return True

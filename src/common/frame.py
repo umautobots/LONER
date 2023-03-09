@@ -34,6 +34,8 @@ class Frame:
         self._lidar_pose: Pose = None
         self._gt_lidar_pose: Pose = None
 
+        self._id = -1
+
     ## Returns a deep-copy of the current frame
     def clone(self) -> "Frame":
         
@@ -107,7 +109,6 @@ class Frame:
                 final_index-start_index, target_points, rounding_mode='floor')
 
         if step_size == 0:
-            breakpoint()
             step_size = 1
             
         end_points_local = self.lidar_points.ray_directions[..., start_index:final_index:step_size] * \
