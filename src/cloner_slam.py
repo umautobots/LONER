@@ -108,7 +108,6 @@ class ClonerSLAM:
             raise RuntimeError(
                 "Can't Start: System Uninitialized. You must call initialize first.")
 
-        # TODO: Add back support for ROS
         self._logger = DefaultLogger(self._frame_signal,
                                      self._keyframe_update_signal,
                                      self._world_cube,
@@ -240,12 +239,3 @@ class ClonerSLAM:
 
         if self._single_threaded:
             self._system_update()
-
-    # Note: This is only needed when using mp.Queue instead of mp.Manager().Queue() in Slots. 
-    #       Left here mainly in case that gets changed for some reason in the future and someone
-    #       is confused why this exists.
-    def cleanup(self):
-        print("Cleaning Up Cloner SLAM")
-        self._frame_signal.flush()
-        self._rgb_signal.flush()
-        self._lidar_signal.flush()

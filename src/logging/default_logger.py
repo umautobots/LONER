@@ -9,7 +9,7 @@ from common.pose_utils import WorldCube, dump_trajectory_to_tum
 from common.pose import Pose
 from common.settings import Settings
 from common.signals import Slot, Signal, StopSignal
-from common.frame import Frame, SimpleFrame
+from common.frame import Frame
 from common.pose_utils import tensor_to_transform
 
 
@@ -53,33 +53,20 @@ class DefaultLogger:
                 self._frame_slot.get_value()
 
         while self._frame_slot.has_value():
-            frame: Union[Frame, SimpleFrame] = self._frame_slot.get_value()
+            frame: Frame = self._frame_slot.get_value()
             if isinstance(frame, StopSignal):
                 self._frame_done = True
                 break
-            elif isinstance(frame, SimpleFrame):
-                use_simple_frame = True
-            else:
-                use_simple_frame = False
 
             frame = frame.clone().to('cpu')
 
             if self._gt_pose_offset is None:
-                if use_simple_frame:
-                    start_pose = frame._gt_lidar_pose
-                else:
-                    start_pose = frame._gt_lidar_end_pose
-                    
+                start_pose = frame._gt_lidar_pose
                 self._gt_pose_offset = start_pose.inv()
 
-            if use_simple_frame:
-                tracked_pose = frame.get_lidar_pose().get_transformation_matrix().detach().cpu()
-                gt_pose_raw = frame._gt_lidar_pose
-                frame_time = frame.get_time()
-            else:
-                tracked_pose = frame.get_start_lidar_pose().get_transformation_matrix().detach().cpu()
-                gt_pose_raw = frame._gt_lidar_start_pose
-                frame_time = frame.get_start_time()
+            tracked_pose = frame.get_lidar_pose().get_transformation_matrix().detach().cpu()
+            gt_pose_raw = frame._gt_lidar_pose
+            frame_time = frame.get_time()
 
             gt_pose = (self._gt_pose_offset * gt_pose_raw).get_transformation_matrix().detach()
 
@@ -111,7 +98,7 @@ class DefaultLogger:
             most_recent_kf = keyframe_state[-1]
 
             kf_time = most_recent_kf["timestamp"]
-            kf_pose_tensor = most_recent_kf["lidar_pose"] if "lidar_pose" in most_recent_kf else most_recent_kf["start_lidar_pose"] # depends on simple frame
+            kf_pose_tensor = most_recent_kf["lidar_pose"]
 
             kf_idx = torch.argmin(torch.abs(self._timestamps - kf_time)).item()
 
@@ -127,8 +114,7 @@ class DefaultLogger:
 
         keyframe_timestamps = torch.tensor([kf["timestamp"] for kf in self._last_recv_keyframe_state])
 
-        pose_key = "lidar_pose" if "lidar_pose" in self._last_recv_keyframe_state[0] else "start_lidar_pose"
-        keyframe_trajectory = torch.stack([Pose(pose_tensor=kf[pose_key]).get_transformation_matrix() for kf in self._last_recv_keyframe_state])
+        keyframe_trajectory = torch.stack([Pose(pose_tensor=kf["lidar_pose"]).get_transformation_matrix() for kf in self._last_recv_keyframe_state])
 
         # Which kf each pose is closest (temporally) to
         pose_kf_indices = torch.bucketize(self._timestamps, keyframe_timestamps, right=False).long() - 1

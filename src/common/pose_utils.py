@@ -166,21 +166,9 @@ def compute_world_cube(camera_to_lidar, intrinsic_mats, image_sizes, lidar_poses
     lidar_poses = lidar_poses @ lidar_poses[0,:,:].inverse()
     camera_poses = lidar_poses @ camera_to_lidar.inverse()
 
-    # T_lidar_opengl = torch.Tensor([[0, 0, -1, 0],
-    #                                [-1,  0, 0, 0],
-    #                                [0, 1, 0, 0],
-    #                                [0, 0, 0, 1]])
-
-    # T_camera_opengl = torch.Tensor([[1, 0, 0, 0],
-    #                                 [0, -1, 0, 0],
-    #                                 [0, 0, -1, 0],
-    #                                 [0, 0, 0, 1]])
-
-
-    T_lidar_opengl = T_camera_opengl = torch.eye(4) 
     
-    camera_poses = camera_poses @ T_camera_opengl
-    lidar_poses = lidar_poses @ T_lidar_opengl
+    camera_poses = camera_poses
+    lidar_poses = lidar_poses
 
     if len(intrinsic_mats.shape) == 2:
         intrinsic_mats = torch.broadcast_to(
@@ -213,8 +201,6 @@ def compute_world_cube(camera_to_lidar, intrinsic_mats, image_sizes, lidar_poses
 
     min_coord = all_points.min(dim=0)[0]
     max_coord = all_points.max(dim=0)[0]
-
-    # TODO: Change to scaling world cube without shifting origin
 
     origin = min_coord + (max_coord - min_coord) / 2
     # origin = torch.zeros(3)

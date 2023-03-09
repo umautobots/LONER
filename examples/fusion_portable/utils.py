@@ -4,8 +4,10 @@ import tf2_py
 import numpy as np
 from scipy.spatial.transform import Rotation
 from nav_msgs.msg import Odometry
+import torch
+import pytorch3d.transforms
 
-from geometry_msgs.msg import TransformStamped, Pose
+import geometry_msgs.msg
 
 
 def build_buffer_from_df(df: pd.DataFrame):
@@ -15,7 +17,7 @@ def build_buffer_from_df(df: pd.DataFrame):
         ts = rospy.Time.from_sec(row["timestamp"])
         timestamps.append(ts)
 
-        new_transform = TransformStamped()
+        new_transform = geometry_msgs.msg.TransformStamped()
         new_transform.header.frame_id = "map"
         new_transform.header.stamp = ts
         new_transform.child_frame_id = "lidar"
@@ -43,8 +45,7 @@ def build_poses_from_buffer(tf_buffer, timestamps):
             print("Skipping invalid tf")
             lidar_poses.append(None)
 
-    return lidar_poses
-
+    return torch.stack(lidar_poses).float()
 
 def msg_to_transformation_mat(tf_msg):
     trans = tf_msg.transform.translation
@@ -59,7 +60,7 @@ def msg_to_transformation_mat(tf_msg):
     return T
 
 def transformation_mat_to_pose_msg(tf):
-    pose_msg = Pose()
+    pose_msg = geometry_msgs.msg.Pose()
 
     quat = Rotation.from_matrix(tf[:3,:3]).as_quat()
     trans = tf[:3,3]
@@ -91,3 +92,15 @@ def transformation_mat_to_odom_msg(tf):
     odom_msg.pose.pose.orientation.w = quat[3]
 
     return odom_msg
+
+
+def msg_to_transformation_mat(tf_msg):
+    trans = tf_msg.transform.translation
+    rot = tf_msg.transform.rotation
+    xyz = torch.Tensor([trans.x, trans.y, trans.z]).reshape(3, 1)
+    quat = torch.Tensor([rot.w, rot.x, rot.y, rot.z])
+    rotmat = pytorch3d.transforms.quaternion_to_matrix(quat)
+    
+    T = torch.hstack((rotmat, xyz))
+    T = torch.vstack((T, torch.Tensor([0, 0, 0, 1])))
+    return T.float()

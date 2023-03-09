@@ -593,13 +593,6 @@ elif args.build_rosbag:
             output_bag.write("/odom_camera", odom_msg_cam, t=left_ts)
         except Exception as e:
             print("Ignoring: ", e)
-        # disp_copy = disparity.copy()
-        # yflows = predicted_flows[0,1,:].detach().cpu().numpy()
-
-        # disparity_viz = cv2.normalize(disparity, disp_copy, alpha=255, beta=0, norm_type=cv2.NORM_MINMAX)
-        # disparity_viz = cv2.applyColorMap(disparity_viz.astype(np.uint8), cv2.COLORMAP_TURBO)
-        # yflows_viz = cv2.normalize(yflows, yflows, alpha=255, beta=0, norm_type=cv2.NORM_MINMAX)
-        # yflows_viz = cv2.applyColorMap(yflows_viz.astype(np.uint8), cv2.COLORMAP_TURBO)
 
         ptcloud = cv2.reprojectImageTo3D(disparity, calibration.stereo_disp_to_depth_matrix)
         ptcloud_data = rf.unstructured_to_structured(ptcloud.reshape(-1, 3), \

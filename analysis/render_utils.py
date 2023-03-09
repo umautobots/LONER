@@ -9,16 +9,6 @@ from matplotlib import cm
 from tqdm import tqdm
 
 
-def opengl_pose_to_opencv_np(pose):
-    # input pose (3, 4)
-    pose = pose.cpu().numpy()
-    pose_cv = np.concatenate([pose, np.array([[0., 0., 0., 1.]])], axis=0)
-    openGL_to_openCV = np.identity(4)
-    openGL_to_openCV[1, 1] = -1
-    openGL_to_openCV[2, 2] = -1
-    pose_cv = pose_cv @ openGL_to_openCV
-    return pose_cv
-
 
 def vis_flow(flow, scale=0):
     fx, fy = cv2.split(flow)

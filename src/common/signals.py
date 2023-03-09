@@ -44,11 +44,6 @@ class Slot:
             self._queue = SimpleQueue()
         else:
             # The use of Manager().Queue() instead of mp.Queue() here is quite important.
-            # It ensures inserts from multiple processes maintain the correct order.
-            # I don't understand the details.
-            # If this changes in the future, you'll also likely need to add back in
-            # a call to ClonerSlam.cleanup() at the end to prevent deadlock waiting for
-            # the queue to empty.
             self._queue = mp.Manager().Queue()
 
 

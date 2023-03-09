@@ -9,7 +9,7 @@ import torch
 import torch.multiprocessing as mp
 from scipy.spatial.transform import Rotation as R
 
-from common.frame import Frame, SimpleFrame
+from common.frame import Frame
 from common.pose import Pose
 from common.settings import Settings
 from common.signals import Signal, StopSignal
@@ -126,11 +126,9 @@ class Tracker:
 
     ## track_frame inputs a @p frame and estimates its pose, which is stored in the Frame.
     # @returns True if tracking was successful.
-    def track_frame(self, frame: Union[Frame, SimpleFrame]) -> bool:
+    def track_frame(self, frame: Frame) -> bool:
 
         downsample_type = self._settings.icp.downsample.type
-
-        use_simple_frame = isinstance(frame, SimpleFrame)
 
         if downsample_type is None:
             frame_point_cloud = frame.build_point_cloud(0.09)
@@ -150,18 +148,11 @@ class Tracker:
 
         # First Iteration: No reference pose, we fix this as the origin of the coordinate system.
         if self._reference_point_cloud is None:
-            if use_simple_frame:
-                frame._lidar_pose = self._reference_pose.clone(fixed=True, requires_tensor=True)
-            else:
-                frame._lidar_start_pose = self._reference_pose.clone(fixed=True, requires_tensor=True)
-                frame._lidar_end_pose = self._reference_pose.clone(fixed=True, requires_tensor=True)
+            frame._lidar_pose = self._reference_pose.clone(fixed=True, requires_tensor=True)
             self._reference_point_cloud = frame_point_cloud
 
-            if use_simple_frame:
-                self._reference_time = frame.image.timestamp
-            else:
-                self._reference_time = (
-                    frame.start_image.timestamp + frame.end_image.timestamp) / 2
+            self._reference_time = frame.image.timestamp
+
             self._velocity = torch.Tensor([0, 0, 0])
             self._angular_velocity = torch.Tensor([0, 0, 0])
             return True
@@ -202,53 +193,14 @@ class Tracker:
 
         tracked_position = reference_pose_mat @ registration_result
 
-        if use_simple_frame:
-            new_reference_time = frame.image.timestamp
-            frame._lidar_pose = Pose(tracked_position.float().to(device), requires_tensor=True)
-            
-            print(self._frame_count, registration_result[:3,3].norm())
-
-            if self._settings.motion_compensation.enabled:
-                mocomp_poses = (self._reference_pose, frame._lidar_pose)
-                mocomp_times = (self._reference_time, new_reference_time)
-                use_gpu = self._settings.motion_compensation.use_gpu
-                frame.lidar_points.motion_compensate(mocomp_poses, mocomp_times, frame._lidar_pose, use_gpu)
-
-        else:
-            # Do interpolation/extrapolation to get the start/end lidar poses
-            # TODO: Is there a better way to do this extrapolation?
-            rot = R.from_matrix(registration_result[:3, :3])
-            rot_vec = rot.as_rotvec()
-            trans_vec = registration_result[:3, 3]
-
-            new_reference_time = (
-                frame.start_image.timestamp + frame.end_image.timestamp) / 2
-
-            start_time_interp_factor = (
-                frame.start_image.timestamp - self._reference_time) \
-                / (new_reference_time - self._reference_time)
-            rot_vec_start = rot_vec * start_time_interp_factor
-            rot_start = torch.from_numpy(R.from_rotvec(rot_vec_start).as_matrix())
-            trans_vec_start = start_time_interp_factor * trans_vec
-            start_transformation_mat = torch.hstack(
-                (rot_start, trans_vec_start.reshape(3, 1)))
-            start_transformation_mat = torch.vstack(
-                (start_transformation_mat, torch.Tensor([0, 0, 0, 1]))).float()
-            frame._lidar_start_pose = Pose(
-                (reference_pose_mat @ start_transformation_mat).float().to(device), requires_tensor=True)
-
-            end_time_interp_factor = (frame.end_image.timestamp - self._reference_time) \
-                / (new_reference_time - self._reference_time)
-
-            rot_vec_end = rot_vec * end_time_interp_factor
-            rot_end = torch.from_numpy(R.from_rotvec(rot_vec_end).as_matrix())
-            trans_vec_end = end_time_interp_factor * trans_vec
-            end_transformation_mat = torch.hstack(
-                (rot_end, trans_vec_end.reshape(3, 1)))
-            end_transformation_mat = torch.vstack(
-                (end_transformation_mat, torch.Tensor([0, 0, 0, 1]))).float()
-            frame._lidar_end_pose = Pose(
-                (reference_pose_mat @ end_transformation_mat).float().to(device), requires_tensor=True)
+        new_reference_time = frame.image.timestamp
+        frame._lidar_pose = Pose(tracked_position.float().to(device), requires_tensor=True)
+        
+        if self._settings.motion_compensation.enabled:
+            mocomp_poses = (self._reference_pose, frame._lidar_pose)
+            mocomp_times = (self._reference_time, new_reference_time)
+            use_gpu = self._settings.motion_compensation.use_gpu
+            frame.lidar_points.motion_compensate(mocomp_poses, mocomp_times, frame._lidar_pose, use_gpu)
 
         if self._settings.debug.write_icp_point_clouds:
             logdir = f"{self._settings.log_directory}/clouds/frame_{self._frame_count}"

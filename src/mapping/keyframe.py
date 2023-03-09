@@ -8,7 +8,7 @@ from pathlib import Path
 import cv2
 import os
 
-from common.frame import Frame, SimpleFrame
+from common.frame import Frame
 from common.pose import Pose
 from common.pose_utils import WorldCube
 from common.ray_utils import CameraRayDirections, get_far_val
@@ -21,34 +21,14 @@ class KeyFrame:
     """
 
     # Constructor: Create a KeyFrame from input Frame @p frame.
-    def __init__(self, frame: Union[Frame, SimpleFrame], device: int = None) -> None:
+    def __init__(self, frame: Frame, device: int = None) -> None:
 
-        if isinstance(frame, Frame):
-            self._use_simple_frame = False
-        elif isinstance(frame, SimpleFrame):
-            self._use_simple_frame = True
-        else:
-            raise ValueError("Unsupported frame type")
 
         self._frame = frame.to(device)
 
-        # How many RGB samples to sample uniformly
-        self.num_uniform_rgb_samples = None
-
-        # How many to use the strategy to choose
-        self.num_strategy_rgb_samples = None
-
-        # Same for lidar
-        self.num_uniform_lidar_samples = None
-        self.num_strategy_lidar_samples = None
-
         self._device = device
 
-        if self._use_simple_frame:
-            self._tracked_lidar_pose: Pose = frame.get_lidar_pose().clone()
-        else:
-            self._tracked_start_lidar_pose = frame.get_start_lidar_pose().clone()
-            self._tracked_end_lidar_pose = frame.get_end_lidar_pose().clone()
+        self._tracked_lidar_pose: Pose = frame.get_lidar_pose().clone()
 
         self.is_anchored = False
 
@@ -72,119 +52,18 @@ class KeyFrame:
     def __repr__(self) -> str:
         return str(self)
 
-    def get_start_camera_pose(self) -> Pose:
-        if self._use_simple_frame:
-            return self._frame.get_camera_pose()
-        return self._frame.get_start_camera_pose()
-
-    def get_end_camera_pose(self) -> Pose:
-        if self._use_simple_frame:
-            return self._frame.get_camera_pose()
-        return self._frame.get_end_camera_pose()
-
-    def get_start_lidar_pose(self) -> Pose:
-        if self._use_simple_frame:
-            return self._frame.get_lidar_pose()
-        return self._frame.get_start_lidar_pose()
-
-    def get_end_lidar_pose(self) -> Pose:
-        if self._use_simple_frame:
-            return self._frame.get_lidar_pose()
-        return self._frame.get_end_lidar_pose()
-
     def get_camera_pose(self) -> Pose:
-        assert self._use_simple_frame, "If not using Simple frame, you must call start or end version of this function"
         return self._frame.get_camera_pose()
 
     def get_lidar_pose(self) -> Pose:
-        assert self._use_simple_frame, "If not using Simple frame, you must call start or end version of this function"
         return self._frame.get_lidar_pose()
 
     def get_lidar_scan(self) -> LidarScan:
         return self._frame.lidar_points
 
-    def get_start_time(self) -> float:
-        if self._use_simple_frame:
-            return self._frame.get_time()
-        return self._frame.start_image.timestamp
-
-    def get_end_time(self) -> float:
-        if self._use_simple_frame:
-            return self._frame.get_time()
-        return self._frame.end_image.timestamp
-
     def get_time(self) -> float:
-        assert self._use_simple_frame, "If not using Simple frame, you must call start or end version of this function"
         return self._frame.get_time()
 
-    ## At the given @p timestamps, interpolate/extrapolate and return the lidar poses.
-    # @returns For N timestamps, returns a Nx4x4 tensor with all the interpolated/extrapolated transforms
-    def interpolate_lidar_poses(self, timestamps: torch.Tensor, use_groundtruth: bool = False) -> torch.Tensor:
-
-        assert not self._use_simple_frame, "Can't interpolate poses for simple frame."
-
-        assert timestamps.dim() == 1
-
-        N = timestamps.shape[0]
-
-        start_time = self.get_start_time()
-        end_time = self.get_end_time()
-
-        if end_time - start_time == 0:
-            interp_factors = torch.zeros_like(timestamps)
-        else:
-            interp_factors = (timestamps - start_time)/(end_time - start_time)
-
-        start_pose = self._frame._gt_lidar_start_pose if use_groundtruth else self.get_start_lidar_pose()
-        end_pose = self._frame._gt_lidar_end_pose if use_groundtruth else self.get_end_lidar_pose()
-
-        start_trans = start_pose.get_translation()
-        end_trans = end_pose.get_translation()
-        delta_translation = end_trans - start_trans
-
-        # the interp_factors[:, None] adds a singleton dimension to support element-wise mult
-        output_translations = delta_translation * \
-            interp_factors[:, None] + start_trans
-
-        # Reshape it from Nx3 to Nx3x1
-        output_translations = output_translations.unsqueeze(2)
-
-        # Interpolate/extrapolate rotations via axis angle
-        start_rot = start_pose.get_transformation_matrix()[:3, :3]
-        end_rot = end_pose.get_transformation_matrix()[:3, :3]
-
-        relative_rotation = torch.linalg.inv(start_rot) @ end_rot
-
-        rotation_axis_angle = transf.matrix_to_axis_angle(
-            relative_rotation)
-
-        rotation_angle = torch.linalg.norm(rotation_axis_angle)
-
-        if rotation_angle < NUMERIC_TOLERANCE:
-            rotation_matrices = torch.eye(3).to(
-                timestamps.device).repeat(N, 1, 1)
-
-        else:
-            rotation_axis = rotation_axis_angle / rotation_angle
-
-            rotation_amounts = rotation_angle * interp_factors[:, None]
-            output_rotation_axis_angles = rotation_amounts * rotation_axis
-
-            rotation_matrices = transf.axis_angle_to_matrix(
-                output_rotation_axis_angles)
-
-        rotation_matrices = start_rot @ rotation_matrices
-        
-        output_transformations = torch.cat(
-            [rotation_matrices, output_translations], dim=-1)
-
-        # make it homogenous
-        h = torch.Tensor([0, 0, 0, 1]).to(
-            output_transformations.device).repeat(N, 1, 1)
-        output_transformations_homo = torch.cat(
-            [output_transformations, h], dim=1)
-
-        return output_transformations_homo
 
     ## For all the points in the frame, create lidar rays in the format Cloner wants
     def build_lidar_rays(self,
@@ -201,21 +80,16 @@ class KeyFrame:
         timestamps = lidar_scan.timestamps[lidar_indices]
 
         # N x 4 x 4
-        if self._use_simple_frame:
-            if use_gt_poses:
-                lidar_poses = self._frame._gt_lidar_pose.get_transformation_matrix()
-            else:
-                lidar_poses = self._frame.get_lidar_pose().get_transformation_matrix()
+        if use_gt_poses:
+            lidar_poses = self._frame._gt_lidar_pose.get_transformation_matrix()
         else:
-            lidar_poses = self.interpolate_lidar_poses(timestamps, use_gt_poses)
+            lidar_poses = self._frame.get_lidar_pose().get_transformation_matrix()
 
-        # Now that we're in OpenGL frame, we can apply world cube transformation
         ray_origins: torch.Tensor = lidar_poses[..., :3, 3]
         ray_origins = ray_origins + world_cube.shift
         ray_origins = ray_origins / world_cube.scale_factor
 
-        if self._use_simple_frame:
-            ray_origins = ray_origins.tile(len(timestamps), 1)
+        ray_origins = ray_origins.tile(len(timestamps), 1)
 
         # N x 3 x 3 (N homogenous transformation matrices)
         lidar_rotations = lidar_poses[..., :3, :3]
@@ -261,125 +135,37 @@ class KeyFrame:
     ## Given the images, create camera rays in Cloner's format
     def build_camera_rays(self,
                           first_camera_indices: torch.Tensor,
-                          second_camera_indices: torch.Tensor,
                           ray_range: torch.Tensor,
                           cam_ray_directions: CameraRayDirections,
                           world_cube: WorldCube,
                           use_gt_poses: bool = False,
                           detach_rgb_from_poses: bool = False) -> torch.Tensor:
 
-        if self._use_simple_frame:
-            assert second_camera_indices is None
 
-            if use_gt_poses:
-                cam_pose = self._frame._gt_lidar_pose * self._frame._lidar_to_camera
-            else:
-                cam_pose = self._frame.get_lidar_pose() * self._frame._lidar_to_camera
-            
-            if detach_rgb_from_poses:
-                cam_pose = cam_pose.detach()
-            
-            rays, intensities = cam_ray_directions.build_rays(first_camera_indices, 
-                cam_pose, self._frame.image, world_cube, ray_range)
-            return rays, intensities
-
+        if use_gt_poses:
+            cam_pose = self._frame._gt_lidar_pose * self._frame._lidar_to_camera
         else:
-            if use_gt_poses:
-                start_pose = self._frame._gt_lidar_start_pose * self._frame._lidar_to_camera
-                end_pose = self._frame._gt_lidar_end_pose * self._frame._lidar_to_camera
-            else:
-                start_pose = self.get_start_camera_pose()
-                end_pose = self.get_end_camera_pose()
-
-            if detach_rgb_from_poses:
-                start_pose = start_pose.detach()
-                end_pose = end_pose.detach()
-
-            if first_camera_indices is not None:
-                first_rays, first_intensities = cam_ray_directions.build_rays(first_camera_indices,
-                                        start_pose,
-                                        self._frame.start_image, 
-                                        world_cube,
-                                        ray_range)
-                if second_camera_indices is None:
-                    return first_rays, first_intensities
-
-            if second_camera_indices is not None:
-                second_rays, second_intensities = cam_ray_directions.build_rays(second_camera_indices,
-                                        end_pose,
-                                        self._frame.end_image,
-                                        world_cube,
-                                        ray_range)
-                if first_camera_indices is None:
-                    return second_rays, second_intensities
-
-            return torch.vstack((first_rays, second_rays)), torch.vstack((first_intensities, second_intensities))
-
-    def compute_lidar_buckets(self):
-        theta_boundaries = torch.linspace(0, 2*torch.pi, 9)[1:]
-
-        # TODO (seth): Get rid of magic numbers (computed offline with percentiles)
-        phi_boundaries = torch.Tensor([-0.1644,  0.0238,  0.213,  0.48])
-
-        dirs = self.get_lidar_scan().ray_directions
-
-        x = dirs[0]
-        y = dirs[1]
-        z = dirs[2]
-
-        theta = torch.atan2(y, x)
-        theta[theta < 0] = (2*torch.pi + theta)[theta<0]
-        phi = torch.asin(z)
-
-        theta_buckets = torch.bucketize(theta, theta_boundaries)
-        phi_buckets = torch.bucketize(phi, phi_boundaries)
-    
-        assignments = torch.vstack((theta_buckets, phi_buckets))
-
-        self.lidar_buckets = [[None for _ in range(8)] for _ in range(4)]
-
-        for x in range(8):
-            for y in range(4):
-                bucket_idx = torch.where(torch.all(assignments == torch.tensor([x,y])\
-                    .view(-1, 1), dim=0))[0]
-
-                if len(bucket_idx) == 0:
-                    continue
-                
-                self.lidar_buckets[y][x] = bucket_idx
-
-    def sample_lidar_buckets(self):
-        sample_distribution = 1 - self.lidar_loss_distribution
-        sample_distribution /= sample_distribution.sum()
-
-        samples_per_cell = sample_distribution * self.num_strategy_lidar_samples
-
-        all_indices = torch.Tensor([])
-        for x in range(8):
-            for y in range(4):
-                num_samples: torch.Tensor = samples_per_cell[y,x]
-                bucket = self.lidar_buckets[y][x]
-                bucket_indices = bucket[torch.randint(0,len(bucket), (min(len(bucket), num_samples.int().item()),) )]
-                all_indices = torch.cat([all_indices, bucket_indices])
+            cam_pose = self._frame.get_lidar_pose() * self._frame._lidar_to_camera
+        
+        if detach_rgb_from_poses:
+            cam_pose = cam_pose.detach()
+        
+        rays, intensities = cam_ray_directions.build_rays(first_camera_indices, 
+            cam_pose, self._frame.image, world_cube, ray_range)
+        return rays, intensities
 
         return all_indices.to(torch.int64)
 
     def get_pose_state(self) -> dict:
         state_dict = {
-            "timestamp": self.get_start_time(),
-            "lidar_to_camera": self._frame._lidar_to_camera.get_pose_tensor()
+            "timestamp": self.get_time(),
+            "lidar_to_camera": self._frame._lidar_to_camera.get_pose_tensor(),
+            "lidar_pose":  self._frame.get_lidar_pose().get_pose_tensor(),
+            "gt_lidar_pose": self._frame._gt_lidar_pose.get_pose_tensor(),
+            "tracked_pose": self._tracked_lidar_pose.get_pose_tensor()
         }
-        if self._use_simple_frame:
-            state_dict["lidar_pose"] =  self._frame.get_lidar_pose().get_pose_tensor()
-            state_dict["gt_lidar_pose"] = self._frame._gt_lidar_pose.get_pose_tensor()
-            state_dict["tracked_pose"] = self._tracked_lidar_pose.get_pose_tensor()
-        else:
-            state_dict["start_lidar_pose"] = self._frame.get_start_lidar_pose().get_pose_tensor()
-            state_dict["end_lidar_pose"] =  self._frame.get_end_lidar_pose().get_pose_tensor()
-            state_dict["gt_start_lidar_pose"] = self._frame._gt_lidar_start_pose.get_pose_tensor()
-            state_dict["gt_end_lidar_pose"] =  self._frame._gt_lidar_end_pose.get_pose_tensor()
-            state_dict["tracked_start_lidar_pose"] = self._tracked_start_lidar_pose.get_pose_tensor()
-            state_dict["tracked_end_lidar_pose"] = self._tracked_end_lidar_pose.get_pose_tensor()
+            
+
         return state_dict
 
     ## Overlay an 8x8 grid on the start image, and write the loss distribution on each cell. 

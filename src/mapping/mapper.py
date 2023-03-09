@@ -40,9 +40,7 @@ class Mapper:
         settings["optimizer"]["log_directory"] = settings.log_directory
         self._optimizer = Optimizer(
             settings.optimizer, calibration, self._world_cube, 0,
-            settings.debug.use_groundtruth_poses,
-            settings.keyframe_manager.sample_allocation.rgb_strategy,
-            settings.keyframe_manager.sample_allocation.lidar_strategy)
+            settings.debug.use_groundtruth_poses)
 
         self._term_signal = mp.Value('i', 0)
         self._processed_stop_signal = mp.Value('i', 0)
@@ -66,12 +64,12 @@ class Mapper:
             accepted_frame = new_keyframe is not None
 
             accepted_str = "Accepted" if accepted_frame else "Didn't accept"
-            image_ts = new_frame.start_image.timstamp if isinstance(new_frame, Frame) else new_frame.image.timestamp
+            image_ts = new_frame.image.timestamp
             # print(f"{accepted_str} frame at time {image_ts}")
         
             if self._settings.optimizer.enabled and accepted_frame:
 
-                active_window = self._keyframe_manager.get_active_window(self._optimizer)
+                active_window = self._keyframe_manager.get_active_window()
 
                 self._optimizer.iterate_optimizer(active_window)
 

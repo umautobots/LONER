@@ -17,7 +17,6 @@ from common.pose_utils import WorldCube
 # since after 1.4 unit vectors we're at the exit of the world cube.  
 def get_far_val(pts_o: torch.Tensor, pts_d: torch.Tensor, no_nan: bool = False):
 
-    #TODO: This is a hack
     if no_nan:
         pts_d = pts_d + 1e-15
 
@@ -111,6 +110,8 @@ class CameraRayDirections:
     def __init__(self, calibration: Settings, samples_per_pixel: int = 1, device = 'cpu', chunk_size=512,
                  grid_dimensions = (8,8), samples_per_grid_cell = 12):
 
+        assert samples_per_pixel == 1, "Only 1 sample per pixel currently supported"
+
         K = calibration.camera_intrinsic.k.to(device)
         distortion = calibration.camera_intrinsic.distortion.to(device)
         new_k = calibration.camera_intrinsic.new_k
@@ -165,7 +166,6 @@ class CameraRayDirections:
         world_to_camera[:3, 3] = world_to_camera[:3, 3] + world_cube.shift
         world_to_camera[:3, 3] = world_to_camera[:3, 3] / world_cube.scale_factor
         
-        
         ray_directions = directions @ world_to_camera[:3, :3].T
         
         # Note to self: don't use /= here. Breaks autograd.
@@ -183,7 +183,6 @@ class CameraRayDirections:
         near = ray_range[0] / world_cube.scale_factor * \
             torch.ones_like(ray_origins[:, :1])
 
-        # TODO: Does no_nan cause problems here?
         far = get_far_val(ray_origins, ray_directions, no_nan=True)
         rays = torch.cat([ray_origins, ray_directions, view_directions,
                             ray_i_grid, ray_j_grid, near, far], 1).float()
@@ -192,7 +191,7 @@ class CameraRayDirections:
             # Get intensities
             img = image.image
 
-            # TODO: Handle distortion and sppd > 1
+            # BUG: Handle distortion and sppd > 1
             intensities = img.view(-1, img.shape[2])[camera_indices]
         else:
             intensities = None
@@ -205,54 +204,6 @@ class CameraRayDirections:
         indices = torch.arange(start_idx, end_idx, 1)
 
         return self.build_rays(indices, pose, None, world_cube, ray_range)[0]
-
-    # Sample distribution is 1D, in row-major order (size of grid_dimensions)
-    def sample_chunks(self, sample_distribution: torch.Tensor = None, total_grid_samples = None) -> torch.Tensor:
-        
-        if total_grid_samples is None:
-            total_grid_samples = self.total_grid_samples
-
-        # TODO: This method potentially ignores the upper-right border of each cell. fixme.
-        num_grid_cells = self.grid_dimensions[0]*self.grid_dimensions[1]
-        
-        if sample_distribution is None:
-            local_xs = torch.randint(0, self.grid_cell_width, (total_grid_samples,))
-            local_ys = torch.randint(0, self.grid_cell_height, (total_grid_samples,))
-
-            local_xs = local_xs.reshape(num_grid_cells, self.samples_per_grid_cell, 1)
-            local_ys = local_ys.reshape(num_grid_cells, self.samples_per_grid_cell, 1)
-
-            # num_grid_cells x samples_per_grid_cell x 2
-            local_samples = torch.cat((local_ys, local_xs), dim=2)
-
-            # Row-major order
-            samples = local_samples + self.cell_offsets
-
-            indices = samples[:,:,0]*self.im_width + samples[:,:,1]
-        else:
-            local_xs = torch.randint(0, self.grid_cell_width, (total_grid_samples,))
-            local_ys = torch.randint(0, self.grid_cell_height, (total_grid_samples,))     
-            all_samples = torch.vstack((local_ys, local_xs)).T
-
-            # TODO: There must be a better way
-            samples_per_cell: torch.Tensor = sample_distribution * total_grid_samples
-            samples_per_cell = samples_per_cell.floor().to(torch.int32)
-            remainder = total_grid_samples - samples_per_cell.sum()
-
-            while remainder > len(samples_per_cell):
-                samples_per_cell += 1
-                remainder -= len(samples_per_cell)
-
-            _, best_indices = samples_per_cell.topk(remainder)
-            samples_per_cell[best_indices] += 1
-            
-
-            repeated_cell_offsets = self.cell_offsets.squeeze(1).repeat_interleave(samples_per_cell, dim=0)
-            all_samples += repeated_cell_offsets
-            
-            indices = all_samples[:,0]*self.im_width + all_samples[:,1]
-
-        return indices
 
 
 def rays_to_o3d(rays, depths, intensities=None):

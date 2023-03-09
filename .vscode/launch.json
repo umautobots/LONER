@@ -78,16 +78,6 @@
       "subProcess": true
     },
     {
-      "name": "Test Frame Synthesis",
-      "type": "python",
-      "request": "launch",
-      "program": "${workspaceFolder}/test/frame_synthesis_test.py",
-      "console": "integratedTerminal",
-      "args": ["TestSimpleFrameSynthesis"],
-      "cwd": "${workspaceFolder}/test",
-      "subProcess": true
-    },
-    {
       "name": "Stereo To RGBD",
       "type": "python",
       "request": "launch",

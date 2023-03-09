@@ -3,7 +3,7 @@ from typing import List, Union
 
 import torch
 
-from common.frame import Frame, SimpleFrame
+from common.frame import Frame
 from common.pose import Pose
 from common.pose_utils import WorldCube
 from common.sensors import Image, LidarScan
@@ -39,16 +39,11 @@ class FrameSynthesis:
 
         # Minimum dt between frames
         self._frame_delta_t_sec = 1/self._settings.frame_decimation_rate_hz
-        self._frame_epislon_t_sec = self._settings.eps_t_over_delta_t * self._frame_delta_t_sec
 
         # This is used to queue up all the lidar points before they're assigned to frames
         self._lidar_queue = LidarScan()
 
-        self._use_simple_frames = self._settings.use_simple_frames
         self._split_lidar_scans = self._settings.split_lidar_scans
-
-        assert not(not self._use_simple_frames and self._split_lidar_scans), \
-                "split_lidar_scans can't be True if use_simple_frames is False"
 
         self._lidar_scans = []
         self._lidar_scan_timestamps = torch.Tensor()
@@ -68,32 +63,14 @@ class FrameSynthesis:
     # Enqueues image from @p image.
     # @precond incoming images are in monotonically increasing order (in timestamp)
     def process_image(self, image: Image, gt_pose: Pose = None) -> None:
-        if self._use_simple_frames:
-            if image.timestamp - self._prev_accepted_timestamp >= self._frame_delta_t_sec - FRAME_TOLERANCE:
-                self._prev_accepted_timestamp = image.timestamp
-                new_frame = SimpleFrame(image=image, T_lidar_to_camera=self._t_lidar_to_camera)
-                if gt_pose is not None:
-                    new_frame._gt_lidar_pose = gt_pose * self._t_camera_to_lidar
-                    
-                self._in_progress_frames.append(new_frame.clone())
-                self.create_frames()
-        else:
-            if image.timestamp - self._prev_accepted_timestamp >= self._frame_delta_t_sec - FRAME_TOLERANCE:
-                self._prev_accepted_timestamp = image.timestamp
-
-                if self._active_frame.start_image is None:
-                    self._active_frame.start_image = image
-                    if gt_pose is not None:
-                        self._active_frame._gt_lidar_start_pose =  gt_pose * self._t_camera_to_lidar
-                elif self._active_frame.end_image is None:
-                    self._active_frame.end_image = image
-                    if gt_pose is not None:
-                        self._active_frame._gt_lidar_end_pose = gt_pose * self._t_camera_to_lidar
-                    self._in_progress_frames.append(self._active_frame.clone())
-                    self._active_frame = Frame(T_lidar_to_camera=self._t_lidar_to_camera)
-                    self.create_frames()
-                else:
-                    raise RuntimeError("This should be unreachable")
+        if image.timestamp - self._prev_accepted_timestamp >= self._frame_delta_t_sec - FRAME_TOLERANCE:
+            self._prev_accepted_timestamp = image.timestamp
+            new_frame = Frame(image=image, T_lidar_to_camera=self._t_lidar_to_camera)
+            if gt_pose is not None:
+                new_frame._gt_lidar_pose = gt_pose * self._t_camera_to_lidar
+                
+            self._in_progress_frames.append(new_frame.clone())
+            self.create_frames()
 
     def create_frames(self):
         if self._split_lidar_scans:
@@ -105,12 +82,9 @@ class FrameSynthesis:
     def _dequeue_lidar_points(self):
         completed_frames = 0
         for frame in self._in_progress_frames:
-            if self._use_simple_frames:
-                start_time = frame.image.timestamp - self._frame_delta_t_sec / 2
-                end_time = frame.image.timestamp + self._frame_delta_t_sec / 2
-            else:
-                start_time = frame.start_image.timestamp - self._frame_epislon_t_sec
-                end_time = frame.end_image.timestamp + self._frame_epislon_t_sec
+            start_time = frame.image.timestamp - self._frame_delta_t_sec / 2
+            end_time = frame.image.timestamp + self._frame_delta_t_sec / 2
+
 
             # If there aren't lidar points to process, skip
             if len(self._lidar_queue) == 0:
@@ -219,7 +193,7 @@ class FrameSynthesis:
             results.append(MatchResult.COMPLETED)
 
         for result in results:
-            frame: Union[Frame, SimpleFrame] = self._in_progress_frames.pop(0)
+            frame: Frame = self._in_progress_frames.pop(0)
             if result == MatchResult.COMPLETED:
                 if len(frame.lidar_points) == 0:
                     continue

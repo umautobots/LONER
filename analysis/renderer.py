@@ -80,15 +80,9 @@ if args.debug:
     full_config['debug'] = True
 
 
-# TODO (Seth): Manual Seed
-# seed = cfg.seed
 torch.backends.cudnn.enabled = True
-# torch.manual_seed(seed)
-# torch.cuda.manual_seed(seed)
-# np.random.seed(seed)
 
 torch.backends.cudnn.benchmark = True
-# rng = default_rng(seed)
 _DEVICE = torch.device(full_config.mapper.device)
 
 
@@ -194,12 +188,8 @@ with torch.no_grad():
     for kf in tqdm(poses[::15]):
         
         if args.use_gt_poses:
-            start_key = "gt_start_lidar_pose"
-            end_key = "gt_end_lidar_pose"
             pose_key = "gt_lidar_pose"
         else:
-            start_key = "start_lidar_pose"
-            end_key = "end_lidar_pose"
             pose_key = "lidar_pose"
 
 
@@ -207,24 +197,8 @@ with torch.no_grad():
         timestamp = kf["timestamp"]
         timestamp = str(timestamp.item()).replace('.','_')[:5]
 
-        if start_key in kf:
-            start_lidar_pose = Pose(pose_tensor=kf[start_key])
-            end_lidar_pose = Pose(pose_tensor=kf[end_key])
-
-            start_camera_pose = start_lidar_pose * lidar_to_camera
-            end_camera_pose = end_lidar_pose * lidar_to_camera
-        
-            start_rendered, start_depth_rendered, _ = render_dataset_frame(start_camera_pose.to(_DEVICE))
-            end_rendered, end_depth_rendered, _ = render_dataset_frame(end_camera_pose.to(_DEVICE))
-            
-            save_img(start_rendered, [], f"predicted_img_{timestamp}_start.png", render_dir)
-            save_img(end_rendered, [], f"predicted_img_{timestamp}_end.png", render_dir)
-            save_depth(start_depth_rendered, f"predicted_depth_{timestamp}_start.png", render_dir)
-            save_depth(end_depth_rendered, f"predicted_depth_{timestamp}_end.png", render_dir)
-          
-        else:
-            lidar_pose= Pose(pose_tensor=kf[pose_key])
-            cam_pose = lidar_pose * lidar_to_camera
-            rgb, depth, _ = render_dataset_frame(cam_pose.to(_DEVICE))
-            save_img(rgb, [], f"predicted_img_{timestamp}.png", render_dir)
-            save_depth(depth, f"predicted_depth_{timestamp}.png", render_dir)
+        lidar_pose= Pose(pose_tensor=kf[pose_key])
+        cam_pose = lidar_pose * lidar_to_camera
+        rgb, depth, _ = render_dataset_frame(cam_pose.to(_DEVICE))
+        save_img(rgb, [], f"predicted_img_{timestamp}.png", render_dir)
+        save_depth(depth, f"predicted_depth_{timestamp}.png", render_dir)

@@ -202,7 +202,3 @@ for idx in tqdm.trange(bag.get_message_count(cam_topics)//2):
 
     if idx%100 == 0:
         cv2.imwrite(f"projection/projected_{idx}.png", disp_im)
-
-    # cv2.imshow("Projected Points", disp_im)
-    # cv2.waitKey(0)
-    # cv2.destroyAllWindows()
