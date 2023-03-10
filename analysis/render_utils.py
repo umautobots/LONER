@@ -9,7 +9,6 @@ from matplotlib import cm
 from tqdm import tqdm
 
 
-
 def vis_flow(flow, scale=0):
     fx, fy = cv2.split(flow)
     mag,ang = cv2.cartToPolar(fx, fy, angleInDegrees=True)

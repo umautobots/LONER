@@ -29,7 +29,7 @@ class DefaultLogger:
         self._timestamps = torch.Tensor([])
 
         # ICP Only
-        self._tracked_path = torch.Tensor([])
+        self._estimated_trajectory = torch.Tensor([])
 
         self._gt_path = torch.Tensor([])
         
@@ -70,13 +70,13 @@ class DefaultLogger:
 
             gt_pose = (self._gt_pose_offset * gt_pose_raw).get_transformation_matrix().detach()
 
-            self._tracked_path = torch.cat([self._tracked_path, tracked_pose.unsqueeze(0)])
+            self._estimated_trajectory = torch.cat([self._estimated_trajectory, tracked_pose.unsqueeze(0)])
             self._gt_path = torch.cat([self._gt_path, gt_pose.unsqueeze(0)])
 
             self._timestamps = torch.cat([self._timestamps, torch.tensor([frame_time])])
             
-            if len(self._tracked_path) > 1:
-                relative_transform = self._tracked_path[-2].inverse() @  self._tracked_path[-1]
+            if len(self._estimated_trajectory) > 1:
+                relative_transform = self._estimated_trajectory[-2].inverse() @  self._estimated_trajectory[-1]
             else:
                 relative_transform = tracked_pose
 
@@ -104,8 +104,8 @@ class DefaultLogger:
 
             self._t_world_to_kf = Pose(pose_tensor=kf_pose_tensor).get_transformation_matrix()
 
-            tracked_pose = self._tracked_path[kf_idx]
-            most_recent_tracked_pose = self._tracked_path[-1]
+            tracked_pose = self._estimated_trajectory[kf_idx]
+            most_recent_tracked_pose = self._estimated_trajectory[-1]
             
             self._t_kf_to_frame = tracked_pose.inverse() @ most_recent_tracked_pose
 
@@ -120,28 +120,8 @@ class DefaultLogger:
         pose_kf_indices = torch.bucketize(self._timestamps, keyframe_timestamps, right=False).long() - 1
         pose_kf_indices[pose_kf_indices < 0] = 0
         
-        # In practice this actually yields worse results than just using the online estimates, which are a more honest representation
-        # of performance anyways. So, just ignore this. 
-        # reconstructed_trajectory = torch.Tensor([])
-
-        # reference_pose = torch.eye(4)
-        # reference_kf_idx = None
-        # reference_kf_pose_idx = None
-        # for pose_idx, pose in enumerate(self._tracked_path):
-        #     if pose_kf_indices[pose_idx] != reference_kf_idx:
-        #         reference_kf_idx = pose_kf_indices[pose_idx]
-        #         reference_pose = keyframe_trajectory[reference_kf_idx]
-        #         reference_kf_pose_idx = pose_idx
-
-        #     kf_to_frame = self._tracked_path[reference_kf_pose_idx].inverse() @ self._tracked_path[pose_idx]
-        #     optimized_frame_estimate = reference_pose @ kf_to_frame
-
-        #     reconstructed_trajectory = torch.cat([reconstructed_trajectory, optimized_frame_estimate.unsqueeze(0)])
-            
-
         # Dump it all to TUM format
         os.makedirs(f"{self._log_directory}/trajectory", exist_ok=True)
-        dump_trajectory_to_tum(self._tracked_path, self._timestamps, f"{self._log_directory}/trajectory/tracking_only.txt")
+        dump_trajectory_to_tum(self._estimated_trajectory, self._timestamps, f"{self._log_directory}/trajectory/tracking_only.txt")
         dump_trajectory_to_tum(self._frame_log, self._timestamps, f"{self._log_directory}/trajectory/online_estimates.txt")
-        # dump_trajectory_to_tum(reconstructed_trajectory, self._timestamps, f"{self._log_directory}/trajectory/estimated_trajectory.txt")
         dump_trajectory_to_tum(keyframe_trajectory, keyframe_timestamps, f"{self._log_directory}/trajectory/keyframe_trajectory.txt")

@@ -16,9 +16,8 @@ class Pose:
     ## Constructor
     # @param transformation_matrix: 4D Homogenous transformation matrix to turn into a pose
     # @param pose_tensor: An alternate argument to @p transformation matrix, allows you to
-    #                 specify the 7-tuple representation directly
+    #                     specify the 6-vector representation directly
     # @param fixed: Specifies whether or not a gradient should be computed.
-    # TODO: Make note of when transformation_matrix needs to be detached if needs_tensor
     def __init__(self, transformation_matrix: torch.Tensor = torch.eye(4),
                  pose_tensor: torch.Tensor = None,
                  fixed: bool = None,
@@ -35,7 +34,8 @@ class Pose:
             self._pose_tensor.requires_grad_(not fixed)
             transformation_matrix = tensor_to_transform(self._pose_tensor).float()
         elif requires_tensor:
-            # TODO: this is what note is about, making copy back/forth not totally stupid
+            # We do this copy back and forth to support computing gradients on the
+            # resulting pose tensor. 
             self._pose_tensor = transform_to_tensor(transformation_matrix).float()
             self._pose_tensor.requires_grad_(not fixed)
             transformation_matrix = tensor_to_transform(self._pose_tensor).float()
@@ -89,7 +89,6 @@ class Pose:
             "xyz": xyz,
             "orientation": quat
         }
-
 
     ## Transforms the pose according to the transformation represented by @p world_cube.
     # @param reverse specifies whether to invert the transformation

@@ -28,7 +28,8 @@ model:
         N_iters_acc: 10    # number of iters to accumulate gradients before stepping optimizer
 
 train:
-    lrate_mlp: 0.01             # learning rate
+    lrate_sigma_mlp: 0.01             # learning rate
+    lrate_rgb_mlp: 0.01             # learning rate
     lrate_pose: 0.001
     lrate_gamma: 1.0
     decay_rate: 0.001

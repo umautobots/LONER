@@ -64,6 +64,7 @@ def average_poses(poses):
     Outputs:
         pose_avg: (3, 4) the average pose
     """
+
     # 1. Compute the center
     center = poses[..., 3].mean(0)  # (3)
 
@@ -74,7 +75,7 @@ def average_poses(poses):
     y_ = poses[..., 1].mean(0)  # (3)
 
     # 4. Compute the x axis
-    # Note (seth): Don't push this. Hack around pylance.
+    # Note (seth): This is a hack around pylance.
     def do_cross(x, y): return torch.cross(x, y)
     x = normalize(do_cross(y_, z))  # (3)
     # 5. Compute the y axis (as z and x are normalized, y is already of norm 1)
@@ -195,6 +196,7 @@ def compute_world_cube(camera_to_lidar, intrinsic_mats, image_sizes, lidar_poses
     return WorldCube(scale_factor, -origin)
 
 ## Converts a 4x4 transformation matrix to the se(3) twist vector
+# Inspired by a similar NICE-SLAM function.
 # @param transformation_matrix: A pytorch 4x4 homogenous transformation matrix
 # @param device: The device for the output
 # @returns: A 6-tensor [x,y,z,r_x,r_y,r_z]
@@ -227,13 +229,12 @@ def transform_to_tensor(transformation_matrix, device=None):
     return tensor
 
 
+## Converts a tensor produced by transform_to_tensor to a transformation matrix
+# Inspired by a similar NICE-SLAM function.
+# @param transformation_tensors: se(3) twist vectors
+# @returns a 4x4 homogenous transformation matrix
 def tensor_to_transform(transformation_tensors):
-    """
-    Converts a tensor produced by transform_to_tensor to a transformation matrix, of type
-    Tensor. This is implemented purely in pytorch, and hence gradients are supported.
 
-    Taken from: https://github.com/cvg/nice-slam/blob/7af15cc33729aa5a8ca052908d96f495e34ab34c/src/common.py#L163
-    """
     N = len(transformation_tensors.shape)
     if N == 1:
         transformation_tensors = torch.unsqueeze(transformation_tensors, 0)
@@ -248,6 +249,10 @@ def tensor_to_transform(transformation_tensors):
     RT = torch.vstack((RT, H_row))
     return RT
 
+## Given a set of transformation matrices and timestamps, dumps the trajectory to TUM format.
+# @param transformation_matrices: Nx4x4 homogenous transforms representing the poses
+# @param timestamps: N timestamps, one per pose
+# @param output_file: path to dump result to.
 def dump_trajectory_to_tum(transformation_matrices: torch.Tensor,
                       timestamps: torch.Tensor,
                       output_file: str) -> None:

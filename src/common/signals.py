@@ -14,7 +14,7 @@ class StopSignal:
 
 class SimpleQueue:
     """
-    A very simple queue to mimic the interface of MP queue
+    A very simple queue to mimic the interface of MP queue for single-threaded operation
     """
     def __init__(self):
         self._data = []

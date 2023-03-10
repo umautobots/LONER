@@ -20,7 +20,7 @@ class KeyFrame:
     """ The KeyFrame class stores a frame an additional metadata to be used in optimization.
     """
 
-    # Constructor: Create a KeyFrame from input Frame @p frame.
+    ## Constructor: Create a KeyFrame from input Frame @p frame.
     def __init__(self, frame: Frame, device: int = None) -> None:
 
 
@@ -145,16 +145,15 @@ class KeyFrame:
         if use_gt_poses:
             cam_pose = self._frame._gt_lidar_pose * self._frame._lidar_to_camera
         else:
-            cam_pose = self._frame.get_lidar_pose() * self._frame._lidar_to_camera
+            cam_pose = self._frame.get_camera_pose()
         
         if detach_rgb_from_poses:
             cam_pose = cam_pose.detach()
         
         rays, intensities = cam_ray_directions.build_rays(first_camera_indices, 
             cam_pose, self._frame.image, world_cube, ray_range)
-        return rays, intensities
 
-        return all_indices.to(torch.int64)
+        return rays, intensities
 
     def get_pose_state(self) -> dict:
         state_dict = {
@@ -164,58 +163,5 @@ class KeyFrame:
             "gt_lidar_pose": self._frame._gt_lidar_pose.get_pose_tensor(),
             "tracked_pose": self._tracked_lidar_pose.get_pose_tensor()
         }
-            
 
         return state_dict
-
-    ## Overlay an 8x8 grid on the start image, and write the loss distribution on each cell. 
-    # Save output to @p output_path
-    def draw_loss_distribution(self, output_path, total_loss: float = None, kept: bool = None) -> None:
-        image = self._frame.start_image.image.detach().cpu().numpy()*255
-
-        
-        # https://stackoverflow.com/a/69097578
-        h, w, _ = image.shape
-        rows, cols = (8,8)
-        dy, dx = h / rows, w / cols
-        # draw vertical lines
-        for x in np.linspace(start=dx, stop=w-dx, num=cols-1):
-            x = int(round(x))
-            cv2.line(image, (x, 0), (x, h), color=(255,255,255), thickness=1)
-        # draw horizontal lines
-        for y in np.linspace(start=dy, stop=h-dy, num=rows-1):
-            y = int(round(y))
-            cv2.line(image, (0, y), (w, y), color=(255,255,255), thickness=1)
-        
-        font = cv2.FONT_HERSHEY_SIMPLEX
-
-        # Draw Text
-        for row in range(8):
-            for col in range(8):
-                idx = row * 8 + col
-                val = self.rgb_loss_distribution[idx]
-
-                top_left = (int(col*dx), int(row*dy))
-                bottom_right = (int(col*dx + 35), int(row*dy + 20))
-
-                cv2.rectangle(image, top_left, bottom_right, (0,0,0), -1)
-        
-                loc = (int(col*dx), int(row*dy + 10))
-                cv2.putText(image, f"{val:.3f}", loc, font, 0.35, (255,255,255))
-
-
-        if total_loss is not None:
-            top_left = (0, int(h - 18))
-            bottom_right = (150, h)
-            
-            cv2.rectangle(image, top_left, bottom_right, (0,0,0), -1)
-            if kept is not None:
-                kept_str = "kept" if kept else "del"
-                loss_str = f"{total_loss:.3f}:{kept_str}"
-            else:
-                loss_str = f"{total_loss:.3f}"
-
-        cv2.putText(image, loss_str, (0, int(h-5)), font, 0.5, (255,255,255))
-        output_path_dir = str(Path(output_path).parent)
-        os.makedirs(output_path_dir, exist_ok=True) 
-        cv2.imwrite(output_path, image)

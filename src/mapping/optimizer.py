@@ -199,9 +199,6 @@ class Optimizer:
             self._model.freeze_sigma_head(self._optimization_settings.freeze_sigma_mlp)
             self._model.freeze_rgb_head(self._optimization_settings.freeze_rgb_mlp)
 
-            trainable_model_params = [
-                p for p in self._model.parameters() if p.requires_grad]
-
             optimize_poses = not self._optimization_settings.freeze_poses
 
             if self._optimization_settings.latest_kf_only:
@@ -219,16 +216,21 @@ class Optimizer:
                 if not kf.is_anchored:
                     kf.get_lidar_pose().set_fixed(not optimize_poses)
 
+            sigma_params = [
+                p for p in self._model.nerf_model._model_sigma.parameters() if p.requires_grad]
+            rgb_params = [
+                p for p in self._model.nerf_model._model_intensity.parameters() if p.requires_grad]
+
             if optimize_poses:
-                
                 optimizable_poses = [kf.get_lidar_pose().get_pose_tensor() for kf in active_keyframe_window if not kf.is_anchored]
                         
-                self._optimizer = torch.optim.Adam([{'params': trainable_model_params, 'lr': self._model_config.train.lrate_mlp},
-                                            {'params': optimizable_poses, 'lr': self._model_config.train.lrate_pose}])
+                self._optimizer = torch.optim.Adam([{'params': sigma_params, 'lr': self._model_config.train.lrate_sigma_mlp},
+                                                    {'params': rgb_params, 'lr': self._model_config.train.lrate_rgb_mlp},
+                                                    {'params': optimizable_poses, 'lr': self._model_config.train.lrate_pose}])
 
             else:
-                self._optimizer = torch.optim.Adam(
-                    trainable_model_params, lr=self._model_config.train.lrate_mlp)
+                self._optimizer = torch.optim.Adam([{'params': sigma_params, 'lr': self._model_config.train.lrate_sigma_mlp},
+                                                    {'params': rgb_params, 'lr': self._model_config.train.lrate_rgb_mlp}])
 
             lrate_scheduler = torch.optim.lr_scheduler.ExponentialLR(self._optimizer, self._model_config.train.lrate_gamma)
 
@@ -267,10 +269,10 @@ class Optimizer:
                     if self.should_enable_camera():
 
                         # Get all the uniform samples first
-                        start_idxs = torch.randint(len(self._rgb_shuffled_indices), (2,))
+                        start_idx = torch.randint(len(self._rgb_shuffled_indices), (1,))
 
-                        im_end_idx = start_idxs[0] + self._num_rgb_samples
-                        im_indices = self._rgb_shuffled_indices[start_idxs[0]:im_end_idx]
+                        im_end_idx = start_idx[0] + self._num_rgb_samples
+                        im_indices = self._rgb_shuffled_indices[start_idx[0]:im_end_idx]
                         im_indices = im_indices % len(self._rgb_shuffled_indices)
                         
                         new_cam_rays, new_cam_intensities = kf.build_camera_rays(
@@ -512,9 +514,6 @@ class Optimizer:
                 depths_weighted_var + 1e-8).mean() - (1 + 1e-8))
             loss += self._model_config.loss.std_lambda * loss_std_cam
             wandb_logs['loss_std_cam'] = loss_std_cam.item()
-
-        # if self._global_step % self._model_config.log.i_log == 0:
-        #     wandb.log(wandb_logs, commit=False)
 
         # wandb.log({}, commit=True)
         if torch.isnan(loss):

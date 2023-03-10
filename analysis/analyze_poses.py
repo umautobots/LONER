@@ -1,6 +1,15 @@
 #!/usr/bin/env python
 # coding: utf-8
 
+"""
+File: analyze_poses.py
+Description: Reads in the optimized keyframe poses from the checkpoint, plots them, and computes metrics.
+
+This is just a rough evaluation - full evaluations are conducted using other third-party packages.
+See the README for more info.
+"""
+
+
 import argparse
 import os
 import pathlib
@@ -19,7 +28,6 @@ sys.path.append(PROJECT_ROOT)
 sys.path.append(PROJECT_ROOT + "/src")
 
 from src.common.pose import Pose
-
 
 parser = argparse.ArgumentParser(description="Analyze KeyFrame Poses")
 parser.add_argument("experiment_directories", nargs='+', type=str, help="folder in outputs with all results")

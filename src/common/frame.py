@@ -9,7 +9,7 @@ from src.common.pose import Pose
 class Frame:
     """ Frame Class representing the atomic unit of optimization in ClonerSLAM
 
-    A Frame F consists of an image, and lidar points that occured at nearby times
+    A Frame consists of an image, and lidar points that occured at nearby times.
 
     It also stores tensors used for computing the poses of cameras and lidars.
     """

@@ -50,7 +50,8 @@ class Mapper:
 
         self._last_mapped_frame_time = None
 
-
+    ## A single iteration of mapper: Checks if a new frame is available. If so,
+    # decides if it's a keyframe, then if so performs optimization
     def update(self) -> None:
         if self._processed_stop_signal.value:
             print("Not updating mapper: Mapping already done.")
@@ -125,7 +126,6 @@ class Mapper:
                      'occ_model_state_dict': self._optimizer._occupancy_grid_model.state_dict(),
                      'occ_optimizer_state_dict': self._optimizer._occupancy_grid_optimizer.state_dict()}
 
-        final_kf_count = self._optimizer._keyframe_count
         print("Saving Last Checkpoint to", f"{self._settings.log_directory}/checkpoints/final.tar")
         torch.save(last_ckpt, f"{self._settings.log_directory}/checkpoints/final.tar")
 

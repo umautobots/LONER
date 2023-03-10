@@ -2,6 +2,7 @@ import struct
 
 import numpy as np
 import torch
+import torch.nn.functional
 import open3d as o3d
 from kornia.geometry.calibration import undistort_points
 
@@ -73,9 +74,6 @@ def get_ray_directions(H, W, newK, dist=None, K=None, sppd=1, with_indices=False
     if dist is not None:
         assert K is not None
 
-        # computing the undistorted pixel locations
-        print(f"Computing the undistorted pixel locations to compute the correct ray directions")
-
         if len(K.shape) == 2:
             K = K.unsqueeze(0)  # (1, 3, 3)
 
@@ -107,8 +105,16 @@ def get_ray_directions(H, W, newK, dist=None, K=None, sppd=1, with_indices=False
 
 
 class CameraRayDirections:
-    def __init__(self, calibration: Settings, samples_per_pixel: int = 1, device = 'cpu', chunk_size=512,
-                 grid_dimensions = (8,8), samples_per_grid_cell = 12):
+    """ A class used for computing camera ray directions.
+
+    Stores relavent calibration-related information and pre-computes camera rays for each pixel,
+    accounting for distortion.
+    """
+
+    ## Constructor for CameraRayDirections
+    # @param calibration: The top-level ClonerSLAM calibration settings.
+    # @param samples_per_pixel: How many samples to take for each pixel. Leave at 1 probably.
+    def __init__(self, calibration: Settings, samples_per_pixel: int = 1, device = 'cpu', chunk_size=512):
 
         assert samples_per_pixel == 1, "Only 1 sample per pixel currently supported"
 
@@ -135,26 +141,16 @@ class CameraRayDirections:
 
         self._chunk_size = chunk_size
         self.num_chunks = int(np.ceil(self.directions.shape[0] / self._chunk_size))
-
-        self.grid_dimensions = grid_dimensions
-        self.samples_per_grid_cell = samples_per_grid_cell
-        self.grid_cell_width = int(self.im_width // self.grid_dimensions[1])
-        self.grid_cell_height = int(self.im_height // self.grid_dimensions[0])
-        self.total_grid_samples = self.grid_dimensions[0]*self.grid_dimensions[1]*samples_per_grid_cell
-        x_cell_offsets = torch.arange(0, self.im_width, int(self.im_width // self.grid_dimensions[1]))
-        y_cell_offsets = torch.arange(0, self.im_height, int(self.im_height // self.grid_dimensions[0]))
-
-        x_offsets_grid, y_offsets_grid =torch.meshgrid([x_cell_offsets, y_cell_offsets])
-
-        x_cell_offsets = x_offsets_grid.permute(1,0).reshape(-1,1)
-        y_cell_offsets = y_offsets_grid.permute(1,0).reshape(-1,1)
-
-        # Stored in row-major order
-        self.cell_offsets = torch.hstack((y_cell_offsets,x_cell_offsets)).unsqueeze(1).to(torch.int32)
         
     def __len__(self):
         return self.directions.shape[0]
 
+    ## Given indices representing pixels, produce rays in ClonerSLAM format
+    # @param indices in range (0, W*H)
+    # @param pose: Camera pose, for origin of rays
+    # @param image: The image to sample intensities from
+    # @param world_cube: Specifies transformation to stay within world cube
+    # @param ray_range: 2-tensor with min and max range of each ray
     def build_rays(self, camera_indices: torch.Tensor, pose: Pose, image: Image, world_cube: WorldCube, ray_range):
 
         directions = self.directions[camera_indices]
@@ -188,16 +184,18 @@ class CameraRayDirections:
                             ray_i_grid, ray_j_grid, near, far], 1).float()
 
         if image is not None:
-            # Get intensities
             img = image.image
-
-            # BUG: Handle distortion and sppd > 1
             intensities = img.view(-1, img.shape[2])[camera_indices]
         else:
             intensities = None
 
         return rays, intensities
 
+    ## When iterating over the whole image, this fetches one chunk of pixels and builds rays
+    # @param chunk_idx: Int in range (0, num_chunks)
+    # @param pose: camera pose for origin of camera rays
+    # @param world_cube: Specifies transformation to stay within world cube
+    # @param ray_range: 2-tensor with min and max range of each ray
     def fetch_chunk_rays(self, chunk_idx: int, pose: Pose, world_cube, ray_range):
         start_idx = chunk_idx*self._chunk_size
         end_idx = min(self.directions.shape[0], (chunk_idx+1)*self._chunk_size)
@@ -205,7 +203,7 @@ class CameraRayDirections:
 
         return self.build_rays(indices, pose, None, world_cube, ray_range)[0]
 
-
+## Converts rays in ClonerSLAM format to an open3d point cloude
 def rays_to_o3d(rays, depths, intensities=None):
     origins = rays[:, :3]
     directions = rays[:, 3:6]
@@ -225,6 +223,7 @@ def rays_to_o3d(rays, depths, intensities=None):
 
     return pcd
 
+## Converts rays in ClonerSLAM format to a pcd file
 def rays_to_pcd(rays, depths, rays_fname, origins_fname, intensities=None):
 
     if intensities is None:

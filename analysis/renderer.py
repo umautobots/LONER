@@ -1,6 +1,16 @@
 #!/usr/bin/env python
 # coding: utf-8
 
+"""
+File: renderer.py
+Description: Renders RGB and Depth from a saved checkpoint. 
+
+Unless --no_render_stills is set, this will render RGB and color for each of the keyframe poses.
+
+If --render_video is set, it will create a path along the ground truth trajectory, and render
+dense frames. 
+"""
+
 import argparse
 import os
 import pathlib
@@ -158,17 +168,20 @@ def render_dataset_frame(pose: Pose):
         
         return rgb_fine.clamp(0, 1), depth_fine, peak_depth_consistency
 
-def _gpu_worker(job_queue: mp.Queue, result_queue: mp.Queue, lidar_to_cam):
+def _gpu_worker(job_queue: mp.Queue, result_queue: mp.Queue, lidar_to_cam, total):
     while not job_queue.empty():
-        pose_idx, pose = job_queue.get()
-        if pose is None:
-            return
-
+        data = job_queue.get()
+        if data is None:
+            result_queue.put(None)
+            break
+        pose_idx, pose = data
         cam_pose = Pose(pose)*lidar_to_cam.to('cpu')
         _, depth, _ = render_dataset_frame(cam_pose.to(_DEVICE))
-        print(f"Rendered frame {pose_idx}")
+        print(f"Rendered frame {pose_idx}/{total}")
         result_queue.put((pose_idx, depth.cpu()))
-
+    
+    while True:
+        continue
 if __name__ == "__main__":
     with torch.no_grad():
         poses = ckpt["poses"]
@@ -207,7 +220,7 @@ if __name__ == "__main__":
 
             # Get ground truth trajectory
             rosbag_path = pathlib.Path(full_config.dataset_path)
-            ground_truth_file = "../../data/fusion_portable/20220216_canteen_day/ground_truth_traj.txt"
+            ground_truth_file = full_config.run_config["groundtruth_traj"]
             ground_truth_df = pd.read_csv(ground_truth_file, names=["timestamp","x","y","z","q_x","q_y","q_z","q_w"], delimiter=" ")
 
             ground_truth_data = ground_truth_df.to_numpy(dtype=np.float64)
@@ -265,7 +278,7 @@ if __name__ == "__main__":
             depths = []
             job_queue = mp.Queue()
             result_queue = mp.Queue()
-            for pose_idx, pose in tqdm(enumerate(lidar_poses), total=len(lidar_poses)):
+            for pose_idx, pose in enumerate(lidar_poses):
                 job_queue.put((pose_idx, pose))
 
             for _ in range(torch.cuda.device_count()):
@@ -274,17 +287,21 @@ if __name__ == "__main__":
             gpu_worker_processes = []
             for gpu_id in range(torch.cuda.device_count()):
                 os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
-                print(gpu_id)
-                gpu_worker_processes.append(mp.Process(target = _gpu_worker, args=(job_queue, result_queue,lidar_to_camera)))
+                gpu_worker_processes.append(mp.Process(target = _gpu_worker, args=(job_queue, result_queue,lidar_to_camera, len(lidar_poses))))
                 gpu_worker_processes[-1].start()
 
+
+            stop_recv = 0
+            results = []
+            while stop_recv < torch.cuda.device_count():
+                result = result_queue.get()
+                if result is None:
+                    stop_recv += 1
+                    continue
+                results.append(result)
             # Sync
             for process in gpu_worker_processes:
-                process.join()
-
-            results = []
-            while not result_queue.empty():
-                results.append(result_queue.get())
+                process.terminate()
 
             results = sorted(results)
 

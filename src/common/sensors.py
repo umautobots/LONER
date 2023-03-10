@@ -50,10 +50,10 @@ class LidarScan:
     a point cloud, for each ray you would do the following, given a pose of lidar
     at time t of $$T_{l,t}$$:
 
-    $$point = T_{l,timestamps[i]} + ray_directions[i]$$
+    $$point = T_{l,timestamps[i]} + ray_directions[i] * distances[i]$$
     """
 
-    # Constructor
+    ## Constructor
     # @param ray_directions: Direction of each ray. 3xn tensor.
     # @param distances: Distance of each ray. 1xn tensor
     # @param timestamps: The time at which each laser fired. Used for motion compensation.
@@ -134,6 +134,13 @@ class LidarScan:
 
         return self
 
+    ## Given a start and end poses, applies motion compensation to the lidar points.
+    # This first projects points into the global frame using the start and end poses,
+    # then projects the result back into the target frame.
+    # @param poses: A start and end pose
+    # @param timestamps: Timestamps corresponding to each of the provided poses
+    # @param target_frame: What frame to motion compensate into.
+    # @param: use_gpu: If true, will do the compensation on the GPU (slightly faster)
     def motion_compensate(self,
                           poses: Tuple[Pose, Pose], 
                           timestamps: Tuple[float, float],
@@ -158,7 +165,6 @@ class LidarScan:
 
         relative_rotation = torch.linalg.inv(start_rot) @ end_rot
 
-        # TODO: Find a way to make this motion compensation interpolation-only so we can Slerp
         rotation_axis_angle = transf.matrix_to_axis_angle(relative_rotation).to(device)
 
         rotation_angle = torch.linalg.norm(rotation_axis_angle).to(device)

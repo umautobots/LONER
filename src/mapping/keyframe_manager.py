@@ -17,9 +17,6 @@ class WindowSelectionStrategy(Enum):
     RANDOM = 1
     HYBRID = 2
 
-class SampleAllocationStrategy(Enum):
-    UNIFORM = 0
-
 class KeyFrameManager:
     """ The KeyFrame Manager class creates and manages KeyFrames and passes 
     data to the optimizer.

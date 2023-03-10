@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
 
 import argparse
-import cProfile
 import datetime
-import glob
 import os
-import shutil
 import sys
 import re
 import pathlib
@@ -82,7 +79,7 @@ def tf_to_settings(tf_msg):
 def build_image_from_msg(image_msg, timestamp) -> Image:
     cv_img = bridge.imgmsg_to_cv2(image_msg, desired_encoding='rgb8')
     cv_img = cv2.resize(cv_img, (0,0), fx=IM_SCALE_FACTOR, fy=IM_SCALE_FACTOR)
-    pytorch_img = torch.from_numpy(cv_img / 255)
+    pytorch_img = torch.from_numpy(cv_img / 255).float()
     return Image(pytorch_img, timestamp.to_sec())
 
 
@@ -106,8 +103,11 @@ def run_trial(config, settings, settings_description = None, config_idx = None, 
 
     K = torch.from_numpy(calibration.left_cam_intrinsic["K"]).float()
     K[:2, :] *= IM_SCALE_FACTOR
-
     settings["calibration"]["camera_intrinsic"]["k"] = K
+
+    new_k = torch.from_numpy(calibration.left_cam_intrinsic["projection_matrix"]).float()[:3,:3]
+    new_k[:2, :] *= IM_SCALE_FACTOR
+    settings["calibration"]["camera_intrinsic"]["new_k"] = new_k
 
     settings["calibration"]["camera_intrinsic"]["distortion"] = \
         torch.from_numpy(calibration.left_cam_intrinsic["distortion_coeffs"]).float()
@@ -124,6 +124,8 @@ def run_trial(config, settings, settings_description = None, config_idx = None, 
 
     settings["calibration"]["lidar_to_camera"] = calibration.t_lidar_to_left_cam
     settings["experiment_name"] = config["experiment_name"]
+
+    settings["run_config"] = config
 
     cloner_slam = ClonerSLAM(settings)
 
@@ -163,6 +165,8 @@ def run_trial(config, settings, settings_description = None, config_idx = None, 
     last_send = time.time()
     prev_timestamp = None
 
+    warned_skip_once = False
+
     for topic, msg, timestamp in bag.read_messages(topics=[lidar_topic, image_topic]):        
         # Wait for lidar to init
         if topic == lidar_topic and not init:
@@ -183,7 +187,9 @@ def run_trial(config, settings, settings_description = None, config_idx = None, 
             try:
                 lidar_tf = tf_buffer.lookup_transform_core('map', "lidar", timestamp + start_time)
             except tf2_py.ExtrapolationException as e:
-                print("Skipping camera message: No valid TF")
+                if not warned_skip_once:
+                    print("Warning: Skipping a camera message: No valid TF.")
+                    warned_skip_once = True
                 continue
 
             T_lidar = msg_to_transformation_mat(lidar_tf)
@@ -270,8 +276,12 @@ if __name__ == "__main__":
     parser.add_argument("--num_repeats", type=int, required=False, default=1, help="How many times to run the experiment")
     parser.add_argument("--run_all_combos", action="store_true",default=False, help="If set, all combinations of overrides will be run. Otherwise, one changed at a time.")
     parser.add_argument("--overrides", type=str, default=None, help="File specifying parameters to vary for ablation study or testing")
+    parser.add_argument("--lite", action="store_true",default=False, help="If set, uses the lite model configuration instead of the full model.")
 
     args = parser.parse_args()
+
+
+    baseline_settings_path = os.path.expanduser("~/ClonerSLAM/cfg/cloner_slam_lite.yaml") if args.lite else os.path.expanduser("~/ClonerSLAM/cfg/default_settings.yaml")
 
     with open(args.configuration_path) as config_file:
         config = yaml.full_load(config_file)
@@ -281,7 +291,7 @@ if __name__ == "__main__":
 
     if args.overrides is not None:
         settings_options, settings_descriptions = \
-            Settings.generate_options(os.path.expanduser("~/ClonerSLAM/cfg/default_settings.yaml"), 
+            Settings.generate_options(baseline_settings_path, 
                                       args.overrides,
                                       args.run_all_combos)
         
@@ -289,7 +299,7 @@ if __name__ == "__main__":
         settings_descriptions = settings_descriptions
     else:
         settings_descriptions = [None]
-        settings_options = [Settings.load_from_file(os.path.expanduser("~/ClonerSLAM/cfg/default_settings.yaml"))]            
+        settings_options = [Settings.load_from_file(baseline_settings_path)]            
 
     if args.overrides is not None or args.num_repeats > 1:
         now = datetime.datetime.now()
