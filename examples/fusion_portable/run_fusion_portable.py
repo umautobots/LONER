@@ -76,14 +76,15 @@ def tf_to_settings(tf_msg):
     return AttrDict({"xyz": xyz, "orientation": quat})
 
 
-def build_image_from_msg(image_msg, timestamp) -> Image:
+def build_image_from_msg(image_msg, timestamp, scale_factor) -> Image:
     cv_img = bridge.imgmsg_to_cv2(image_msg, desired_encoding='rgb8')
-    cv_img = cv2.resize(cv_img, (0,0), fx=IM_SCALE_FACTOR, fy=IM_SCALE_FACTOR)
+    cv_img = cv2.resize(cv_img, (0,0), fx=scale_factor, fy=scale_factor)
     pytorch_img = torch.from_numpy(cv_img / 255).float()
     return Image(pytorch_img, timestamp.to_sec())
 
 
 def run_trial(config, settings, settings_description = None, config_idx = None, trial_idx = None):
+    im_scale_factor = settings.system.image_scale_factor
 
     rosbag_path = Path(os.path.expanduser(config["dataset"]))
     
@@ -102,19 +103,19 @@ def run_trial(config, settings, settings_description = None, config_idx = None, 
     lidar_topic = f"{topic_prefix}/{lidar}"
 
     K = torch.from_numpy(calibration.left_cam_intrinsic["K"]).float()
-    K[:2, :] *= IM_SCALE_FACTOR
+    K[:2, :] *= im_scale_factor
     settings["calibration"]["camera_intrinsic"]["k"] = K
 
     new_k = torch.from_numpy(calibration.left_cam_intrinsic["projection_matrix"]).float()[:3,:3]
-    new_k[:2, :] *= IM_SCALE_FACTOR
+    new_k[:2, :] *= im_scale_factor
     settings["calibration"]["camera_intrinsic"]["new_k"] = new_k
 
     settings["calibration"]["camera_intrinsic"]["distortion"] = \
         torch.from_numpy(calibration.left_cam_intrinsic["distortion_coeffs"]).float()
 
-    settings["calibration"]["camera_intrinsic"]["width"] = int(calibration.left_cam_intrinsic["width"] // (1/IM_SCALE_FACTOR))
+    settings["calibration"]["camera_intrinsic"]["width"] = int(calibration.left_cam_intrinsic["width"] // (1/im_scale_factor))
     
-    settings["calibration"]["camera_intrinsic"]["height"] = int(calibration.left_cam_intrinsic["height"] // (1/IM_SCALE_FACTOR))
+    settings["calibration"]["camera_intrinsic"]["height"] = int(calibration.left_cam_intrinsic["height"] // (1/im_scale_factor))
 
     ray_range = settings.mapper.optimizer.model_config.data.ray_range
     image_size = (settings.calibration.camera_intrinsic.height, settings.calibration.camera_intrinsic.width)
@@ -178,11 +179,11 @@ def run_trial(config, settings, settings_description = None, config_idx = None, 
 
         timestamp -= start_time
         
-        if args.duration is not None and timestamp.to_sec() > args.duration:
+        if config["duration"] is not None and timestamp.to_sec() > config["duration"]:
             break
 
         if topic == image_topic:
-            image = build_image_from_msg(msg, timestamp)
+            image = build_image_from_msg(msg, timestamp, im_scale_factor)
 
             try:
                 lidar_tf = tf_buffer.lookup_transform_core('map', "lidar", timestamp + start_time)
@@ -256,7 +257,7 @@ def run_trial(config, settings, settings_description = None, config_idx = None, 
 
 
 # Implements a single worker in a thread-pool model.
-def _gpu_worker(args, gpu_id: int, job_queue: mp.Queue) -> None:
+def _gpu_worker(config, gpu_id: int, job_queue: mp.Queue) -> None:
 
     while not job_queue.empty():
         data = job_queue.get()
@@ -264,7 +265,7 @@ def _gpu_worker(args, gpu_id: int, job_queue: mp.Queue) -> None:
             return
 
         settings, description, config_idx, trial_idx = data
-        run_trial(args, settings, description, config_idx, trial_idx)
+        run_trial(config, settings, description, config_idx, trial_idx)
 
 if __name__ == "__main__":
 
@@ -288,6 +289,8 @@ if __name__ == "__main__":
 
     if args.experiment_name is not None:
         config["experiment_name"] = args.experiment_name
+
+    config["duration"] = args.duration
 
     if args.overrides is not None:
         settings_options, settings_descriptions = \
@@ -330,7 +333,7 @@ if __name__ == "__main__":
         gpu_worker_processes = []
         for gpu_id in args.gpu_ids:
             os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
-            gpu_worker_processes.append(mp.Process(target = _gpu_worker, args=(args,gpu_id,job_queue,)))
+            gpu_worker_processes.append(mp.Process(target = _gpu_worker, args=(config,gpu_id,job_queue,)))
             gpu_worker_processes[-1].start()
 
         # Sync
