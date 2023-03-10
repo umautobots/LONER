@@ -13,16 +13,6 @@ ENV TERM=linux
 ENV TZ=America
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-# # Hack to update just enough to install wget
-# RUN (apt-get -y update || true) && apt-get -y install wget
-# # Fix keyring
-# RUN apt-key del 7fa2af80 \
-#   && wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/cuda-keyring_1.0-1_all.deb \
-#   && dpkg -i cuda-keyring_1.0-1_all.deb \
-#   && rm /etc/apt/sources.list.d/cuda.list \
-#   && wget -qO - https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/7fa2af80.pub | apt-key add - \
-#   && apt-get -y update
-
 # Basic packages
 RUN apt-get -y update \
     && apt-get -y install \

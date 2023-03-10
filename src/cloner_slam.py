@@ -72,7 +72,7 @@ class ClonerSLAM:
         # To initialize, call initialize
         self._initialized = False
 
-        self._last_mapped_frame_id = mp.Value('i', -1)
+        self._last_mapped_frame_time = mp.Value('d', 0.)
 
     def initialize(self, camera_to_lidar: torch.Tensor, all_lidar_poses: torch.Tensor,
                               K_camera: torch.Tensor, camera_range: List,
@@ -177,8 +177,8 @@ class ClonerSLAM:
         if not self._single_threaded:
 
             # Start the children
-            self._tracking_process = mp.Process(target=self._tracker.run, args=(self._last_mapped_frame_id,))
-            self._mapping_process = mp.Process(target=self._mapper.run, args=(self._last_mapped_frame_id,))
+            self._tracking_process = mp.Process(target=self._tracker.run, args=(self._last_mapped_frame_time,))
+            self._mapping_process = mp.Process(target=self._mapper.run, args=(self._last_mapped_frame_time,))
     
             self._tracking_process.daemon = True
             self._mapping_process.daemon = True

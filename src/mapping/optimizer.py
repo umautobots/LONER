@@ -223,7 +223,6 @@ class Optimizer:
                 
                 optimizable_poses = [kf.get_lidar_pose().get_pose_tensor() for kf in active_keyframe_window if not kf.is_anchored]
                         
-                print(f"Num keyframes: {len(active_keyframe_window)}, Num Trainable Poses: {len(optimizable_poses)}")
                 self._optimizer = torch.optim.Adam([{'params': trainable_model_params, 'lr': self._model_config.train.lrate_mlp},
                                             {'params': optimizable_poses, 'lr': self._model_config.train.lrate_pose}])
 
@@ -518,7 +517,10 @@ class Optimizer:
         #     wandb.log(wandb_logs, commit=False)
 
         # wandb.log({}, commit=True)
-        assert not torch.isnan(loss), "NaN Loss Encountered"
+        if torch.isnan(loss):
+            breakpoint()
+            assert not torch.isnan(loss), "NaN Loss Encountered"
+            
         return loss
 
     # @precond: This MUST be called after compute_loss!!

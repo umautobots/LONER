@@ -1,22 +1,14 @@
 import argparse
 import os
-import pathlib
 import pickle
 import re
 import sys
-import time
 
-import imageio
 import matplotlib.pyplot as plt
 from matplotlib.offsetbox import AnchoredText
-
-import numpy as np
 import pandas as pd
-import torch
-import tqdm
 
-# autopep8: off
-# Linting needs to be disabled here or it'll try to move includes before path.
+
 PUB_ROS = False
 
 PROJECT_ROOT = os.path.abspath(os.path.join(
@@ -47,34 +39,11 @@ keyframe_schedule = full_config.mapper.optimizer.keyframe_schedule
 os.makedirs(f"{args.experiment_directory}/loss_plots", exist_ok=True)
 
 
-
-# prev_kf_schedule_idx = -1
-# for kf_idx, keyframe in enumerate(keyframe_folders):
-
-#     phases = sort_alphanum(os.listdir(f"{args.experiment_directory}/losses/{keyframe}"))
-     
-#     for phase_idx, phase_file in enumerate(phases):
-#         fname = f"{args.experiment_directory}/losses/{keyframe}/{phase_file}"
-        
-#         data = pd.read_csv(fname,names=["L"])["L"].to_numpy()
-
-#         plt.plot(data)
-#         plt.xlabel("Iteration")
-#         plt.ylabel("Loss")
-#         plt.title(f"KeyFrame {kf_idx}, Phase {phase_idx}")
-#         os.makedirs(f"{args.experiment_directory}/loss_plots/keyframe_{kf_idx}", exist_ok=True)
-
-#         plt.savefig(f"{args.experiment_directory}/loss_plots/keyframe_{kf_idx}/phase_{phase_idx}.png")
-#         plt.clf()
-    
-            
 fig, ax = plt.subplots(2, 3)
 for kf_idx, keyframe in enumerate(keyframe_folders):
 
     if kf_idx < 100:
         continue
-
-
 
     phases = sort_alphanum(os.listdir(f"{args.experiment_directory}/losses/{keyframe}"))
      

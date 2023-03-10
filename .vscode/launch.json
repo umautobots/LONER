@@ -21,6 +21,16 @@
       "args": ["${workspaceFolder}/cfg/fusion_portable/canteen.yaml"],
       "cwd": "${workspaceFolder}/examples/fusion_portable",
       "subProcess": true
+    },
+    {
+      "name": "Renderer",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/analysis/renderer.py",
+      "console": "integratedTerminal",
+      "args": ["${workspaceFolder}/outputs/canteen_031023_141950", "--no_render_stills", "--render_video"],
+      "cwd": "${workspaceFolder}/analysis",
+      "subProcess": true
     }
   ]
 }

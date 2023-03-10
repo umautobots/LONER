@@ -43,7 +43,7 @@ mapper:
     keyframe_selection:
       strategy: TEMPORAL
       temporal:
-        time_diff_seconds: &keyframe_interval 3
+        time_diff_seconds: &keyframe_interval 1
     window_selection:
       strategy: HYBRID
       hybrid_settings:
@@ -52,19 +52,18 @@ mapper:
   optimizer:
     fix_poses: False # Overrides all other related settings and disables poses
     data_prep_on_cpu: *data_prep_on_cpu
-    k_test: 0
     enabled: True
     detach_rgb_from_poses: True
     skip_pose_refinement: True # If set, skips the tracking refinement part of the optimization
     num_samples:
-      rgb: 256
+      rgb: 512
       lidar: 512
     keyframe_schedule:
       - 
         num_keyframes: 1
         iteration_schedule:
           - num_iterations: 1000
-            stage: 1
+            stage: 3
             fix_poses: True
             fix_sigma_mlp: False
             fix_rgb_mlp: False
@@ -79,8 +78,8 @@ mapper:
             fix_sigma_mlp: True
             fix_rgb_mlp: True
           # Now joint optimization
-          - stage: 1
-            num_iterations: 50
+          - stage: 3
+            num_iterations: 150
             fix_poses: False
             fix_sigma_mlp: False
             fix_rgb_mlp: False
@@ -113,12 +112,12 @@ tracker:
         relative_rmse: 1.e-8
       - 
         threshold: 0.125
-        max_iterations: 7
+        max_iterations: 20
         relative_fitness: 1.e-8
         relative_rmse: 1.e-8
     downsample:
       type: UNIFORM
-      target_uniform_point_count: 7000
+      target_uniform_point_count: 10000
       voxel_downsample_size: 0.1
   motion_compensation:
     enabled: True

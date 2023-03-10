@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import cProfile
 import datetime
 import glob
 import os
@@ -48,7 +49,7 @@ def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time) -> LidarS
     lidar_data = ros_numpy.point_cloud2.pointcloud2_to_array(
         lidar_msg)
 
-    lidar_data = torch.from_numpy(pd.DataFrame(lidar_data).to_numpy())
+    lidar_data = torch.from_numpy(pd.DataFrame(lidar_data).to_numpy()).cuda()
     xyz = lidar_data[:, :3]
     
     dists = torch.linalg.norm(xyz, dim=1)
@@ -65,7 +66,7 @@ def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time) -> LidarS
     dists = dists[indices]
     directions = directions[:, indices]
 
-    return LidarScan(directions.float(), dists.float(), timestamps.float())
+    return LidarScan(directions.float().cpu(), dists.float().cpu(), timestamps.float().cpu())
 
 
 def tf_to_settings(tf_msg):
@@ -193,20 +194,13 @@ def run_trial(config, settings, settings_description = None, config_idx = None, 
             gt_lidar_pose = start_lidar_pose.inverse() @ T_lidar
             gt_cam_pose = Pose(gt_lidar_pose @ lidar_to_camera)
             
-            if prev_timestamp is not None:
-                time.sleep(max(0,(timestamp - prev_timestamp).to_sec() - (time.time() - last_send)))
             cloner_slam.process_rgb(image, gt_cam_pose)
         elif topic == lidar_topic:
             lidar_scan = build_scan_from_msg(msg, timestamp)
 
-            if prev_timestamp is not None:
-                time.sleep(max(0,(timestamp - prev_timestamp).to_sec() - (time.time() - last_send)))
-
             cloner_slam.process_lidar(lidar_scan)
         else:
             raise Exception("Should be unreachable")
-        last_send = time.time()
-        prev_timestamp = timestamp
 
         if start_clock is None:
             start_clock = time.time()

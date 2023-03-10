@@ -2,24 +2,14 @@
 # coding: utf-8
 
 import argparse
-import glob
 import os
 import pathlib
-import pickle
 import re
 import sys
-import time
-
-import imageio
 import matplotlib.pyplot as plt
 from matplotlib.offsetbox import AnchoredText
-
-import numpy as np
 import torch
-import tqdm
 
-# autopep8: off
-# Linting needs to be disabled here or it'll try to move includes before path.
 PUB_ROS = False
 
 PROJECT_ROOT = os.path.abspath(os.path.join(
@@ -28,11 +18,10 @@ PROJECT_ROOT = os.path.abspath(os.path.join(
 sys.path.append(PROJECT_ROOT)
 sys.path.append(PROJECT_ROOT + "/src")
 
-
 from src.common.pose import Pose
 
 
-parser = argparse.ArgumentParser(description="Render ground truth maps using trained nerf models")
+parser = argparse.ArgumentParser(description="Analyze KeyFrame Poses")
 parser.add_argument("experiment_directories", nargs='+', type=str, help="folder in outputs with all results")
 parser.add_argument("--ckpt_id", type=str, default=None)
 parser.add_argument("--title", type=str, default=None)
@@ -87,7 +76,6 @@ for experiment_directory in experiment_directories:
         tracked.append(tracked_pose.get_translation())
         est.append(est_pose.get_translation())
 
-
     translation_rel_errs = []
     rel_errs_tracked = []
     for kf_a, kf_b in zip(kfs[:-1], kfs[1:]):
@@ -107,7 +95,6 @@ for experiment_directory in experiment_directories:
         tracked_end = Pose(pose_tensor=kf_b["tracked_pose"])
         tracked_delta = tracked_start.inv() * tracked_end
         tracked_xyz = tracked_delta.get_translation()
-
 
         translation_rel_errs.append((gt_xyz - est_xyz).norm())
         rel_errs_tracked.append((gt_xyz - tracked_xyz).norm())
@@ -175,7 +162,6 @@ for experiment_directory in experiment_directories:
             plt.suptitle(args.title)
 
         ax[0].legend(bbox_to_anchor=(1., 1.05))
-        # plt.tight_layout()
 
         plt.savefig(f"{experiment_directory}/poses.png", dpi=1000)
         plt.show()
@@ -186,7 +172,6 @@ for experiment_directory in experiment_directories:
         plt.plot(gt[:,0], gt[:,1], label="Ground Truth")
         plt.plot(est[:,0], est[:,1], label="Optimized")
         plt.scatter(gt[0,0],gt[0,1], s=20, color='red', label="Start Point")
-    # plt.plot(tracked[:,0], tracked[:,1], color='g',label="Tracked", linestyle="dashed")
 
         text_box = AnchoredText(f"KF Relative RMSE: {rmse_rel_err:.3f}\nOptimized RMSE:{est_rmse:.3f}", 
                                 frameon=True, loc=4, pad=0.5)

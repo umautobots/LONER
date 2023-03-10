@@ -14,13 +14,10 @@ class Frame:
     It also stores tensors used for computing the poses of cameras and lidars.
     """
 
-    # Constructor
-    # @param start_image: The RGB Image at the start of the frame
-    # @param end_image: The RGB Image at the end of the frame
-    # @param lidar_points: A LidarScan with points in the time range of the images (plus delta_t)
+    ## Constructor
+    # @param image: The RGB Image
+    # @param lidar_points: A LidarScan with points in the time range of the images
     # @param T_lidar_to_camera: Pose object with extrinsic calibration
-    # @param start_sky_mask [optional]: Binary mask where 1 indicates sky and 0 is not sky in first image.
-    # @param end_sky_mask [optional]: Binary mask where 1 indicates sky and 0 is not sky in second image.
     def __init__(self,
                  image: Image = None,
                  lidar_points: LidarScan = LidarScan(),
@@ -36,7 +33,8 @@ class Frame:
 
         self._id = -1
 
-    ## Returns a deep-copy of the current frame
+    ## Creates a deepcopy of the frame. 
+    # @returns a deepcopy of the current frame
     def clone(self) -> "Frame":
         
         attrs = ["image", "lidar_points", "_lidar_to_camera", "_lidar_pose", "_gt_lidar_pose"]
@@ -71,12 +69,14 @@ class Frame:
 
         return self
 
-    ## Detaches the current frame from the computation graph, and @returns a reference to self.
+    ## Detaches the current frame from the computation graph
+    # @returns a reference to self.
     def detach(self) -> "Frame":
         self._lidar_pose.detach()
 
         return self
 
+    ## Gets the timestamp of the image
     def get_time(self) -> float:
         return self.image.timestamp
 

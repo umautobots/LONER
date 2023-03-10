@@ -8,6 +8,11 @@ import torch
 
 @dataclass
 class WorldCube:
+    """
+    The WorldCube struct holds a shift and scale transformation to apply to poses 
+    before creating rays, such that all rays are within a unit-length cube.
+    """
+    
     scale_factor: torch.Tensor
     shift: torch.Tensor
 
@@ -129,37 +134,16 @@ def _get_view_frustum_corners(K, H, W, min_depth=1, max_depth=1e6):
                          [(W-K[0, 2]) / K[0, 0] * max_depth, -(H-K[1, 2]) / K[1, 1] * max_depth, -max_depth, 1]])  # right, down, far
 
 
-# TODO (seth): Update comments, this is all fake news now. we don't actually move anything
-def compute_world_cube(camera_to_lidar, intrinsic_mats, image_sizes, lidar_poses, camera_range, padding=0.9) -> WorldCube:
-    """
-    Compute an axis aligned minimal cube encompassing sensor poses and camera view frustums with the given camera range. 
-    An additional padding is added. 
+## Compute an axis aligned minimal cube encompassing sensor poses and camera view frustums with 
+# the given camera range. An additional padding is added. 
+# @param camera_to_lidar: The extrinsic calibration
+# @param intrinsic_mats: Either one 3x3 intrinsic matrix, or one matrix per pose.
+# @param image_sizes: Either one tuple/tensor specifying image dimensions, or one per pose
+# @param lidar_poses: Groundtruth lidar poses
+# @param camera_range: A tuple with min and max camera range
+# @param padding: 0 means no extra padding is added, the cube is doubled in each axis
+def compute_world_cube(camera_to_lidar, intrinsic_mats, image_sizes, lidar_poses, camera_range, padding=0.1) -> WorldCube:
 
-    The computation is as follows:
-    1. For each camera (pose, intrinsic, size), compute the 8 corners of the view frustum in its local coordinate frame.
-    2. Transform all the corners into the input-world frame
-    3. Project all pointclouds to input-world frame    
-    4. Collect all points in input-world frame: all point clouds, all view frustum corners, all sensor positions
-    5. Compute an oriented cube encompassing these points.
-    6. Transform all the poses relative to the unit cube
-    7. Scale the poses down to fit within unit cube. Scale down by an additional factor of (1-padding)
-    8. Scale the pointclouds
-
-    Inputs:
-        camera_poses: (N, 3, 4)
-        intrinsic_mtxs: (3, 3) or (N, 3, 3)
-        sizes: (N, 2) or (2,)
-        clouds: List of (*, 3) pointclouds
-        lidar_poses: (M, 3, 4) 
-        camera_far_plane: maximum depth to consider for each camera
-        padding: world would be additionally scaled down by a factor of (1-padding)
-    Outputs:
-        scaled_clouds: List of (*, 3) pointclouds
-        lidar_poses_world: (M, 3, 4)
-        camera_poses_world: (N, 3, 4)
-        shift_world: (3,) transformation to go from input sensor poses to output sensor poses
-        scale_factor: float
-    """
     assert 0 <= padding < 1
 
 
@@ -210,49 +194,11 @@ def compute_world_cube(camera_to_lidar, intrinsic_mats, image_sizes, lidar_poses
 
     return WorldCube(scale_factor, -origin)
 
-
-def create_spiral_poses(radii, focus_depth, n_poses=60, homogenous=False):
-    """
-    Computes poses that follow a spiral path for rendering purpose.
-    See https://github.com/Fyusion/LLFF/issues/19
-    In particular, the path looks like:
-    https://tinyurl.com/ybgtfns3
-    Inputs:
-        radii: (3) radii of the spiral for each axis
-        focus_depth: float, the depth that the spiral poses look at
-        n_poses: int, number of poses to create along the path
-    Outputs:
-        poses_spiral: (n_poses, 3, 4) the poses in the spiral path
-    """
-    poses_spiral = []
-    # rotate 4pi (2 rounds)
-    for t in torch.linspace(0, 4*torch.pi, n_poses+1)[:-1]:
-        # the parametric function of the spiral (see the interactive web)
-        center = torch.Tensor(
-            [torch.cos(t), -torch.sin(t), -torch.sin(0.5*t)]) * radii
-        # the viewing z axis is the vector pointing from the @focus_depth plane
-        # to @center
-        z = normalize(center - torch.Tensor([0, 0, -focus_depth]))
-
-        # compute other axes as in @average_poses
-        y_ = torch.Tensor([0, 1, 0])  # (3)
-        x = normalize(torch.cross(y_, z))  # (3)
-        y = torch.cross(z, x)  # (3)#
-        new_pose = torch.stack([x, y, z, center], 1)
-        if homogenous:
-            new_pose = torch.vstack((new_pose, torch.Tensor([0,0,0,1])))
-        poses_spiral.append(new_pose)  # (3, 4)#
-    return torch.stack(poses_spiral, 0)  # (n_poses, 3, 4)
-
-
+## Converts a 4x4 transformation matrix to the se(3) twist vector
+# @param transformation_matrix: A pytorch 4x4 homogenous transformation matrix
+# @param device: The device for the output
+# @returns: A 6-tensor [x,y,z,r_x,r_y,r_z]
 def transform_to_tensor(transformation_matrix, device=None):
-    """
-    Converts a homogenous transformation matrix into a tensor T = [x,y,z, x',y',z']
-    where x',y',z' are the imaginary components of a quaternion representing the rotation.
-    The real component is left implicit so we can implicitly enforce the norm to be 1.c
-
-    Taken from: https://github.com/cvg/nice-slam/blob/7af15cc33729aa5a8ca052908d96f495e34ab34c/src/common.py#L179
-    """
 
     gpu_id = -1
     if isinstance(transformation_matrix, np.ndarray):
@@ -271,9 +217,9 @@ def transform_to_tensor(transformation_matrix, device=None):
     R = transformation_matrix[:3, :3]
     T = transformation_matrix[:3, 3]
 
-    quat = pytorch3d.transforms.matrix_to_quaternion(R)
+    rot = pytorch3d.transforms.matrix_to_axis_angle(R)
 
-    tensor = torch.cat([T, quat]).float()
+    tensor = torch.cat([T, rot]).float()
     if device is not None:
         tensor = tensor.to(device)
     elif gpu_id != -1:
@@ -291,8 +237,8 @@ def tensor_to_transform(transformation_tensors):
     N = len(transformation_tensors.shape)
     if N == 1:
         transformation_tensors = torch.unsqueeze(transformation_tensors, 0)
-    Ts, quats = transformation_tensors[:, :3], transformation_tensors[:, 3:]
-    rotation_matrices = pytorch3d.transforms.quaternion_to_matrix(quats)
+    Ts, rots = transformation_tensors[:, :3], transformation_tensors[:, 3:]
+    rotation_matrices = pytorch3d.transforms.axis_angle_to_matrix(rots)
     RT = torch.cat([rotation_matrices, Ts[:, :, None]], 2)
     if N == 1:
         RT = RT[0]

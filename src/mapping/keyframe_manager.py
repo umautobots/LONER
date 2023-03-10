@@ -77,7 +77,7 @@ class KeyFrameManager:
         if self._last_accepted_frame_ts is None:
             return True
 
-        dt = frame.image.timestamp - self._last_accepted_frame_ts
+        dt = frame.get_time() - self._last_accepted_frame_ts
 
         dt_threshold = self._settings.keyframe_selection.temporal.time_diff_seconds
         return dt >= dt_threshold

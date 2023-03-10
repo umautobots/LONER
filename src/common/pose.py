@@ -74,7 +74,8 @@ class Pose:
         xyz = torch.Tensor(pose_dict['xyz'])
         quat = torch.Tensor(pose_dict['orientation'])
 
-        tensor = torch.cat((xyz, quat))
+        axis_angle = pytorch3d.transforms.quaternion_to_axis_angle(quat)
+        tensor = torch.cat((xyz, axis_angle))
         return Pose(pose_tensor=tensor, fixed=fixed)
 
     ## Converts the current Pose to a dict and @returns the pose as a dict.
@@ -149,4 +150,6 @@ class Pose:
 
     ## Converts the rotation to an axis-angle representation for interpolation
     def get_axis_angle(self) -> torch.Tensor:
+        if self._pose_tensor is not None:
+            return self._pose_tensor[3:]
         pytorch3d.transforms.matrix_to_axis_angle(self.get_rotation())

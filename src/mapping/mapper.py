@@ -1,3 +1,4 @@
+import cProfile
 import torch
 import os
 import torch.multiprocessing as mp
@@ -47,7 +48,7 @@ class Mapper:
         os.makedirs(f"{self._settings.log_directory}/checkpoints", exist_ok=True)
         self.last_ckpt = {}
 
-        self._last_mapped_frame_id = None
+        self._last_mapped_frame_time = None
 
 
     def update(self) -> None:
@@ -60,7 +61,7 @@ class Mapper:
             if isinstance(new_frame, StopSignal):
                 self._processed_stop_signal.value = 1
                 return
-
+        
             new_keyframe = self._keyframe_manager.process_frame(new_frame)
             
             accepted_frame = new_keyframe is not None
@@ -70,8 +71,11 @@ class Mapper:
             # print(f"{accepted_str} frame at time {image_ts}")
         
             if self._settings.optimizer.enabled and accepted_frame:
-
+                                
                 active_window = self._keyframe_manager.get_active_window()
+
+                if self._last_mapped_frame_time is not None:    
+                    self._last_mapped_frame_time.value = new_keyframe.get_time()
 
                 self._optimizer.iterate_optimizer(active_window)
 
@@ -89,24 +93,21 @@ class Mapper:
                 else:
                     ckpt = {'global_step': self._optimizer._global_step,
                             'poses': pose_state}
-                    
-                self._last_mapped_frame_id.value = new_keyframe._frame._id
-                            
+                
                 self._keyframe_update_signal.emit(pose_state)
                 
-                print("Saving Checkpoint to", f"{self._settings.log_directory}/checkpoints/ckpt_{kf_idx}.tar")
                 torch.save(ckpt, f"{self._settings.log_directory}/checkpoints/ckpt_{kf_idx}.tar")
+                
             elif not self._settings.optimizer.enabled:
                 if self._optimizer._global_step % 100 == 0:
                     pose_state = self._keyframe_manager.get_poses_state()
                     ckpt = {'poses': pose_state}
-                    print("Saving Checkpoint to", f"{self._settings.log_directory}/checkpoints/ckpt_{self._optimizer._keyframe_count}.tar")
                     torch.save(ckpt, f"{self._settings.log_directory}/checkpoints/ckpt_{self._optimizer._keyframe_count}.tar")
                 self._optimizer._global_step += 1
 
     ## Spins by reading frames from the @m frame_slot as inputs.
-    def run(self, last_mapped_frame_id) -> None:
-        self._last_mapped_frame_id = last_mapped_frame_id
+    def run(self, last_mapped_frame_time) -> None:
+        self._last_mapped_frame_time = last_mapped_frame_time
 
         if self._settings.debug.pytorch_detect_anomaly:
             torch.autograd.set_detect_anomaly(True)

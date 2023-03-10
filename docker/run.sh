@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+DATA_DIR="/home/$USER/Documents/ClonerSlamData"
+
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 IMAGE_TAG=cloner_slam
 CONTAINER_NAME=cloner_slam
@@ -17,7 +19,7 @@ DOCKER_OPTIONS+="-v $SCRIPT_DIR/../:/home/$(whoami)/ClonerSLAM "
 DOCKER_OPTIONS+="-e DISPLAY=$DISPLAY "
 DOCKER_OPTIONS+="-v /tmp/.X11-unix:/tmp/.X11-unix "
 DOCKER_OPTIONS+="-v $HOME/.Xauthority:/home/$(whoami)/.Xauthority "
-DOCKER_OPTIONS+="-v /home/$USER/Documents/ClonerSlamData:/home/$(whoami)/data "
+DOCKER_OPTIONS+="-v $DATA_DIR:/home/$(whoami)/data "
 DOCKER_OPTIONS+="-v /mnt/ws-frb:/mnt/ws-frb "
 DOCKER_OPTIONS+="-v /mnt/workspace:/mnt/workspace "
 DOCKER_OPTIONS+="--name $CONTAINER_NAME "

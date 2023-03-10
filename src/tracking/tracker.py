@@ -1,3 +1,4 @@
+import cProfile
 import copy
 import os
 import time
@@ -66,19 +67,17 @@ class Tracker:
         self._reference_time = None
 
         self._frame_count = 0
-        self._last_mapped_frame_id = None
+        self._last_mapped_frame_time = None
+        self._last_tracked_frame_time = 0
+
+        self._frame_rate = self._settings.frame_synthesis.frame_decimation_rate_hz
+        self._max_time_delta = self._settings.synchronization.max_time_delta
 
     def update(self):
         
-        if self._settings.synchronization.enabled:
-        
-            max_frames_ahead = self._settings.frame_synthesis.frame_decimation_rate_hz * \
-                                self._settings.synchronization.max_time_delta                                
-            
-            while self._frame_count >= (self._last_mapped_frame_id.value + 2) * max_frames_ahead:
-                time.sleep(0.1)
-                print("Can't track yet!", self._frame_count, self._last_mapped_frame_id.value, max_frames_ahead)
-    
+        if self._settings.synchronization.enabled and self._last_mapped_frame_time is not None:
+            while self._last_tracked_frame_time > self._last_mapped_frame_time.value + self._max_time_delta:
+                time.sleep(0.01)
 
         if self._processed_stop_signal.value:
             print("Not updating tracker: Tracker already done.")
@@ -121,10 +120,11 @@ class Tracker:
 
             self._frame_signal.emit(frame)
             self._frame_count += 1
+            self._last_tracked_frame_time = frame.get_time()
 
     ## Run spins and processes incoming data while putting resulting frames into the queue
-    def run(self, last_mapped_id) -> None:
-        self._last_mapped_frame_id = last_mapped_id
+    def run(self, last_mapped_frame_time) -> None:
+        self._last_mapped_frame_time = last_mapped_frame_time
         while not self._processed_stop_signal.value:
             self.update()
 
