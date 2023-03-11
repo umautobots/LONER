@@ -1,3 +1,4 @@
+from typing import List
 import os
 import yaml
 import numpy as np
@@ -17,6 +18,23 @@ class SettingsLoader(yaml.SafeLoader):
         with open(fname, 'r') as f:
             return yaml.load(f, SettingsLoader)
 
+def generate_change_list(changes):
+
+    options = []
+
+    # Recursively parse overrides looking for leaf elements. 
+    # build options as (path_to_setting: List[str], options: List[Any])
+    def _generate_options_helper(data, stack):
+        if not isinstance(data, dict):
+            options.append((tuple(stack), data))
+            return
+        
+        for element in data:
+            _generate_options_helper(data[element], stack + [element])
+    
+    _generate_options_helper(changes, [])
+
+    return options
 
 class Settings(AttrDict):
     """ Settings class is a thin wrapper around AttrDict.
@@ -29,10 +47,22 @@ class Settings(AttrDict):
         SettingsLoader.add_constructor('!include', SettingsLoader.include)
 
         with open(filename, 'r') as f:
-            return Settings(yaml.load(f, SettingsLoader))
+            settings = Settings(yaml.load(f, SettingsLoader))
 
-    
-    def generate_options(filename: str, overrides: str, run_all_combos: bool = False):
+        return settings
+
+    def augment(self, changes):
+
+        if changes is not None:
+            change_list = generate_change_list(changes)    
+            
+            for attr_stack, value in change_list:
+                element = self
+                for attr in attr_stack[:-1]:
+                    element = element[attr]
+                element[attr_stack[-1]] = value
+
+    def generate_options(filename: str, overrides: str, run_all_combos: bool = False, augmentations: List[dict] = None):
         """
         @param filename: Baseline settings
         @param overrides: Path to file specifying which parameters to change, and what possible values.
@@ -68,25 +98,19 @@ class Settings(AttrDict):
 
         baseline = Settings.load_from_file(filename)
 
+        if augmentations is not None:
+            for changes in augmentations:
+                if changes is not None:
+                    baseline.augment(changes)
+
         with open(overrides) as overrides_file:
             overrides_data = yaml.full_load(overrides_file)
 
-        options = []
+        options = generate_change_list(overrides_data)
 
-        # Recursively parse overrides looking for leaf elements. 
-        # build options as (path_to_setting: List[str], options: List[Any])
-        def _generate_options_helper(data, stack):
-            if not isinstance(data, dict):
-                if not isinstance(data, list):
-                    data = [data]
-
-                options.append((tuple(stack), data))
-                return
-            
-            for element in data:
-                _generate_options_helper(data[element], stack + [element])
-        
-        _generate_options_helper(overrides_data, [])
+        for key, values in options:
+            if not isinstance(values, list):
+                options[key] = [values]
 
         if run_all_combos:
             # How many choices are there for each override

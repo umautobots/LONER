@@ -154,6 +154,7 @@ def run_trial(config, settings, settings_description = None, config_idx = None, 
             with open(f"{logdir}/configuration.txt", 'w+') as desc_file:
                 desc_file.write(settings_description)
     
+
     bag = rosbag.Bag(rosbag_path.as_posix(), 'r')
 
     cloner_slam.start()
@@ -281,8 +282,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-
-    baseline_settings_path = os.path.expanduser("~/ClonerSLAM/cfg/cloner_slam_lite.yaml") if args.lite else os.path.expanduser("~/ClonerSLAM/cfg/default_settings.yaml")
+    baseline_settings_path = os.path.expanduser("~/ClonerSLAM/cfg/defaults.yaml")
 
     with open(args.configuration_path) as config_file:
         config = yaml.full_load(config_file)
@@ -292,11 +292,19 @@ if __name__ == "__main__":
 
     config["duration"] = args.duration
 
+    if args.lite:
+        lite_mode_path = os.path.expanduser("~/ClonerSLAM/cfg/cloner_slam_lite.yaml")
+        with open(lite_mode_path, 'r') as lite_mode_f:
+            lite_mode_changes = yaml.full_load(lite_mode_f)
+    else:
+        lite_mode_changes = None
+
     if args.overrides is not None:
         settings_options, settings_descriptions = \
-            Settings.generate_options(baseline_settings_path, 
+            Settings.generate_options(baseline_settings_path,
                                       args.overrides,
-                                      args.run_all_combos)
+                                      args.run_all_combos,
+                                      [config["changes"], lite_mode_changes])
         
         settings_options = settings_options
         settings_descriptions = settings_descriptions
@@ -304,14 +312,15 @@ if __name__ == "__main__":
         settings_descriptions = [None]
         settings_options = [Settings.load_from_file(baseline_settings_path)]            
 
+        if args.lite:
+            if config["changes"] is not None:
+                settings_options[0].augment(config["changes"])
+            settings_options[0].augment(lite_mode_changes)
+
     if args.overrides is not None or args.num_repeats > 1:
         now = datetime.datetime.now()
         now_str = now.strftime("%m%d%y_%H%M%S")
         config["experiment_name"] += f"_{now_str}"
-
-
-    global IM_SCALE_FACTOR
-    IM_SCALE_FACTOR = settings_options[0].system.image_scale_factor
 
     if args.gpu_ids != [0]:
         mp.set_start_method('spawn')

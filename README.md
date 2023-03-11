@@ -3,21 +3,20 @@
 This is ClonerSLAM, a neural implicit SLAM algorithm for Camera-LiDAR fusion.
 
 
+## Running the Code
 
-# Running the Code
-
-## Prerequisites
+### Prerequisites
 This has been tested on an Ubuntu 20.04 docker container. We highly recommend you use our docker configuration. You will need:
 
 1. Docker: https://docs.docker.com/engine/install/
 2. nvidia-docker2: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html
 3. Follow these instructions: https://github.com/NVIDIA/nvidia-docker/issues/595#issuecomment-519714769.
 
-## Using the Docker Container
+### Using the Docker Container
 This repository has everything you need to run with docker. 
 
 
-### Building the container
+#### Building the container
 
 ```
 cd <project_root>/docker
@@ -28,11 +27,11 @@ If you get an error about cuda not being found, you have two options:
 1. Follow these instructions https://github.com/NVIDIA/nvidia-docker/issues/595#issuecomment-519714769
 2. Remove the line that installs `tiny-cuda-nn` from the dockerfile, then the build will finish properly. Start the container, install `tiny-cuda-nn`, then commit the result to the tag `cloner_slam`. Then re-run with `./run.sh restart`.
 
-### Data Preparation
+#### Data Preparation
 By default, we assume all data has been placed in `~/Documents/ClonerSlamData`. If you have data in a different, you can go into `docker/run.sh` and change `DATA_DIR` to whatever you want. If you need multiple directories mounted, you'll need to modify the run script.
 
 
-### Run Container
+#### Run Container
 
 To run the container, `cd docker` and `./run.sh`. The `run.sh` file has the following behavior:
 
@@ -40,7 +39,7 @@ To run the container, `cd docker` and `./run.sh`. The `run.sh` file has the foll
 - If a container is already running, you will be attached to that. Hence, running `./run.sh` from two terminals will connect you to a single docker container.
 - If you run with `./run.sh restart`, the existing container (if it exists) will be killed and removed and a new one will be started.
 
-### VSCode
+#### VSCode
 This repo contains everything you need to use the Docker extension in VSCode. To get that to run properly:
 1. Install the docker extension.
 2. Reload the workspace. You will likely be prompted if you want to re-open the folder in a dev-container. Say yes.
@@ -68,16 +67,15 @@ Finally, `cd examples/fusion_portable` and `python3 run_fusion_portable.py ../..
 The results will be stored into `outputs/<experiment_name>_<timestamp>/` where `<experiment_name>` is set in the configuration file, and `<timestamp>=YYMMDD_hhmmss`
 
 ### Analyzing the Results
-Dense trajectories are stored to `<output_dir>/trajectory`. This will contain four files:
+Dense trajectories are stored to `<output_dir>/trajectory`. This will contain three files:
 
-1. `estimated_trajectory.txt`: This is the dense trajectory as estimated by ClonerSLAM. KeyFrame poses are taken from the optimization result, and intermediate poses are taken by looking at the tracking results.
+1. `estimated_trajectory.txt`: This is the dense trajectory as estimated by ClonerSLAM. 
 2. `keyframe_trajectory.txt`: This includes only the keyframe poses.
 3. `tracking_only.txt`: This is the result of accumulating tracking before any optimization occurs.
-4. `online_estimates.txt`: 
 
 ### Ablation Studies
 
-# Software Architecture
+## Software Architecture
 
 ### Code Organization
 
@@ -98,38 +96,82 @@ The current implementation has three processes running: A main process which han
 Note that this currently causes a decent amount of overhead, and I'm looking for an alternative.
 
 
-### Settings
+## Settings
 
-Each project needs three configuration files: A top-level settings, a model configuration, and a NeRF configuration. For example, see `cfg/default_settings.yaml`, `cfg/model_config/decoupled_carla_halfres.yaml`, and `cfg/nerf_config/carla_decoupled_hash.yaml`.
+Our settings system is designed to make it easy to test with a wide variety of configurations. As a result, it's a bit complicated. Settings are processed as follows.
 
-Settings in the top-level configuration are passed through to their respective classes and subclasses. As an example, say you want to add a new setting to the optimizer to control a coefficient in the loss. In `default_settings.yaml` you could add an entry under `mapper/optimizer` as `k_test: 0`. Then, within the optimizer, you'll immediately be able to access `self._settings.k_test`.
+Each sequence has a file specifying the settings for that sequence. For example, `cfg/fusion_portable/canteen.yaml`. This specifies the following:
+1. `baseline`: A path (relative to `cfg/`) with the settings for this trial to be based on, such as `fusion_portable/defaults.yaml`. 
+2. Paths to the dataset, calibration, and groundtruth trajectory. The groundtruth trajectory is used for evaluation, in case you want to run with GT poses, and to pre-compute the world cube.
+3. `experiment_name`: Specifies the default prefix for output directories.
+4. `changes`: This is a dictionary specifying which settings to override in the defaults. See `cfg/fusion_portable/mcr.yaml` for an example of this in use.
 
-#### Debugging
+Next, if you specified `--lite` when running `run_fusion_portable.py`, the settings as determined above will be augmented with the settings in `cfg/cloner_slam_lite.yaml`.
 
-An exception to the organization is the debug settings. All modules get access to all debug settings. You can access each flag by it's name directly, ignoring the `flags` and `global_enabled` fields. For example, say you want to add a new debug tool which prints "here!" at a certain point in the code. In the settings, under `debug/flags`, add `print_here: True`. Then, within the code (for example in `optimizer.py`), you'll directly be able to access `self._settings.debug.print_here`. The `global_enable` flag will toggle all the debug flags: `self._settings.debug.print_here` will return true if `debug/flags/print_here` AND `debug/global_enabled` are `True` in the settings.
+Finally, if you want to run an ablation study or try sets of parameters, you may pass `--overrides <path_to_yaml>` to `run_fusion_portable.py`. See `cfg/traj_ablation.py` for an example. You specify a path (in yaml) to the parameter, then one or more possible values. By default, for each value you specified in the overrides file, one trial of the algorithm will be run. Each trial will run with the settings as determined above, but with that one additional parameter changed. You may also pass `--run_all_combos` which will try all combinations of parameters specified in the overrides.
 
-## Docs
-Doxygen is set up in this repo, in case we want to use it. To build the docs:
-
-```
-cd docs
-doxygen Doxyfile
-```
-
-then view the docs by opening docs/html/index.html in your favorite browser.
-
-
-## Running the Code
-
-To run the algorithm on FusionPortable, do the following
+For example, consider a simple example where the baseline settings are:
 
 ```
-cd examples
-python3 run_fusion_portable.py ../../data/fusion_portable/20220216_canteen_day/20220216_canteen_day_ref.bag ../../data/fusion_portable/calibration/20220209_calib/ <experiment_name>
+## File: simple_baseline.yaml
+
+system:
+  number_of_keyframes: 10
+  number_of_samples: 20
+  image_resolution:
+    x: 10
+    y: 100
 ```
 
-This assumes your data is in ~/data/ in the container, as is done by the VSCode devcontainer. If you put it somewhere else, you'll have to change the command.
+Then, in the sequence settings you provide the following:
+```
+## File: sequence.yaml
 
-`<experiment_name>` names the output folder. All outputs are stored in `outputs/<experiment_name>_<timestamp>` where the timestamp is formatted as MMDDYY_HHMMSS.
+baseline: simple_baseline.yaml
+dataset: <path_to_data>
+calibration: <path_to_calibration>
+groundtruth_traj: <path_to_gt_poses>
+experiment_name: simple
+changes:
+  system:
+    image_resolution:
+      x: 15
+```
 
-To render outputs, use the renderer.py example. Note that this desperately needs to be updated since it's still only using camera poses used in training.
+
+If you run without specifying any options, the algorithm will run once, with all default settings except for `system.image_resolution.x = 15`.
+
+Say our `cloner_slam_lite.yaml` file then looks like this:
+
+```
+## File: cloner_slam_lite.yaml
+
+system:
+  number_of_keyframes: 5
+```
+
+Now, if we run with `--lite`, the algorithm will run once with default settings, but `system.image_resolution.x = 15` and `system.number_of_keyframes = 5`.
+
+
+Now, say we add an overrides file:
+
+```
+## File: overrides.yaml
+
+system:
+  image_resolution:
+    x: [5, 10]
+    y: [50, 75, 150]
+```
+
+If we specify `--lite` AND `--overrides overrides.yaml`, the algorithm will now run 5 times. All will have `system.number_of_keyframes = 5`. The five runs will have the following combinations of x and y resolutions:
+
+1. x = 5; y = 100
+2. x = 10; y = 100
+3. x = 15; y = 50
+4. x = 15; y = 75
+5. x = 15; y = 150
+
+In each case, the `x` and `y` default to 15 and 100, and then one parameter is changed per run.
+
+Finally, if you specify `--lite` AND `--overrides overrides.yaml` AND `--run_all_combos`, 6 trials will be run representing all possible combinations of x and y resolutions.
