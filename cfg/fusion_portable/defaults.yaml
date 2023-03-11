@@ -87,7 +87,7 @@ mapper:
     model_config: !include ../model_config/default_model_config.yaml
   
 system:
-  single_threaded: False
+  single_threaded: True
   log_dir_prefix: "~/ClonerSLAM/outputs"
   image_scale_factor: 0.5 # Setting is put here to emphasize that it needs to influence calibration loading
 

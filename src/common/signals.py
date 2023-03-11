@@ -5,6 +5,7 @@ information sharing
 
 import time
 import torch.multiprocessing as mp
+import copy
 
 class StopSignal:
     """ Dummy class used to signal processes to stop by inserting this into MP queues.    
@@ -20,7 +21,7 @@ class SimpleQueue:
         self._data = []
 
     def put(self, value):
-        self._data.append(value)
+        self._data.append(copy.deepcopy(value))
     
     def get(self):
         return self._data.pop(0)
