@@ -282,7 +282,6 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    baseline_settings_path = os.path.expanduser("~/ClonerSLAM/cfg/defaults.yaml")
 
     with open(args.configuration_path) as config_file:
         config = yaml.full_load(config_file)
@@ -298,6 +297,8 @@ if __name__ == "__main__":
             lite_mode_changes = yaml.full_load(lite_mode_f)
     else:
         lite_mode_changes = None
+
+    baseline_settings_path = os.path.expanduser(f"~/ClonerSLAM/cfg/{config['baseline']}")
 
     if args.overrides is not None:
         settings_options, settings_descriptions = \

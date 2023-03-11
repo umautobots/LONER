@@ -84,7 +84,7 @@ mapper:
             fix_sigma_mlp: False
             fix_rgb_mlp: False
 
-    model_config: !include model_config/default_model_config.yaml
+    model_config: !include ../model_config/default_model_config.yaml
   
 system:
   single_threaded: False

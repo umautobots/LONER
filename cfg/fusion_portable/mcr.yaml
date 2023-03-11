@@ -1,6 +1,6 @@
-baseline: defaults.yaml
+baseline: fusion_portable/defaults.yaml
 dataset: ~/data/fusion_portable/20220219_MCR_normal_01/20220219_MCR_normal_01_ref.bag
 calibration: ~/data/fusion_portable/calibration/20220209_calib
 groundtruth_traj: ~/data/fusion_portable/20220219_MCR_normal_01/ground_truth_traj.txt
 experiment_name: mcr
-changes: None
+changes: NULL
