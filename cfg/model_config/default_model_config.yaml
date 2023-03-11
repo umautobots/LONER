@@ -11,7 +11,7 @@ model:
     ray_range: *ray_range
 
     render:
-        N_samples_train: 512          # number of samples per ray
+        N_samples_train: 512      # number of samples per ray
         N_samples_test: 2048      # number of samples per ray during testing
         retraw: True
         lindisp: False          # sampling linearly in disparity rather than depth

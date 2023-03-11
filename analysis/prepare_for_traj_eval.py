@@ -121,3 +121,19 @@ for config in config_names:
         traj_path = f"{config_path}/trajectory/estimated_trajectory.txt"
         output_path = f"{config_output_path}/stamped_traj_estimate.txt"
         prepare_sequence(traj_path, output_path)
+
+if not multiple_configs:
+    config_names = ["cloner_slam"]
+
+analyze_config = {
+    "Datasets": {
+        args.sequence_name: {
+            "label": args.sequence_name
+        }
+    },
+    "Algorithms": {c: {"fn": "traj_est", "label": c} for c in config_names},
+    "RelDistances": [1,10,25]
+}
+
+with open(f"{rpg_output_dir}/{args.sequence_name}_evaluation.yaml", 'w+') as f:
+    yaml.dump(analyze_config, f)

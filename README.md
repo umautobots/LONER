@@ -73,27 +73,27 @@ Dense trajectories are stored to `<output_dir>/trajectory`. This will contain th
 2. `keyframe_trajectory.txt`: This includes only the keyframe poses.
 3. `tracking_only.txt`: This is the result of accumulating tracking before any optimization occurs.
 
-### Ablation Studies
 
-## Software Architecture
+## Replicating Our Results
 
-### Code Organization
+First, download the relavent sequences from Fusion Portable as described above. Run:
 
-The core algorithm code goes in `src`. This should be totally agnostic to any input data source. Within `src`, classes that are only used in mapping/tracking go in their respective folders. Everything else (shared classes, utils, etc) goes in `common`. 
+```
+cd examples/fusion_portable
+python3 run_fusion_portable.py ../../cfg/fusion_portable/<canteen/garden/mcr>.py
+cd ../../analysis
+python3 prepare_for_traj_eval.py <output_directory> <sequence_name> # output dir is reported by the algorithm when it terminates
+python3 renderer.py <output_directory> 
+```
 
-Anything to actually run the algorithm and produce outputs goes in `examples`. 
+Result will be stored in each output folder. To plot trajectories, use [rpg_trajectory_evaluation](https://github.com/uzh-rpg/rpg_trajectory_evaluation) by copying the relavent information from `<output_dir>/rpg_evaluation` into wherever you cloned the `rpg_trajectory_evaluation` repo. In particular, move `rpg_evaluation/<experiment_name>` to `rpg_trajectory_evaluation/results` and `rpg_evaluation/<config_name>.yaml` to `rpg_trajectory_evaluation/analyze_trajectories_config` Then, run with:
 
-Scripts for analyzing performance are in `analysis`. 
+```
+python3 scripts/analyze_trajectories.py <config_name>.yaml --output_dir ./results/<experiment_name>/ --results_dir ./results/<experiment_name>/ --platform desktop --odometry_error_per_dataset --plot_trajectories --png
+```
 
-Outputs are stored in `outputs`.
+Note that you may need to modify `rpg_trajectory_evaluation` to allow a larger time difference when associating poses between the ground truth and the estimated trajectories. 0.15s worked for us. 
 
-Unit tests are limited, but contained in `test`.
-
-### Inter-Process Communication
-
-The current implementation has three processes running: A main process which handles data I/O, a tracker, and a mapper. A simple Signals/Slots implementation is used to share data, which is based on Multiprocessing Queues. This implementation can be found in `src/common/signals.py`.
-
-Note that this currently causes a decent amount of overhead, and I'm looking for an alternative.
 
 
 ## Settings

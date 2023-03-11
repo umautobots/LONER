@@ -18,7 +18,7 @@
       "request": "launch",
       "program": "${workspaceFolder}/examples/fusion_portable/run_fusion_portable.py",
       "console": "integratedTerminal",
-      "args": ["${workspaceFolder}/cfg/fusion_portable/canteen.yaml", "--lite"],
+      "args": ["${workspaceFolder}/cfg/fusion_portable/canteen.yaml"],
       "cwd": "${workspaceFolder}/examples/fusion_portable",
       "subProcess": true
     },

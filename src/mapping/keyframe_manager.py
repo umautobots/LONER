@@ -93,7 +93,7 @@ class KeyFrameManager:
             else:
                 num_temporal_frames = self._settings.window_selection.hybrid_settings.num_recent_frames
                 
-            num_temporal_frames = min(num_temporal_frames, len(self._keyframes))
+            num_temporal_frames = min(num_temporal_frames, len(self._keyframes), window_size)
             indices = torch.randperm(len(self._keyframes) - num_temporal_frames)[:window_size-num_temporal_frames].tolist()
 
             # Note: This isn't great design, but it's pretty important that these indices comes last. 
