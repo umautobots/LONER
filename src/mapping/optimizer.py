@@ -216,10 +216,8 @@ class Optimizer:
                 if not kf.is_anchored:
                     kf.get_lidar_pose().set_fixed(not optimize_poses)
 
-            sigma_params = [
-                p for p in self._model.nerf_model._model_sigma.parameters() if p.requires_grad]
-            rgb_params = [
-                p for p in self._model.nerf_model._model_intensity.parameters() if p.requires_grad]
+            sigma_params = self._model.get_sigma_parameters()
+            rgb_params = self._model.get_rgb_parameters()
 
             if optimize_poses:
                 optimizable_poses = [kf.get_lidar_pose().get_pose_tensor() for kf in active_keyframe_window if not kf.is_anchored]
