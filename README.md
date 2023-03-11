@@ -175,3 +175,6 @@ If we specify `--lite` AND `--overrides overrides.yaml`, the algorithm will now 
 In each case, the `x` and `y` default to 15 and 100, and then one parameter is changed per run.
 
 Finally, if you specify `--lite` AND `--overrides overrides.yaml` AND `--run_all_combos`, 6 trials will be run representing all possible combinations of x and y resolutions.
+
+
+The last thing (for real this time) is you can also provide `--num_repeats=<n>`, which will run all configurations (as determined above) `n` times.

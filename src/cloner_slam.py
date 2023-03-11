@@ -219,6 +219,8 @@ class ClonerSLAM:
             self._tracking_process.join()
             self._mapping_process.join()
             print("Sub-processes Exited")
+        else:
+            self._mapper.finish()
 
     # For use in single-threaded system. 
     def _system_update(self):

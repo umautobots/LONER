@@ -123,5 +123,5 @@ class DefaultLogger:
         # Dump it all to TUM format
         os.makedirs(f"{self._log_directory}/trajectory", exist_ok=True)
         dump_trajectory_to_tum(self._estimated_trajectory, self._timestamps, f"{self._log_directory}/trajectory/tracking_only.txt")
-        dump_trajectory_to_tum(self._frame_log, self._timestamps, f"{self._log_directory}/trajectory/online_estimates.txt")
+        dump_trajectory_to_tum(self._frame_log, self._timestamps, f"{self._log_directory}/trajectory/estimated_trajectory.txt")
         dump_trajectory_to_tum(keyframe_trajectory, keyframe_timestamps, f"{self._log_directory}/trajectory/keyframe_trajectory.txt")

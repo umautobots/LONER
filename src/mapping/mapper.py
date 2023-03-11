@@ -117,6 +117,16 @@ class Mapper:
         while not self._processed_stop_signal.value:
             self.update()
         
+        self.finish()
+        
+        print("Mapping Done. Waiting to terminate.")
+        # Wait until an external terminate signal has been sent.
+        # This is used to prevent race conditions at shutdown
+        while not self._term_signal.value:
+            continue
+        print("Exiting mapping process.")
+
+    def finish(self):
         pose_state = self._keyframe_manager.get_poses_state()
 
         last_ckpt = {'global_step': self._optimizer._global_step,
@@ -128,10 +138,3 @@ class Mapper:
 
         print("Saving Last Checkpoint to", f"{self._settings.log_directory}/checkpoints/final.tar")
         torch.save(last_ckpt, f"{self._settings.log_directory}/checkpoints/final.tar")
-
-        print("Mapping Done. Waiting to terminate.")
-        # Wait until an external terminate signal has been sent.
-        # This is used to prevent race conditions at shutdown
-        while not self._term_signal.value:
-            continue
-        print("Exiting mapping process.")

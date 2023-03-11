@@ -108,9 +108,9 @@ class Settings(AttrDict):
 
         options = generate_change_list(overrides_data)
 
-        for key, values in options:
+        for idx, (key, values) in enumerate(options):
             if not isinstance(values, list):
-                options[key] = [values]
+                options[idx] = (key, [values])
 
         if run_all_combos:
             # How many choices are there for each override
