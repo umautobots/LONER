@@ -25,6 +25,13 @@ class Model(nn.Module):
                list(self.nerf_model._pos_encoding.parameters()) + \
                list(self.nerf_model._dir_encoding.parameters())
 
+    def get_rgb_mlp_parameters(self):
+        return list(self.nerf_model._model_intensity.parameters())
+
+    def get_rgb_feature_parameters(self):
+            return list(self.nerf_model._pos_encoding.parameters()) + \
+                   list(self.nerf_model._dir_encoding.parameters())
+
     def get_sigma_parameters(self):
         return list(self.nerf_model._model_sigma.parameters())
 

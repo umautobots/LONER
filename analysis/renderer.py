@@ -176,13 +176,15 @@ def _gpu_worker(job_queue: mp.Queue, result_queue: mp.Queue, lidar_to_cam, total
             break
         pose_idx, pose = data
         cam_pose = Pose(pose)*lidar_to_cam.to('cpu')
-        _, depth, _ = render_dataset_frame(cam_pose.to(_DEVICE))
-        print(f"Rendered frame {pose_idx}/{total}")
-        result_queue.put((pose_idx, depth.cpu()))
+        rgb, depth, _ = render_dataset_frame(cam_pose.to(_DEVICE))
+        print(f"Rendered frame {pose_idx}/{total-1}")
+        result_queue.put((pose_idx, depth.cpu(), rgb.cpu()))
     
     while True:
         continue
 if __name__ == "__main__":
+    mp.set_start_method('spawn')
+
     with torch.no_grad():
         poses = ckpt["poses"]
         lidar_to_camera = Pose.from_settings(full_config.calibration.lidar_to_camera)
@@ -257,6 +259,7 @@ if __name__ == "__main__":
             dist_since_last_spin = 0
             prev_pose = np.eye(4)
             
+            spin_idxs = []
             for timestamp in image_timestamps:
 
                 xyz = xyz_interp(timestamp)
@@ -268,11 +271,24 @@ if __name__ == "__main__":
                 
                 dist_since_last_spin += np.sqrt(np.sum((xyz - prev_pose[:3,3])**2))
 
+                if dist_since_last_spin > SPIN_SPACING_M:
+                    num_spin_steps =  SPIN_DURATION_S * FPS
+                    spin_amounts_rad = np.linspace(0, 2*np.pi, num_spin_steps)
+                    rotations = Rotation.from_euler('z', spin_amounts_rad)
+                    
+                    spin_idxs.append(len(lidar_poses))
+                    
+                    for rel_rot in rotations:
+                        T = np.hstack((rot.as_matrix() @ rel_rot.as_matrix(), xyz.reshape(-1, 1)))
+                        T = np.vstack((T, [0,0,0,1]))
+                        lidar_poses.append(T)
+
+                    dist_since_last_spin = 0
+
                 prev_pose = T
 
             lidar_poses = torch.from_numpy(np.stack(lidar_poses).astype(np.float32))
         
-            mp.set_start_method('spawn')
 
             # rgbs = []
             depths = []
@@ -306,7 +322,27 @@ if __name__ == "__main__":
             results = sorted(results)
 
             depths = [r[1] for r in results]
+            rgbs = [r[2].permute(0,2,3,1).detach() for r in results]
+
+            rgbs_nospin = []
+            depths_nospin = []
+
+            for idx, (r,d) in enumerate(zip(rgbs, depths)):
+                if idx not in spin_idxs:
+                    rgbs_nospin.append(r)
+                    depths_nospin.append(d)
+
+            save_video(f"{render_dir}/flythrough_depth.mp4", depths_nospin, depths[0].size(), 
+                    cmap='turbo', rescale=False, clahe=False, isdepth=True, fps=FPS*3)
 
             save_video(f"{render_dir}/flythrough_depth_nospin.mp4", depths, depths[0].size(), 
                     cmap='turbo', rescale=False, clahe=False, isdepth=True, fps=FPS*3)
+            
+            
+            save_video(f"{render_dir}/flythrough_rgb.mp4", rgbs, rgbs[0].shape, 
+                    cmap='turbo', rescale=False, clahe=False, isdepth=False, fps=FPS*3)
+                
+
+            save_video(f"{render_dir}/flythrough_rgb_nospin.mp4", rgbs_nospin, rgbs[0].shape, 
+                    cmap='turbo', rescale=False, clahe=False, isdepth=False, fps=FPS*3)
                 

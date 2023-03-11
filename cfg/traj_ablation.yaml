@@ -1,7 +1,6 @@
 mapper:
   optimizer:
     fix_poses: True
-    detach_rgb_from_poses: False
   keyframe_manager:
     window_selection:
       hybrid_settings:

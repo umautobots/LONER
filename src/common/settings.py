@@ -5,8 +5,6 @@ import copy
 
 from attrdict import AttrDict
 
-# https://stackoverflow.com/questions/528281/how-can-i-include-a-yaml-file-inside-another
-
 
 class SettingsLoader(yaml.SafeLoader):
     def __init__(self, stream):
@@ -138,8 +136,5 @@ class Settings(AttrDict):
                     
                     settings_options.append(settings_copy)
                     settings_descriptions.append(settings_description)
-
-            settings_options.append(baseline)
-            settings_descriptions.append("BASELINE")
 
             return settings_options, settings_descriptions 

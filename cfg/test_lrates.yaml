@@ -2,4 +2,5 @@ mapper:
   optimizer:
     model_config:
       train:
-        lrate_rgb_mlp: [0.005, 0.01, 0.025, 0.05]
+        lrate_rgb_mlp: [0.005, 0.01, 0.025]
+        lrate_rgb_features: [0.005, 0.01, 0.025]

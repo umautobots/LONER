@@ -223,7 +223,8 @@ class Optimizer:
                 optimizable_poses = [kf.get_lidar_pose().get_pose_tensor() for kf in active_keyframe_window if not kf.is_anchored]
                         
                 self._optimizer = torch.optim.Adam([{'params': sigma_params, 'lr': self._model_config.train.lrate_sigma_mlp},
-                                                    {'params': rgb_params, 'lr': self._model_config.train.lrate_rgb_mlp},
+                                                    {'params': self._model.get_rgb_mlp_parameters(), 'lr': self._model_config.train.lrate_rgb_mlp},
+                                                    {'params': self._model.get_rgb_feature_parameters(), 'lr': self._model_config.train.lrate_rgb_features},
                                                     {'params': optimizable_poses, 'lr': self._model_config.train.lrate_pose}])
 
             else:
