@@ -1,4 +1,4 @@
-enable_view_dependence: True
+enable_view_dependence: False
 dir_encoding_intensity:
   degree: 4
   otype: SphericalHarmonics
