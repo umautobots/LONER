@@ -91,6 +91,8 @@ class DecoupledNeRF(nn.Module):
                 self._dir_encoding.n_output_dims
         else:
             network_in_dims = self._pos_encoding.n_output_dims
+            self._dir_encoding = None
+            
         self._model_intensity = tcnn.Network(n_input_dims=network_in_dims,
                                              n_output_dims=self._num_colors,
                                              network_config=intensity_network)
@@ -119,9 +121,9 @@ class DecoupledNeRF(nn.Module):
             h_d = self._dir_encoding(dir)
             h_xd = torch.cat([h_x, h_d], dim=-1)
 
-            h_c = self._model_intensity(h_xd) #x_hd for dir view dependence
+            h_c = self._model_intensity(h_xd)
         else:
-            h_x = self._model_intensity(h_x)
+            h_c = self._model_intensity(h_x)
             
         color = torch.sigmoid(h_c)
 

@@ -216,20 +216,18 @@ class Optimizer:
                 if not kf.is_anchored:
                     kf.get_lidar_pose().set_fixed(not optimize_poses)
 
-            sigma_params = self._model.get_sigma_parameters()
-            rgb_params = self._model.get_rgb_parameters()
-
             if optimize_poses:
                 optimizable_poses = [kf.get_lidar_pose().get_pose_tensor() for kf in active_keyframe_window if not kf.is_anchored]
                         
-                self._optimizer = torch.optim.Adam([{'params': sigma_params, 'lr': self._model_config.train.lrate_sigma_mlp},
+                self._optimizer = torch.optim.Adam([{'params': self._model.get_sigma_parameters(), 'lr': self._model_config.train.lrate_sigma_mlp},
                                                     {'params': self._model.get_rgb_mlp_parameters(), 'lr': self._model_config.train.lrate_rgb_mlp},
                                                     {'params': self._model.get_rgb_feature_parameters(), 'lr': self._model_config.train.lrate_rgb_features},
                                                     {'params': optimizable_poses, 'lr': self._model_config.train.lrate_pose}])
 
             else:
-                self._optimizer = torch.optim.Adam([{'params': sigma_params, 'lr': self._model_config.train.lrate_sigma_mlp},
-                                                    {'params': rgb_params, 'lr': self._model_config.train.lrate_rgb_mlp}])
+                self._optimizer = torch.optim.Adam([{'params': self._model.get_sigma_parameters(), 'lr': self._model_config.train.lrate_sigma_mlp},
+                                                    {'params': self._model.get_rgb_mlp_parameters(), 'lr': self._model_config.train.lrate_rgb_mlp},
+                                                    {'params': self._model.get_rgb_feature_parameters(), 'lr': self._model_config.train.lrate_rgb_features}])
 
             lrate_scheduler = torch.optim.lr_scheduler.ExponentialLR(self._optimizer, self._model_config.train.lrate_gamma)
 

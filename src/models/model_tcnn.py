@@ -21,16 +21,17 @@ class Model(nn.Module):
             raise NotImplementedError()
 
     def get_rgb_parameters(self):
-        return list(self.nerf_model._model_intensity.parameters()) + \
+        all_params =  list(self.nerf_model._model_intensity.parameters()) + \
                list(self.nerf_model._pos_encoding.parameters()) + \
-               list(self.nerf_model._dir_encoding.parameters())
+               ([] if (self.nerf_model._dir_encoding is None) else list(self.nerf_model._dir_encoding.parameters()))
+        return all_params
 
     def get_rgb_mlp_parameters(self):
         return list(self.nerf_model._model_intensity.parameters())
 
     def get_rgb_feature_parameters(self):
             return list(self.nerf_model._pos_encoding.parameters()) + \
-                   list(self.nerf_model._dir_encoding.parameters())
+                   ([] if (self.nerf_model._dir_encoding is None) else list(self.nerf_model._dir_encoding.parameters()))
 
     def get_sigma_parameters(self):
         return list(self.nerf_model._model_sigma.parameters())

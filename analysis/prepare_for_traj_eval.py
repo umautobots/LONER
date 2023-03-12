@@ -53,42 +53,17 @@ parser.add_argument("--study_name", type=str, required=False, default="cloner_sl
 
 args = parser.parse_args()
 
-multiple_configs = False
-multiple_trials = False
-
-for item in os.listdir(args.experiment_directory):
-    item_path = os.path.join(args.experiment_directory, item)
-    if os.path.isdir(item_path) and item[:6] == "config":
-        multiple_configs = True
-        for subitem in os.listdir(os.path.join(args.experiment_directory, item)):
-            if os.path.isdir(f"{item_path}/{subitem}") and subitem[:5] == "trial":
-                multiple_trials = True
-                break
-        break
-    if os.path.isdir(item_path) and item[:5] == "trial":
-        multiple_trials = True
-        break
-
-
 rpg_output_dir = f"{args.experiment_directory}/rpg_evaluation/{args.study_name}"
 
 os.makedirs(f"{rpg_output_dir}/{PLATFORM}", exist_ok=True)
 
 trial_names = None
 config_names = [None]
-if multiple_configs:
-    config_names = [i for i in os.listdir(args.experiment_directory) if i[:6] == "config"]
-    if multiple_trials:
-        trial_names = [i for i in os.listdir(f"{args.experiment_directory}/{config_names[0]}") if i[:5] == "trial"]
-elif multiple_trials:
-    trial_names = [i for i in os.listdir(f"{args.experiment_directory}") if i[:5] == "trial"]
+config_names = [i for i in os.listdir(args.experiment_directory) if os.path.isdir(f"{args.experiment_directory}/{i}")]
+trial_names = [i for i in os.listdir(f"{args.experiment_directory}/{config_names[0]}") if os.path.isdir(f"{args.experiment_directory}/{config_names[0]}/{i}")]
 
 
-pkl_path = args.experiment_directory
-if multiple_configs:
-    pkl_path += f"/{config_names[0]}/"
-if multiple_trials:
-    pkl_path += f"/{trial_names[0]}/"
+pkl_path = f"{args.experiment_directory}/{config_names[0]}/{trial_names[0]}"
 
 with open(f"{pkl_path}/full_config.pkl", 'rb') as f:
     full_config = pickle.load(f)
@@ -112,18 +87,12 @@ for config in config_names:
 
     write_config_data(config_output_path, gt_data)
 
-    if multiple_trials:
-        for trial_idx, trial in enumerate(trial_names):
-            traj_path = f"{config_path}/{trial}/trajectory/estimated_trajectory.txt"
-            output_path = f"{config_output_path}/stamped_traj_estimate{trial_idx}.txt"
-            prepare_sequence(traj_path, output_path)
-    else:
-        traj_path = f"{config_path}/trajectory/estimated_trajectory.txt"
-        output_path = f"{config_output_path}/stamped_traj_estimate.txt"
+    for trial_idx, trial in enumerate(trial_names):
+        traj_path = f"{config_path}/{trial}/trajectory/estimated_trajectory.txt"
+        if not os.path.exists(traj_path):
+            continue
+        output_path = f"{config_output_path}/stamped_traj_estimate{trial_idx}.txt"
         prepare_sequence(traj_path, output_path)
-
-if not multiple_configs:
-    config_names = ["cloner_slam"]
 
 analyze_config = {
     "Datasets": {
