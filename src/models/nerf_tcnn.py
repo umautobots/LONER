@@ -100,7 +100,6 @@ class DecoupledNeRF(nn.Module):
     def forward(self, pos, dir, sigma_only=False, detach_sigma=True):
         # x: [N, 3], scaled to [-1, 1]
         # d: [N, 3], normalized to [-1, 1]
-        print("Detach Sigma", detach_sigma)
         pos = (pos + 1) / 2
         if sigma_only:
             h = self._model_sigma(pos)
