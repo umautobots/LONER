@@ -1,6 +1,3 @@
 mapper:
-  optimizer:
-    model_config:
-      model:
-        nerf_config:
-          enable_view_dependence: [False, True]
+  enable_view_dependence: [False, True]
+  

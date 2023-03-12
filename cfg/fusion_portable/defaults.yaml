@@ -88,7 +88,7 @@ mapper:
   
 system:
   single_threaded: True
-  log_dir_prefix: "~/ClonerSLAM/outputs"
+  log_dir_prefix: "/mnt/ws-frb/projects/cloner_slam/results/map_ablation_study"
   image_scale_factor: 0.5 # Setting is put here to emphasize that it needs to influence calibration loading
 
   synchronization: &synchronization
