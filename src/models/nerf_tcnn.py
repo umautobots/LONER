@@ -69,7 +69,7 @@ class DecoupledNeRF(nn.Module):
         self._num_colors = num_colors
 
         self.cfg = cfg
-
+        
         self._enable_view_dependence = cfg["enable_view_dependence"]
 
         pos_encoding_sigma = self.cfg["pos_encoding_sigma"]
@@ -92,7 +92,7 @@ class DecoupledNeRF(nn.Module):
         else:
             network_in_dims = self._pos_encoding.n_output_dims
             self._dir_encoding = None
-            
+
         self._model_intensity = tcnn.Network(n_input_dims=network_in_dims,
                                              n_output_dims=self._num_colors,
                                              network_config=intensity_network)
@@ -100,7 +100,7 @@ class DecoupledNeRF(nn.Module):
     def forward(self, pos, dir, sigma_only=False, detach_sigma=True):
         # x: [N, 3], scaled to [-1, 1]
         # d: [N, 3], normalized to [-1, 1]
-
+        print("Detach Sigma", detach_sigma)
         pos = (pos + 1) / 2
         if sigma_only:
             h = self._model_sigma(pos)

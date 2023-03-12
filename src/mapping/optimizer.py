@@ -295,23 +295,19 @@ class Optimizer:
 
                 loss = self.compute_loss(camera_samples, lidar_samples, it_idx)
 
-                if torch.isnan(loss):
-                    print("Warning: NaN Loss Encountered")
-                    breakpoint()
-                else:
-                    losses_log[-1].append(loss.detach().cpu().item())
-                    depth_eps_log[-1].append(self._depth_eps)
+                losses_log[-1].append(loss.detach().cpu().item())
+                depth_eps_log[-1].append(self._depth_eps)
 
-                    if self._settings.debug.draw_comp_graph:
-                        graph_dir = f"{self._settings.log_directory}/graphs"
-                        os.makedirs(graph_dir, exist_ok=True)
-                        loss_dot = torchviz.make_dot(loss)
-                        loss_dot.format = "png"
-                        loss_dot.render(directory=graph_dir, filename=f"iteration_{self._global_step}")
+                if self._settings.debug.draw_comp_graph:
+                    graph_dir = f"{self._settings.log_directory}/graphs"
+                    os.makedirs(graph_dir, exist_ok=True)
+                    loss_dot = torchviz.make_dot(loss)
+                    loss_dot.format = "png"
+                    loss_dot.render(directory=graph_dir, filename=f"iteration_{self._global_step}")
 
-                    loss.backward(retain_graph=False)
-                    self._optimizer.step()
-                    lrate_scheduler.step()
+                loss.backward(retain_graph=False)
+                self._optimizer.step()
+                lrate_scheduler.step()
 
                 self._optimizer.zero_grad(set_to_none=True)
 
@@ -478,7 +474,7 @@ class Optimizer:
                 -1, self._model_config.model.num_colors)
 
             results_cam = self._model(
-                cam_rays, self._ray_sampler, scale_factor)
+                cam_rays, self._ray_sampler, scale_factor, detach_sigma=self._settings.detach_rgb_from_sigma)
 
             psnr_fine = mse_to_psnr(
                 img_to_mse(results_cam['rgb_fine'], cam_intensities))
@@ -516,10 +512,8 @@ class Optimizer:
             loss += self._model_config.loss.std_lambda * loss_std_cam
             wandb_logs['loss_std_cam'] = loss_std_cam.item()
 
-        # wandb.log({}, commit=True)
-        if torch.isnan(loss):
-            breakpoint()
-            assert not torch.isnan(loss), "NaN Loss Encountered"
+
+        assert not torch.isnan(loss), "NaN Loss Encountered"
             
         return loss
 

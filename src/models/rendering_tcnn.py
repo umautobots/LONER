@@ -152,7 +152,8 @@ def render_rays(rays,
                 netchunk=32768,
                 num_colors=3,
                 sigma_only=False,
-                DEBUG=False
+                DEBUG=False,
+                detach_sigma=True
                 ):
     """
     Render rays by computing the output of @occ_model, sampling points based on the class probabilities, applying volumetric rendering using @tcnn_model applied on sampled points
@@ -205,11 +206,11 @@ def render_rays(rays,
         # Perform model inference to get color and raw sigma
         B = xyz_.shape[0]
         if netchunk == 0:
-            out = model(xyz_, dir_, sigma_only)
+            out = model(xyz_, dir_, sigma_only, detach_sigma)
         else:
             out_chunks = []
             for i in range(0, B, netchunk):
-                out_chunks += [model(xyz_, dir_, sigma_only)]
+                out_chunks += [model(xyz_, dir_, sigma_only, detach_sigma)]
             out = torch.cat(out_chunks, 0)
 
         return out.view(N_rays, N_samples_, -1)

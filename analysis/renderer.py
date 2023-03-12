@@ -332,10 +332,10 @@ if __name__ == "__main__":
                     rgbs_nospin.append(r)
                     depths_nospin.append(d)
 
-            save_video(f"{render_dir}/flythrough_depth.mp4", depths_nospin, depths[0].size(), 
+            save_video(f"{render_dir}/flythrough_depth.mp4", depths, depths[0].size(), 
                     cmap='turbo', rescale=False, clahe=False, isdepth=True, fps=FPS*3)
 
-            save_video(f"{render_dir}/flythrough_depth_nospin.mp4", depths, depths[0].size(), 
+            save_video(f"{render_dir}/flythrough_depth_nospin.mp4", depths_nospin, depths[0].size(), 
                     cmap='turbo', rescale=False, clahe=False, isdepth=True, fps=FPS*3)
             
             

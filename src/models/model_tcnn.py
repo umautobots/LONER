@@ -44,7 +44,7 @@ class Model(nn.Module):
         for p in self.get_rgb_parameters():
             p.requires_grad = not should_freeze
 
-    def forward(self, rays, ray_sampler, scale_factor, testing=False, camera=True):
+    def forward(self, rays, ray_sampler, scale_factor, testing=False, camera=True, detach_sigma=True):
         """Do batched inference on rays using chunk"""
 
         if testing:
@@ -71,7 +71,8 @@ class Model(nn.Module):
                             raw_noise_std=self.cfg.render.raw_noise_std,
                             netchunk=self.cfg.render.netchunk,
                             num_colors=self.cfg.num_colors,
-                            sigma_only=(not camera))
+                            sigma_only=(not camera),
+                            detach_sigma=detach_sigma)
             for k, v in rendered_ray_chunks.items():
                 results[k] += [v]
 
