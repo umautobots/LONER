@@ -22,7 +22,7 @@ from packaging import version
 import skimage
 
 class Mesher(object):
-    def __init__(self, model, ckpt, world_cube, rosbag_path, lidar_topic,
+    def __init__(self, model, ckpt, world_cube, rosbag_path=None, lidar_topic=None,
                        resolution = 0.2, marching_cubes_bound = [[-40,20], [0,20], [-3,15]], level_set=10,
                        points_batch_size=500000):
 
@@ -199,8 +199,6 @@ class Mesher(object):
             for i, pnts in enumerate(torch.split(points, self.points_batch_size, dim=0)):
                 z.append(self.model.inference_points(pnts, dir_=None, sigma_only=True).cpu().numpy()[:, -1])
             z = np.concatenate(z, axis=0)
-            print('---')
-            print(z.shape)
 
             if use_lidar_fov_mask:
                 lidar_fov_mask = []

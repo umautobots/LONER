@@ -33,7 +33,6 @@ from src.common.ray_utils import CameraRayDirections
 from src.models.losses import *
 from src.models.model_tcnn import Model, OccupancyGridModel
 from src.models.ray_sampling import OccGridRaySampler
-from src.common.pose_utils import create_spiral_poses
 
 # autopep8: on
 
@@ -70,8 +69,8 @@ else:
 
 checkpoint_path = pathlib.Path(f"{args.experiment_directory}/checkpoints/{checkpoint}")
 
-# render_dir = pathlib.Path(f"{args.experiment_directory}/renders/{checkpoint}_gt_poses_{args.use_gt_poses}")
-# os.makedirs(render_dir, exist_ok=True)
+render_dir = pathlib.Path(f"{args.experiment_directory}/renders/{checkpoint}_gt_poses_{args.use_gt_poses}")
+os.makedirs(render_dir, exist_ok=True)
 
 # override any params loaded from yaml
 with open(f"{args.experiment_directory}/full_config.pkl", 'rb') as f:
@@ -130,7 +129,6 @@ model.load_state_dict(ckpt['network_state_dict'])
 
 cfg = full_config.mapper.optimizer.model_config
 ray_range = cfg.data.ray_range
-
 
 occ_model.load_state_dict(ckpt['occ_model_state_dict'])
 # initialize occ_sigma
@@ -314,78 +312,75 @@ def lidar_ts_to_seq(bag, lidar_topic):
 rosbag_path = '/hostroot/home/pckung/fusion_portable/20220216_canteen_day/20220216_canteen_day_ref.bag'
 lidar_topic = '/os_cloud_node/points'
 
-mesher = Mesher(model, ckpt, world_cube, rosbag_path, lidar_topic)
-mesher.get_mesh(_DEVICE)
+bag = rosbag.Bag(rosbag_path, 'r')
+lidar_ts_to_seq_ = lidar_ts_to_seq(bag, lidar_topic)
+pcd = o3d.geometry.PointCloud()
+with torch.no_grad():
+    poses = ckpt["poses"]    
+    all_poses = []
+    skip_step = 1 #10
 
-# bag = rosbag.Bag(rosbag_path, 'r')
-# lidar_ts_to_seq_ = lidar_ts_to_seq(bag, lidar_topic)
-# pcd = o3d.geometry.PointCloud()
-# with torch.no_grad():
-#     poses = ckpt["poses"]    
-#     all_poses = []
-#     skip_step = 1 #10
+    if args.only_last_frame:
+        tqdm_poses = tqdm([poses[-1]])
+    else:
+        poses = poses[15:]
+        tqdm_poses = tqdm(poses[::skip_step])
+    for i, kf in enumerate(tqdm_poses):
+        if args.use_gt_poses:
+            start_key = "gt_start_lidar_pose"
+            end_key = "gt_end_lidar_pose"
+            pose_key = "gt_lidar_pose"
+        else:
+            start_key = "start_lidar_pose"
+            end_key = "end_lidar_pose"
+            pose_key = "lidar_pose"
 
-#     if args.only_last_frame:
-#         tqdm_poses = tqdm([poses[-1]])
-#     else:
-#         poses = poses[15:]
-#         tqdm_poses = tqdm(poses[::skip_step])
-#     for i, kf in enumerate(tqdm_poses):
-#         if args.use_gt_poses:
-#             start_key = "gt_start_lidar_pose"
-#             end_key = "gt_end_lidar_pose"
-#             pose_key = "gt_lidar_pose"
-#         else:
-#             start_key = "start_lidar_pose"
-#             end_key = "end_lidar_pose"
-#             pose_key = "lidar_pose"
+        kf_timestamp = kf["timestamp"].numpy()
+        print(kf_timestamp)
 
-#         kf_timestamp = kf["timestamp"].numpy()
-#         print(kf_timestamp)
+        seq = np.argmin(np.abs(np.array(lidar_ts_to_seq_) - kf_timestamp))
+        print('seq: ', seq)
 
-#         seq = np.argmin(np.abs(np.array(lidar_ts_to_seq_) - kf_timestamp))
-#         print('seq: ', seq)
+        lidar_msg = find_corresponding_lidar_scan(bag, lidar_topic, seq)
+        lidar_scan = build_scan_from_msg(lidar_msg, lidar_msg.header.stamp).to(_DEVICE)
+        lidar_pose = Pose(pose_tensor=kf[pose_key]).to(_DEVICE)
+        # print('lidar_pose: \n', lidar_pose.get_transformation_matrix())
+        ray_directions = LidarRayDirections(lidar_scan, chunk_size=CHUNK_SIZE, device=_DEVICE)
 
-#         lidar_msg = find_corresponding_lidar_scan(bag, lidar_topic, seq)
-#         lidar_scan = build_scan_from_msg(lidar_msg, lidar_msg.header.stamp).to(_DEVICE)
-#         lidar_pose = Pose(pose_tensor=kf[pose_key]).to(_DEVICE)
-#         # print('lidar_pose: \n', lidar_pose.get_transformation_matrix())
-#         ray_directions = LidarRayDirections(lidar_scan, chunk_size=CHUNK_SIZE, device=_DEVICE)
+        size = lidar_scan.ray_directions.shape[1]
+        rgb_fine = torch.zeros((size,3), dtype=torch.float32).view(-1, 3)
+        depth_fine = torch.zeros((size,1), dtype=torch.float32).view(-1, 1)
+        for chunk_idx in range(ray_directions.num_chunks):
+            eval_rays = ray_directions.fetch_chunk_rays(chunk_idx, lidar_pose, world_cube, ray_range)
+            eval_rays = eval_rays.to(_DEVICE)
+            # print('eval_rays.shape: ', eval_rays.shape)
+            results = model(eval_rays, ray_sampler, scale_factor, testing=True)
 
-#         size = lidar_scan.ray_directions.shape[1]
-#         rgb_fine = torch.zeros((size,3), dtype=torch.float32).view(-1, 3)
-#         depth_fine = torch.zeros((size,1), dtype=torch.float32).view(-1, 1)
-#         for chunk_idx in range(ray_directions.num_chunks):
-#             eval_rays = ray_directions.fetch_chunk_rays(chunk_idx, lidar_pose, world_cube, ray_range)
-#             eval_rays = eval_rays.to(_DEVICE)
-#             # print('eval_rays.shape: ', eval_rays.shape)
-#             results = model(eval_rays, ray_sampler, scale_factor, testing=True)
+            rgb_fine[chunk_idx * CHUNK_SIZE: (chunk_idx+1) * CHUNK_SIZE, :] = results['rgb_fine']
+            depth_fine[chunk_idx * CHUNK_SIZE: (chunk_idx+1) * CHUNK_SIZE, :] = results['depth_fine'].unsqueeze(1)  * scale_factor
 
-#             rgb_fine[chunk_idx * CHUNK_SIZE: (chunk_idx+1) * CHUNK_SIZE, :] = results['rgb_fine']
-#             depth_fine[chunk_idx * CHUNK_SIZE: (chunk_idx+1) * CHUNK_SIZE, :] = results['depth_fine'].unsqueeze(1)  * scale_factor
+        print('lidar_scan.ray_directions.shape: ', lidar_scan.ray_directions.shape)
+        print('depth_fine.shape: ', depth_fine.shape)
 
-#         print('lidar_scan.ray_directions.shape: ', lidar_scan.ray_directions.shape)
-#         print('depth_fine.shape: ', depth_fine.shape)
+        depth_gt = torch.unsqueeze(lidar_scan.distances, 1)
+        print('depth_gt.shape: ', depth_gt.shape)
 
-#         depth_gt = torch.unsqueeze(lidar_scan.distances, 1)
-#         print('depth_gt.shape: ', depth_gt.shape)
+        rendered_lidar = (lidar_scan.ray_directions.t() * depth_fine).cpu().numpy()
+        print('rgb_fine.shape: ', rgb_fine.shape)
+        rendered_colors = rgb_fine.cpu().numpy()
+        gt_lidar = (lidar_scan.ray_directions.t() * depth_gt).cpu().numpy()
 
-#         rendered_lidar = (lidar_scan.ray_directions.t() * depth_fine).cpu().numpy()
-#         print('rgb_fine.shape: ', rgb_fine.shape)
-#         rendered_colors = rgb_fine.cpu().numpy()
-#         gt_lidar = (lidar_scan.ray_directions.t() * depth_gt).cpu().numpy()
+        rendered_pcd = o3d.geometry.PointCloud()
+        rendered_pcd.points = o3d.utility.Vector3dVector(rendered_lidar)
+        rendered_pcd.colors = o3d.utility.Vector3dVector(rendered_colors)
+        # rendered_pcd.paint_uniform_color([0, 1, 0.25])
+        lidar_pcd = o3d.geometry.PointCloud()
+        lidar_pcd.points = o3d.utility.Vector3dVector(gt_lidar)
+        lidar_pcd.paint_uniform_color([1, 0, 0.25])
 
-#         rendered_pcd = o3d.geometry.PointCloud()
-#         rendered_pcd.points = o3d.utility.Vector3dVector(rendered_lidar)
-#         rendered_pcd.colors = o3d.utility.Vector3dVector(rendered_colors)
-#         # rendered_pcd.paint_uniform_color([0, 1, 0.25])
-#         lidar_pcd = o3d.geometry.PointCloud()
-#         lidar_pcd.points = o3d.utility.Vector3dVector(gt_lidar)
-#         lidar_pcd.paint_uniform_color([1, 0, 0.25])
-
-#         pcd = merge_o3d_pc(pcd, rendered_pcd.transform(lidar_pose.get_transformation_matrix().cpu().numpy()))
-#         # o3d.visualization.draw_geometries([pcd])
-#         o3d.visualization.draw_geometries([rendered_pcd])
+        pcd = merge_o3d_pc(pcd, rendered_pcd.transform(lidar_pose.get_transformation_matrix().cpu().numpy()))
+        # o3d.visualization.draw_geometries([pcd])
+        o3d.visualization.draw_geometries([rendered_pcd])
 
 
         # pcd.normals = o3d.utility.Vector3dVector(np.zeros((1, 3)))  # invalidate existing normals

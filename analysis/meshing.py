@@ -47,6 +47,7 @@ assert torch.cuda.is_available(), 'Unable to find GPU'
 
 parser = argparse.ArgumentParser(description="Render ground truth maps using trained nerf models")
 parser.add_argument("experiment_directory", type=str, help="folder in outputs with all results")
+parser.add_argument("seqence", type=str, default="canteen", help="sequence name. Used to decide meshing bound [canteen | mcr]")
 parser.add_argument("--debug", default=False, dest="debug", action="store_true")
 parser.add_argument("--ckpt_id", type=str, default=None)
 parser.add_argument("--resolution", type=float, default=0.1)
@@ -55,21 +56,26 @@ parser.add_argument("--use_gt_poses", default=False, dest="use_gt_poses", action
 args = parser.parse_args()
 checkpoints = os.listdir(f"{args.experiment_directory}/checkpoints")
 
-# meshing_bound = [[-35,25], [-30,45], [-3,15]] # canteen
-meshing_bound = [[-16,10], [-6,5], [-3,3]] # mcr
+if args.seqence=='canteen':
+    meshing_bound = [[-35,25], [-30,45], [-3,15]] # canteen
+elif args.seqence=='mcr':
+    meshing_bound = [[-16,10], [-6,5], [-3,3]] # mcr
+else:
+    print('Please provide sequence name')
+
 resolution = args.resolution
 sigma_only = not args.color
 use_lidar_fov_mask = True
 use_convex_hull_mask = False
 
-rosbag_path = '/hostroot/home/pckung/fusion_portable/20220216_canteen_day/20220216_canteen_day_ref.bag'
-lidar_topic = '/os_cloud_node/points'
+# rosbag_path = '/hostroot/home/pckung/fusion_portable/20220216_canteen_day/20220216_canteen_day_ref.bag'
+# lidar_topic = '/os_cloud_node/points'
 
-# if not os.path.exists(f"{args.experiment_directory}/meshing"):
-#     os.makedirs(f"{args.experiment_directory}/meshing")
-# mesh_out_file=f"{args.experiment_directory}/meshing/meshing_ckpt_{args.ckpt_id}_res_{resolution}.ply"
+if not os.path.exists(f"{args.experiment_directory}/meshing"):
+    os.makedirs(f"{args.experiment_directory}/meshing")
+mesh_out_file=f"{args.experiment_directory}/meshing/meshing_ckpt_{args.ckpt_id}_res_{resolution}.ply"
 
-mesh_out_file="/hostroot/home/pckung/meshing_mcr_res0.02.ply"
+# mesh_out_file="/hostroot/home/pckung/meshing_mcr_res0.02.ply"
 
 if args.ckpt_id is None:
     #https://stackoverflow.com/a/2669120
@@ -107,15 +113,12 @@ print(f'Loading checkpoint from: {checkpoint_path}')
 ckpt = torch.load(str(checkpoint_path)) 
 model.load_state_dict(ckpt['network_state_dict']) 
 
-mesher = Mesher(model, ckpt, world_cube, rosbag_path, lidar_topic, resolution=resolution, marching_cubes_bound=meshing_bound, points_batch_size=500000)
+mesher = Mesher(model, ckpt, world_cube, resolution=resolution, marching_cubes_bound=meshing_bound, points_batch_size=500000)
 mesh_o3d, mesh_lidar_frames, origin_frame = mesher.get_mesh(_DEVICE, sigma_only=sigma_only, threshold=0, 
                                                             use_lidar_fov_mask=use_lidar_fov_mask, use_convex_hull_mask=use_convex_hull_mask)
-# mesh post-processing
-# mesh_o3d = mesh_o3d.filter_smooth_simple(number_of_iterations=1)
 mesh_o3d.compute_vertex_normals()
 o3d.visualization.draw_geometries([mesh_o3d, origin_frame],
                                     mesh_show_back_face=True, mesh_show_wireframe=False)
-
 
 print('mesh_out_file: ', mesh_out_file)
 o3d.io.write_triangle_mesh(mesh_out_file, mesh_o3d, compressed=False, write_vertex_colors=True, 

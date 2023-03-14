@@ -79,8 +79,8 @@ class Model(nn.Module):
             results[k] = torch.cat(v, 0)
         return results
 
-    def inference(self, xyz_, dir_):
-        out = inference(self.nerf_model, xyz_, dir_, netchunk=0, sigma_only=True) # netchunk=32768 TODO: fix the bug wheb=n setting netchunk size 
+    def inference_points(self, xyz_, dir_, sigma_only):
+        out = inference(self.nerf_model, xyz_, dir_, netchunk=0, sigma_only=sigma_only) # netchunk=32768 TODO: fix the bug wheb=n setting netchunk size 
         return out
 
 

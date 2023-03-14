@@ -8,8 +8,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from common.pose import Pose
 
-origin_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=3, origin=[0,0,0])
-
 parser = argparse.ArgumentParser(description="Render ground truth maps using trained nerf models")
 parser.add_argument("experiment_directory", type=str, help="folder in outputs with all results")
 parser.add_argument("--use_gt_poses", default=False, dest="use_gt_poses", action="store_true")
@@ -26,7 +24,6 @@ args = parser.parse_args()
 
 # mesh = o3d.io.read_triangle_mesh(f"/hostroot/home/pckung/meshing_color_res0.05.ply")
 # mesh = o3d.io.read_triangle_mesh("/hostroot/home/pckung/meshing_mcr_res0.02.ply")
-
 
 render_img_path = f"{args.experiment_directory}/meshing/ckpt_{args.ckpt_id}/image/"
 render_img_color_path = f"{args.experiment_directory}/meshing/ckpt_{args.ckpt_id}/image_color/"
@@ -110,6 +107,7 @@ for i, kf in enumerate(poses):
     plt.imsave(f"{render_img_path}"+"/{:05d}.png".format(i),np.asarray(image), dpi = 1)
     vis.remove_geometry(mesh, reset_bounding_box=True,)
 
+# origin_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=3, origin=[0,0,0])
 # o3d.visualization.draw_geometries([mesh, origin_frame], mesh_show_back_face=True, mesh_show_wireframe=False)
 
 
