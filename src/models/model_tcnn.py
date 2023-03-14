@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 
 from models.nerf_tcnn import DecoupledNeRF, NeRF
-from models.rendering_tcnn import render_rays, render_rays_cf
+from models.rendering_tcnn import render_rays, render_rays_cf, inference
 
 
 # Holding module for all trainable variables
@@ -78,6 +78,10 @@ class Model(nn.Module):
         for k, v in results.items():
             results[k] = torch.cat(v, 0)
         return results
+
+    def inference(self, xyz_, dir_):
+        out = inference(self.nerf_model, xyz_, dir_, netchunk=0, sigma_only=True) # netchunk=32768 TODO: fix the bug wheb=n setting netchunk size 
+        return out
 
 
 # Coarse Fine Model

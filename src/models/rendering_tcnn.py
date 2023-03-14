@@ -388,3 +388,41 @@ def render_rays_cf(rays,
             if (torch.isnan(result[k]).any() or torch.isinf(result[k]).any()):
                 print(f"! [Numerical Error] {k} contains nan or inf.")
     return result
+
+
+def inference(model, xyz_, dir_, netchunk=32768, sigma_only=False):
+    """
+    Helper function that performs model inference.
+
+    Inputs:
+        model: NeRF model instantiated using Tiny Cuda NN
+        xyz_: (N_rays, N_samples_, 3) sampled positions
+                N_samples_ is the number of sampled points in each ray;
+        dir_: (N_rays, 3) ray directions
+        sigma_only: do inference on sigma only or not
+    Outputs:
+        if sigma_only:
+            raw: (N_rays, N_samples_, 1): predictions of each sample
+        else:
+            raw: (N_rays, N_samples_, num_colors + 1): predictions of each sample
+    """
+    N_samples_ = xyz_.shape[1]
+    xyz_ = xyz_.view(-1, 3).contiguous()  # (N_rays*N_samples_, 3)
+    if sigma_only:
+        dir_ = None
+    else:
+        # (N_rays*N_samples_, embed_dir_channels)
+        dir_ = torch.repeat_interleave(
+            dir_, repeats=N_samples_, dim=0).contiguous()
+
+    # Perform model inference to get color and raw sigma
+    B = xyz_.shape[0]
+    if netchunk == 0:
+        out = model(xyz_, dir_, sigma_only)
+    else:
+        out_chunks = []
+        for i in range(0, B, netchunk):
+            out_chunks += [model(xyz_, dir_, sigma_only)]
+        out = torch.cat(out_chunks, 0)
+    return out
+    # return out.view(N_rays, N_samples_, -1)
