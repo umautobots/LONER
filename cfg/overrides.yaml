@@ -1,0 +1,6 @@
+mapper:
+  optimizer:
+    model_config:
+      loss:
+        JS_loss:
+          alpha: [2, 5, 10]

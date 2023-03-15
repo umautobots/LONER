@@ -149,7 +149,7 @@ class KeyFrame:
         
         if detach_rgb_from_poses:
             cam_pose = cam_pose.detach()
-        
+
         rays, intensities = cam_ray_directions.build_rays(first_camera_indices, 
             cam_pose, self._frame.image, world_cube, ray_range)
 

@@ -24,17 +24,18 @@ class Model(nn.Module):
         all_params =  list(self.nerf_model._model_intensity.parameters()) + \
                list(self.nerf_model._pos_encoding.parameters()) + \
                ([] if (self.nerf_model._dir_encoding is None) else list(self.nerf_model._dir_encoding.parameters()))
-        return all_params
+        return [p for p in all_params if p.requires_grad]
 
     def get_rgb_mlp_parameters(self):
         return list(self.nerf_model._model_intensity.parameters())
 
     def get_rgb_feature_parameters(self):
-            return list(self.nerf_model._pos_encoding.parameters()) + \
+            params = list(self.nerf_model._pos_encoding.parameters()) + \
                    ([] if (self.nerf_model._dir_encoding is None) else list(self.nerf_model._dir_encoding.parameters()))
+            return [p for p in params if p.requires_grad]
 
     def get_sigma_parameters(self):
-        return list(self.nerf_model._model_sigma.parameters())
+        return [ p for p in list(self.nerf_model._model_sigma.parameters()) if p.requires_grad]
 
     def freeze_sigma_head(self, should_freeze=True):
         for p in self.get_sigma_parameters():
