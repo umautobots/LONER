@@ -57,14 +57,14 @@ mapper:
     detach_rgb_from_sigma: True
     skip_pose_refinement: True # If set, skips the tracking refinement part of the optimization
     num_samples:
-      rgb: 1024
-      lidar: 512
+      rgb: 0
+      lidar: 1024
     keyframe_schedule:
       - 
         num_keyframes: 1
         iteration_schedule:
           - num_iterations: 1000
-            stage: 3
+            stage: 1
             fix_poses: True
             fix_sigma_mlp: False
             fix_rgb_mlp: False
@@ -79,7 +79,7 @@ mapper:
             fix_sigma_mlp: True
             fix_rgb_mlp: True
           # Now joint optimization
-          - stage: 3
+          - stage: 1
             num_iterations: 150
             fix_poses: False
             fix_sigma_mlp: False

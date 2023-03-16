@@ -259,8 +259,8 @@ def dump_trajectory_to_tum(transformation_matrices: torch.Tensor,
     
     translations = transformation_matrices[:, :3, 3].reshape(-1, 3)
     rotations = pytorch3d.transforms.matrix_to_quaternion(transformation_matrices[:, :3, :3]).reshape(-1, 4)
-    # swap x,y,z,w to w,x,y,z
-    rotations = torch.hstack([rotations[:,3:4], rotations[:,1:3], rotations[:, 0:1]])
+    # swap w,x,y,z to x,y,z,w
+    rotations = torch.hstack([rotations[:,1:4], rotations[:, 0:1]])
     data = torch.hstack([timestamps.reshape(-1,1), translations, rotations])
     data = data.detach().cpu().numpy()
     np.savetxt(output_file, data, delimiter=" ", fmt="%.10f")

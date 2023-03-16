@@ -171,13 +171,14 @@ def run_trial(config, settings, settings_description = None, config_idx = None, 
 
     for topic, msg, timestamp in bag.read_messages(topics=[lidar_topic, image_topic]):        
         # Wait for lidar to init
-        if topic == lidar_topic and not init:
+        if topic == lidar_topic and not init and timestamp.to_sec() and timestamp >= timestamps[0]:
             init = True
             start_time = timestamp
         
         if not init:
             continue
-
+        
+        
         timestamp -= start_time
         
         if config["duration"] is not None and timestamp.to_sec() > config["duration"]:
@@ -205,7 +206,6 @@ def run_trial(config, settings, settings_description = None, config_idx = None, 
             cloner_slam.process_rgb(image, gt_cam_pose)
         elif topic == lidar_topic:
             lidar_scan = build_scan_from_msg(msg, timestamp)
-
             cloner_slam.process_lidar(lidar_scan)
         else:
             raise Exception("Should be unreachable")
@@ -323,7 +323,7 @@ if __name__ == "__main__":
         now_str = now.strftime("%m%d%y_%H%M%S")
         config["experiment_name"] += f"_{now_str}"
 
-    if args.gpu_ids != [0]:
+    if len(args.gpu_ids) > 1:
         mp.set_start_method('spawn')
 
         job_queue_data = zip(settings_options, settings_descriptions, range(len(settings_descriptions)))
@@ -352,6 +352,7 @@ if __name__ == "__main__":
         
                 
     else:
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu_ids[0])
         for config_idx, (settings, description) in enumerate(zip(settings_options, settings_descriptions)):
             if len(settings_options) == 1:
                 config_idx = None
