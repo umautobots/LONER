@@ -220,15 +220,15 @@ class Optimizer:
                 optimizable_poses = [kf.get_lidar_pose().get_pose_tensor() for kf in active_keyframe_window if not kf.is_anchored]
                         
                 self._optimizer = torch.optim.Adam([{'params': self._model.get_sigma_parameters(), 'lr': self._model_config.train.lrate_sigma_mlp},
-                                                    {'params': self._model.get_rgb_mlp_parameters(), 'lr': self._model_config.train.lrate_rgb_mlp},
-                                                    {'params': self._model.get_rgb_feature_parameters(), 'lr': self._model_config.train.lrate_rgb_features},
+                                                    {'params': self._model.get_rgb_mlp_parameters(), 'lr': self._model_config.train.lrate_rgb, 'weight_decay': self._model_config.train.rgb_weight_decay},
+                                                    {'params': self._model.get_rgb_feature_parameters(), 'lr': self._model_config.train.lrate_rgb},
                                                     {'params': optimizable_poses, 'lr': self._model_config.train.lrate_pose}])
 
             else:
                 self._optimizer = torch.optim.Adam([{'params': self._model.get_sigma_parameters(), 'lr': self._model_config.train.lrate_sigma_mlp},
-                                                    {'params': self._model.get_rgb_mlp_parameters(), 'lr': self._model_config.train.lrate_rgb_mlp},
-                                                    {'params': self._model.get_rgb_feature_parameters(), 'lr': self._model_config.train.lrate_rgb_features}])
-
+                                                    {'params': self._model.get_rgb_mlp_parameters(), 'lr': self._model_config.train.lrate_rgb, 'weight_decay': self._model_config.train.rgb_weight_decay},
+                                                    {'params': self._model.get_rgb_feature_parameters(), 'lr': self._model_config.train.lrate_rgb}])
+                
             lrate_scheduler = torch.optim.lr_scheduler.ExponentialLR(self._optimizer, self._model_config.train.lrate_gamma)
 
             for it_idx in tqdm.tqdm(range(self._optimization_settings.num_iterations)):
@@ -295,23 +295,44 @@ class Optimizer:
 
                 loss = self.compute_loss(camera_samples, lidar_samples, it_idx)
 
-                if torch.isnan(loss):
-                    print("Warning: NaN Loss Encountered")
-                    breakpoint()
-                else:
-                    losses_log[-1].append(loss.detach().cpu().item())
-                    depth_eps_log[-1].append(self._depth_eps)
 
-                    if self._settings.debug.draw_comp_graph:
-                        graph_dir = f"{self._settings.log_directory}/graphs"
-                        os.makedirs(graph_dir, exist_ok=True)
-                        loss_dot = torchviz.make_dot(loss)
-                        loss_dot.format = "png"
-                        loss_dot.render(directory=graph_dir, filename=f"iteration_{self._global_step}")
+                losses_log[-1].append(loss.detach().cpu().item())
+                depth_eps_log[-1].append(self._depth_eps)
 
-                    loss.backward(retain_graph=False)
-                    self._optimizer.step()
-                    lrate_scheduler.step()
+                if self._settings.debug.draw_comp_graph:
+                    graph_dir = f"{self._settings.log_directory}/graphs"
+                    os.makedirs(graph_dir, exist_ok=True)
+                    loss_dot = torchviz.make_dot(loss)
+                    loss_dot.format = "png"
+                    loss_dot.render(directory=graph_dir, filename=f"iteration_{self._global_step}")
+
+                loss.backward(retain_graph=False)
+
+                for kf in keyframe_window:
+                    if kf.get_lidar_pose().get_pose_tensor().grad is not None and kf.get_lidar_pose().get_pose_tensor().grad.isnan().any():
+                        print("Warning: Encountered invalid gradient in pose. Replacing")
+                        kf.get_lidar_pose().get_pose_tensor().grad.nan_to_num_()
+                        breakpoint()
+
+                gradpath = f"{self._settings.log_directory}/gradients/"
+                os.makedirs(gradpath, exist_ok=True)
+                with open(f"{gradpath}/it_{self._global_step}.txt", 'w+') as grad_file:
+                    sigma_grads = [[p.grad.min().item(), p.grad.max().item(), p.grad.mean().item(), p.grad.norm().item()] for p in self._model.nerf_model._model_sigma.parameters()]
+                    sigma_grads = [str(s) for s in sigma_grads]
+                    feature_grads = [[p.grad.min().item(), p.grad.max().item(), p.grad.mean().item(), p.grad.norm().item()] for p in self._model.nerf_model._pos_encoding.parameters()]
+                    feature_grads = [str(s) for s in feature_grads]
+                    rgb_grads = [[p.grad.min().item(), p.grad.max().item(), p.grad.mean().item(), p.grad.norm().item()] for p in self._model.nerf_model._model_intensity.parameters()]
+                    rgb_grads = [str(s) for s in rgb_grads]
+                    grad_file.write(f"Sigma: {'; '.join(sigma_grads)}\nFeature: {'; '.join(feature_grads)}\nRGB: {'; '.join(rgb_grads)}\n")
+
+                self._optimizer.step()
+
+                for kf in keyframe_window:
+                    if kf.get_lidar_pose().get_pose_tensor().isnan().any():
+                        print("Invalid tensor")
+                        breakpoint()
+
+                lrate_scheduler.step()
 
                 self._optimizer.zero_grad(set_to_none=True)
 
@@ -378,8 +399,7 @@ class Optimizer:
             opaque_rays = (lidar_depths > 0)[..., 0]
 
             # Rendering lidar rays. Results need to be in class for occ update to happen
-            self._results_lidar = self._model(
-                lidar_rays, self._ray_sampler, scale_factor, camera=False)
+            self._results_lidar = self._model(lidar_rays, self._ray_sampler, scale_factor, camera=False)
             # (N_rays, N_samples)
             # Depths along ray
             self._lidar_depth_samples_fine = self._results_lidar['samples_fine'] * \

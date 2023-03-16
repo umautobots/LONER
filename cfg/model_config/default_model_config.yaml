@@ -29,12 +29,12 @@ model:
 
 train:
     lrate_sigma_mlp: 0.01             # learning rate
-    lrate_rgb_mlp: 0.005             # learning rate
-    lrate_rgb_features: 0.0075
-    lrate_pose: 0.001
+    lrate_rgb: 0.01             # learning rate
+    lrate_pose: 0.01
     lrate_gamma: 1.0
     decay_rate: 0.001
-     
+
+    rgb_weight_decay: 1.e-5
 loss:
     dynamic_depth_eps_JS: True         # boolean to enable JS divergence loss
     JS_loss:

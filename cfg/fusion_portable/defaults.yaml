@@ -54,9 +54,10 @@ mapper:
     data_prep_on_cpu: *data_prep_on_cpu
     enabled: True
     detach_rgb_from_poses: True
+    detach_rgb_from_sigma: True
     skip_pose_refinement: True # If set, skips the tracking refinement part of the optimization
     num_samples:
-      rgb: 512
+      rgb: 1024
       lidar: 512
     keyframe_schedule:
       - 
@@ -88,7 +89,7 @@ mapper:
   
 system:
   single_threaded: True
-  log_dir_prefix: "/mnt/ws-frb/projects/cloner_slam/results/map_ablation_study"
+  log_dir_prefix: "/mnt/ws-frb/users/sethgi/outputs/"
   image_scale_factor: 0.5 # Setting is put here to emphasize that it needs to influence calibration loading
 
   synchronization: &synchronization

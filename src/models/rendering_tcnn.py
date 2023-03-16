@@ -228,8 +228,7 @@ def render_rays(rays,
 
     raw = inference(nerf_model, xyz_samples, viewdirs, sigma_only=sigma_only)
 
-    rgb, depth, weights, opacity = raw2outputs(
-        raw, z_vals, rays_d, raw_noise_std, white_bkgd, sigma_only=sigma_only, num_colors=num_colors, far=far)
+    rgb, depth, weights, opacity = raw2outputs(raw, z_vals, rays_d, raw_noise_std, white_bkgd, sigma_only=sigma_only, num_colors=num_colors, far=far)
 
     result = {'rgb_fine': rgb,
               'depth_fine': depth,
