@@ -276,9 +276,9 @@ if __name__ == "__main__":
                     spin_amounts_rad = np.linspace(0, 2*np.pi, num_spin_steps)
                     rotations = Rotation.from_euler('z', spin_amounts_rad)
                     
-                    spin_idxs.append(len(lidar_poses))
                     
                     for rel_rot in rotations:
+                        spin_idxs.append(len(lidar_poses))
                         T = np.hstack((rot.as_matrix() @ rel_rot.as_matrix(), xyz.reshape(-1, 1)))
                         T = np.vstack((T, [0,0,0,1]))
                         lidar_poses.append(T)
@@ -332,10 +332,10 @@ if __name__ == "__main__":
                     rgbs_nospin.append(r)
                     depths_nospin.append(d)
 
-            save_video(f"{render_dir}/flythrough_depth.mp4", depths_nospin, depths[0].size(), 
+            save_video(f"{render_dir}/flythrough_depth.mp4", depths, depths[0].size(), 
                     cmap='turbo', rescale=False, clahe=False, isdepth=True, fps=FPS*3)
 
-            save_video(f"{render_dir}/flythrough_depth_nospin.mp4", depths, depths[0].size(), 
+            save_video(f"{render_dir}/flythrough_depth_nospin.mp4", depths_nospin, depths[0].size(), 
                     cmap='turbo', rescale=False, clahe=False, isdepth=True, fps=FPS*3)
             
             

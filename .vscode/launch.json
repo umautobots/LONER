@@ -28,7 +28,7 @@
       "request": "launch",
       "program": "${workspaceFolder}/analysis/renderer.py",
       "console": "integratedTerminal",
-      "args": ["${workspaceFolder}/outputs/canteen_031023_141950", "--no_render_stills", "--render_video"],
+      "args": ["${workspaceFolder}/outputs/debug_nan_031223_155004", "--render_video"],
       "cwd": "${workspaceFolder}/analysis",
       "subProcess": true
     }

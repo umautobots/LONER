@@ -29,7 +29,7 @@ class DefaultLogger:
         self._timestamps = torch.Tensor([])
 
         # ICP Only
-        self._estimated_trajectory = torch.Tensor([])
+        self._icp_only = torch.Tensor([])
 
         self._gt_path = torch.Tensor([])
         
@@ -70,13 +70,13 @@ class DefaultLogger:
 
             gt_pose = (self._gt_pose_offset * gt_pose_raw).get_transformation_matrix().detach()
 
-            self._estimated_trajectory = torch.cat([self._estimated_trajectory, tracked_pose.unsqueeze(0)])
+            self._icp_only = torch.cat([self._icp_only, tracked_pose.unsqueeze(0)])
             self._gt_path = torch.cat([self._gt_path, gt_pose.unsqueeze(0)])
 
             self._timestamps = torch.cat([self._timestamps, torch.tensor([frame_time])])
             
-            if len(self._estimated_trajectory) > 1:
-                relative_transform = self._estimated_trajectory[-2].inverse() @  self._estimated_trajectory[-1]
+            if len(self._icp_only) > 1:
+                relative_transform = self._icp_only[-2].inverse() @  self._icp_only[-1]
             else:
                 relative_transform = tracked_pose
 
@@ -104,8 +104,8 @@ class DefaultLogger:
 
             self._t_world_to_kf = Pose(pose_tensor=kf_pose_tensor).get_transformation_matrix()
 
-            tracked_pose = self._estimated_trajectory[kf_idx]
-            most_recent_tracked_pose = self._estimated_trajectory[-1]
+            tracked_pose = self._icp_only[kf_idx]
+            most_recent_tracked_pose = self._icp_only[-1]
             
             self._t_kf_to_frame = tracked_pose.inverse() @ most_recent_tracked_pose
 
@@ -122,6 +122,6 @@ class DefaultLogger:
         
         # Dump it all to TUM format
         os.makedirs(f"{self._log_directory}/trajectory", exist_ok=True)
-        dump_trajectory_to_tum(self._estimated_trajectory, self._timestamps, f"{self._log_directory}/trajectory/tracking_only.txt")
+        dump_trajectory_to_tum(self._icp_only, self._timestamps, f"{self._log_directory}/trajectory/tracking_only.txt")
         dump_trajectory_to_tum(self._frame_log, self._timestamps, f"{self._log_directory}/trajectory/estimated_trajectory.txt")
         dump_trajectory_to_tum(keyframe_trajectory, keyframe_timestamps, f"{self._log_directory}/trajectory/keyframe_trajectory.txt")

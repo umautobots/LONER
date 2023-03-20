@@ -1,14 +1,13 @@
 baseline: fusion_portable/defaults.yaml
-dataset: ~/data/fusion_portable/20220219_MCR_normal_01/20220219_MCR_normal_01_ref.bag
+dataset: /mnt/ws-frb/projects/cloner_slam/fusion_portable/20220219_MCR_slow_01/20220219_MCR_slow_01_ref.bag
 calibration: ~/data/fusion_portable/calibration/20220209_calib
-groundtruth_traj: ~/data/fusion_portable/20220219_MCR_normal_01/ground_truth_traj.txt
+groundtruth_traj: ~/data/fusion_portable/20220219_MCR_slow_01/ground_truth_traj.txt
 experiment_name: mcr
 changes:
   mapper:
     optimizer:
-       model_config:
-         data:
-           ray_range: &ray_range [1, 35]
-         model:
-           ray_range: *ray_range
-
+      model_config:
+        data:
+          ray_range: &ray_range [1, 35]
+        model:
+          ray_range: *ray_range

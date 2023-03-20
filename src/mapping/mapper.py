@@ -8,7 +8,7 @@ from common.frame import Frame
 from common.settings import Settings
 from common.signals import Signal, StopSignal
 from mapping.keyframe_manager import KeyFrameManager
-from mapping.optimizer import Optimizer
+from mapping.optimizer import Optimizer, OptimizationSettings
 
 
 class Mapper:
@@ -84,7 +84,7 @@ class Mapper:
                 
                 kf_idx = self._optimizer._keyframe_count - 1
 
-                if kf_idx % 25 == 0 or self._settings.log_verbose:
+                if kf_idx % 10 == 0 or self._settings.log_verbose:
                     ckpt = {'global_step': self._optimizer._global_step,
                             'network_state_dict': self._optimizer._model.state_dict(),
                             'optimizer_state_dict': self._optimizer._optimizer.state_dict(),
@@ -127,6 +127,13 @@ class Mapper:
         print("Exiting mapping process.")
 
     def finish(self):
+
+        # Hack: Train RGB MLP
+        # print("Training RGB MLP at shutdown")
+        # optimizer_settings = OptimizationSettings(3, 10_000, True, False, True, False)
+        # kf_window = self._keyframe_manager._keyframes
+        # self._optimizer.iterate_optimizer(kf_window, optimizer_settings)
+
         pose_state = self._keyframe_manager.get_poses_state()
 
         last_ckpt = {'global_step': self._optimizer._global_step,

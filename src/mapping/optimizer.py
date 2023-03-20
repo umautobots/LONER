@@ -118,7 +118,7 @@ class Optimizer:
 
     ## Run one or more iterations of the optimizer, as specified by the stored settings
     # @param keyframe_window: The set of keyframes to use in the optimization.
-    def iterate_optimizer(self, keyframe_window: List[KeyFrame]) -> float:
+    def iterate_optimizer(self, keyframe_window: List[KeyFrame], optimizer_settings: OptimizationSettings = None) -> float:
 
         # Look at the keyframe schedule and figure out which iteration schedule to use
         cumulative_kf_idx = 0
@@ -146,7 +146,7 @@ class Optimizer:
             
             prof.start()
             start_time = time.time()
-            result = self._do_iterate_optimizer(keyframe_window, iteration_schedule, prof)
+            result = self._do_iterate_optimizer(keyframe_window, iteration_schedule, prof, optimizer_settings=optimizer_settings)
             end_time = time.time()
             prof.stop()
 
@@ -154,7 +154,7 @@ class Optimizer:
 
         else:          
             start_time = time.time()
-            result = self._do_iterate_optimizer(keyframe_window, iteration_schedule)
+            result = self._do_iterate_optimizer(keyframe_window, iteration_schedule, optimizer_settings=optimizer_settings)
             end_time = time.time()
             elapsed_time = end_time - start_time
 
@@ -166,7 +166,8 @@ class Optimizer:
         self._keyframe_count += 1
         return result
 
-    def _do_iterate_optimizer(self, keyframe_window: List[KeyFrame], iteration_schedule: dict, profiler: profile = None) -> float:
+    def _do_iterate_optimizer(self, keyframe_window: List[KeyFrame], iteration_schedule: dict, 
+                              profiler: profile = None, optimizer_settings: OptimizationSettings = None) -> float:
         
         if len(keyframe_window) == 1:
             keyframe_window[0].is_anchored = True
@@ -181,18 +182,22 @@ class Optimizer:
         for iteration_config in iteration_schedule:
             losses_log.append([])
             depth_eps_log.append([])
-
-            self._optimization_settings.freeze_poses = iteration_config["fix_poses"] or self._settings.fix_poses
             
-            if "latest_kf_only" in iteration_config:
-                self._optimization_settings.latest_kf_only = iteration_config["latest_kf_only"]
-            else:
-                self._optimization_settings.latest_kf_only = False
+            if optimizer_settings is None:
+                self._optimization_settings.freeze_poses = iteration_config["fix_poses"] or self._settings.fix_poses
+                
+                if "latest_kf_only" in iteration_config:
+                    self._optimization_settings.latest_kf_only = iteration_config["latest_kf_only"]
+                else:
+                    self._optimization_settings.latest_kf_only = False
 
-            self._optimization_settings.freeze_rgb_mlp = iteration_config["fix_rgb_mlp"]
-            self._optimization_settings.freeze_sigma_mlp = iteration_config["fix_sigma_mlp"]
-            self._optimization_settings.num_iterations = iteration_config["num_iterations"]
-            self._optimization_settings.stage = iteration_config["stage"]
+                self._optimization_settings.freeze_rgb_mlp = iteration_config["fix_rgb_mlp"]
+                self._optimization_settings.freeze_sigma_mlp = iteration_config["fix_sigma_mlp"]
+                self._optimization_settings.num_iterations = iteration_config["num_iterations"]
+                self._optimization_settings.stage = iteration_config["stage"]
+            else:
+                self._optimization_settings = optimizer_settings
+                self._optimization_settings.freeze_poses = self._optimization_settings.freeze_poses or self._settings.fix_poses 
 
             self._ray_sampler.update_occ_grid(self._occupancy_grid.detach())
 
@@ -215,7 +220,7 @@ class Optimizer:
             for kf in active_keyframe_window:
                 if not kf.is_anchored:
                     kf.get_lidar_pose().set_fixed(not optimize_poses)
-
+            
             if optimize_poses:
                 optimizable_poses = [kf.get_lidar_pose().get_pose_tensor() for kf in active_keyframe_window if not kf.is_anchored]
                         
@@ -295,9 +300,10 @@ class Optimizer:
 
                 loss = self.compute_loss(camera_samples, lidar_samples, it_idx)
 
-
                 losses_log[-1].append(loss.detach().cpu().item())
-                depth_eps_log[-1].append(self._depth_eps)
+
+                if self.should_enable_lidar():
+                    depth_eps_log[-1].append(self._depth_eps)
 
                 if self._settings.debug.draw_comp_graph:
                     graph_dir = f"{self._settings.log_directory}/graphs"
@@ -307,30 +313,8 @@ class Optimizer:
                     loss_dot.render(directory=graph_dir, filename=f"iteration_{self._global_step}")
 
                 loss.backward(retain_graph=False)
-
-                for kf in keyframe_window:
-                    if kf.get_lidar_pose().get_pose_tensor().grad is not None and kf.get_lidar_pose().get_pose_tensor().grad.isnan().any():
-                        print("Warning: Encountered invalid gradient in pose. Replacing")
-                        kf.get_lidar_pose().get_pose_tensor().grad.nan_to_num_()
-                        breakpoint()
-
-                gradpath = f"{self._settings.log_directory}/gradients/"
-                os.makedirs(gradpath, exist_ok=True)
-                with open(f"{gradpath}/it_{self._global_step}.txt", 'w+') as grad_file:
-                    sigma_grads = [[p.grad.min().item(), p.grad.max().item(), p.grad.mean().item(), p.grad.norm().item()] for p in self._model.nerf_model._model_sigma.parameters()]
-                    sigma_grads = [str(s) for s in sigma_grads]
-                    feature_grads = [[p.grad.min().item(), p.grad.max().item(), p.grad.mean().item(), p.grad.norm().item()] for p in self._model.nerf_model._pos_encoding.parameters()]
-                    feature_grads = [str(s) for s in feature_grads]
-                    rgb_grads = [[p.grad.min().item(), p.grad.max().item(), p.grad.mean().item(), p.grad.norm().item()] for p in self._model.nerf_model._model_intensity.parameters()]
-                    rgb_grads = [str(s) for s in rgb_grads]
-                    grad_file.write(f"Sigma: {'; '.join(sigma_grads)}\nFeature: {'; '.join(feature_grads)}\nRGB: {'; '.join(rgb_grads)}\n")
-
+                
                 self._optimizer.step()
-
-                for kf in keyframe_window:
-                    if kf.get_lidar_pose().get_pose_tensor().isnan().any():
-                        print("Invalid tensor")
-                        breakpoint()
 
                 lrate_scheduler.step()
 
@@ -498,7 +482,7 @@ class Optimizer:
                 -1, self._model_config.model.num_colors)
 
             results_cam = self._model(
-                cam_rays, self._ray_sampler, scale_factor)
+                cam_rays, self._ray_sampler, scale_factor, detach_sigma=self._settings.detach_rgb_from_sigma)
 
             psnr_fine = mse_to_psnr(
                 img_to_mse(results_cam['rgb_fine'], cam_intensities))
@@ -535,11 +519,8 @@ class Optimizer:
                 depths_weighted_var + 1e-8).mean() - (1 + 1e-8))
             loss += self._model_config.loss.std_lambda * loss_std_cam
             wandb_logs['loss_std_cam'] = loss_std_cam.item()
-
-        # wandb.log({}, commit=True)
-        if torch.isnan(loss):
-            breakpoint()
-            assert not torch.isnan(loss), "NaN Loss Encountered"
+   
+        assert not torch.isnan(loss), "NaN Loss Encountered"
             
         return loss
 

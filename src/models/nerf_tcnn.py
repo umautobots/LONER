@@ -69,7 +69,7 @@ class DecoupledNeRF(nn.Module):
         self._num_colors = num_colors
 
         self.cfg = cfg
-
+        
         self._enable_view_dependence = cfg["enable_view_dependence"]
 
         pos_encoding_sigma = self.cfg["pos_encoding_sigma"]
@@ -92,10 +92,13 @@ class DecoupledNeRF(nn.Module):
         else:
             network_in_dims = self._pos_encoding.n_output_dims
             self._dir_encoding = None
-            
+
         self._model_intensity = tcnn.Network(n_input_dims=network_in_dims,
                                              n_output_dims=self._num_colors,
                                              network_config=intensity_network)
+
+        self._max_float = torch.finfo(self._model_intensity.dtype).max
+        self._min_float = torch.finfo(self._model_intensity.dtype).min
 
     def forward(self, pos, dir, sigma_only=False, detach_sigma=True):
         # x: [N, 3], scaled to [-1, 1]
@@ -105,7 +108,6 @@ class DecoupledNeRF(nn.Module):
         if sigma_only:
             h = self._model_sigma(pos)
             sigma = h[..., [0]]
-            return sigma
         elif detach_sigma:
             with torch.no_grad():
                 h = self._model_sigma(pos)
@@ -113,6 +115,13 @@ class DecoupledNeRF(nn.Module):
         else:
             h = self._model_sigma(pos)
             sigma = h[..., [0]]
+
+        if not torch.isfinite(sigma).all():
+            print("Warning: Clipping infinite outputs")
+            sigma = sigma.nan_to_num(posinf=self._max_float, neginf=self._min_float)
+        
+        if sigma_only:
+            return sigma
 
         dir = (dir + 1) / 2
         h_x = self._pos_encoding(pos)

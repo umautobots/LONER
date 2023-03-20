@@ -29,14 +29,14 @@ model:
 
 train:
     lrate_sigma_mlp: 0.01             # learning rate
-    lrate_rgb: 0.01             # learning rate
-    lrate_pose: 0.01
+    lrate_rgb: 0.01                  # learning rate
+    lrate_pose: 0.001
     lrate_gamma: 1.0
     decay_rate: 0.001
 
     rgb_weight_decay: 1.e-5
 loss:
-    dynamic_depth_eps_JS: True         # boolean to enable JS divergence loss
+    dynamic_depth_eps_JS: False         # boolean to enable JS divergence loss
     JS_loss:
         min_js_score: 1.
         max_js_score: 10.
@@ -44,16 +44,16 @@ loss:
     visualize_loss: False                     # boolean to enable loss visualization
 
     decay_depth_lambda: False          # boolean to enable decay
-    depth_lambda: 1000.                # Depth lambda used for loss.
+    depth_lambda: 0.0                # Depth lambda used for loss.
     min_depth_lambda: 10.              # Minimum value after decay
     depth_lambda_decay_steps: 15000
         
     decay_depth_eps: True              # boolean to enable decay
     depth_eps: 3.0                     # starting tolerance for line of sight loss in euclidean space
     min_depth_eps: 0.3                 # Minimum value after decay
-    depth_eps_decay_steps: 500
+    depth_eps_decay_steps: 50
 
-    term_lambda: 0.0      # weight for lidar termination depth
+    term_lambda: 1.0      # weight for lidar termination depth
     cam_lambda: 1       # weight for camera intensity value
     std_lambda: 0.0       # weight for standard deviation loss on camera rays
 
