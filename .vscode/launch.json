@@ -18,7 +18,7 @@
       "request": "launch",
       "program": "${workspaceFolder}/examples/fusion_portable/run_fusion_portable.py",
       "console": "integratedTerminal",
-      "args": ["${workspaceFolder}/cfg/fusion_portable/canteen.yaml"],
+      "args": ["${workspaceFolder}/cfg/fusion_portable/garden.yaml", "--num_repeats", "10"],
       "cwd": "${workspaceFolder}/examples/fusion_portable",
       "subProcess": true
     },
@@ -30,6 +30,17 @@
       "console": "integratedTerminal",
       "args": ["${workspaceFolder}/outputs/debug_nan_031223_155004", "--render_video"],
       "cwd": "${workspaceFolder}/analysis",
+      "subProcess": true
+    },
+    {
+      "name": "Debug Crash",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/analysis/debug_crash.py",
+      "console": "integratedTerminal",
+      "args": ["${workspaceFolder}/examples/fusion_portable/saved_crash_state.tar",
+              "${workspaceFolder}/outputs/garden_031823_212408/trial_0/full_config.pkl"],
+      "cwd": "${workspaceFolder}/examples/fusion_portable",
       "subProcess": true
     }
   ]

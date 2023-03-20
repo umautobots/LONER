@@ -99,6 +99,7 @@ def raw2outputs(raw, z_vals, rays_d, raw_noise_std=0, white_bkgd=False, sigma_on
     else:
         # (N_rays, N_samples_)
         alphas = 1-torch.exp(-deltas*torch.relu(sigmas+noise))
+
     alphas_shifted = \
         torch.cat([torch.ones_like(alphas[:, :1]), 1. -
                   alphas+1e-10], -1)  # [1, a1, a2, ...]
@@ -224,14 +225,12 @@ def render_rays(rays,
 
     z_vals = ray_sampler.get_samples(rays, N_samples, perturb)
 
-    xyz_samples = rays_o.unsqueeze(
-        1) + rays_d.unsqueeze(1) * z_vals.unsqueeze(2)  # (N_rays, N_samples, 3)
-
+    xyz_samples = rays_o.unsqueeze(1) + rays_d.unsqueeze(1) * z_vals.unsqueeze(2)  # (N_rays, N_samples, 3)
     raw = inference(nerf_model, xyz_samples, viewdirs, sigma_only=sigma_only)
 
     rgb, depth, weights, opacity = raw2outputs(
         raw, z_vals, rays_d, raw_noise_std, white_bkgd, sigma_only=sigma_only, num_colors=num_colors, far=far)
-
+        
     result = {'rgb_fine': rgb,
               'depth_fine': depth,
               'weights_fine': weights,

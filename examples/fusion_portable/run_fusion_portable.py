@@ -313,9 +313,10 @@ if __name__ == "__main__":
         settings_descriptions = [None]
         settings_options = [Settings.load_from_file(baseline_settings_path)]            
 
-        if args.lite:
-            if config["changes"] is not None:
+        if config["changes"] is not None:
                 settings_options[0].augment(config["changes"])
+                
+        if args.lite:
             settings_options[0].augment(lite_mode_changes)
 
     if args.overrides is not None or args.num_repeats > 1:

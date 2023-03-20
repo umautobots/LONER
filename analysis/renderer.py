@@ -34,6 +34,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(
 sys.path.append(PROJECT_ROOT)
 sys.path.append(PROJECT_ROOT + "/src")
 
+IM_SCALE_FACTOR = 2
 
 from render_utils import *
 
@@ -82,6 +83,11 @@ os.makedirs(render_dir, exist_ok=True)
 # override any params loaded from yaml
 with open(f"{args.experiment_directory}/full_config.pkl", 'rb') as f:
     full_config = pickle.load(f)
+
+full_config["calibration"]["camera_intrinsic"]["width"] *= IM_SCALE_FACTOR
+full_config["calibration"]["camera_intrinsic"]["height"] *= IM_SCALE_FACTOR
+full_config["calibration"]["camera_intrinsic"]["k"] *= IM_SCALE_FACTOR
+full_config["calibration"]["camera_intrinsic"]["new_k"] *= IM_SCALE_FACTOR
 
 intrinsic = full_config.calibration.camera_intrinsic
 im_size = torch.Tensor([intrinsic.height, intrinsic.width])
@@ -276,11 +282,12 @@ if __name__ == "__main__":
                     spin_amounts_rad = np.linspace(0, 2*np.pi, num_spin_steps)
                     rotations = Rotation.from_euler('z', spin_amounts_rad)
                     
-                    spin_idxs.append(len(lidar_poses))
                     
                     for rel_rot in rotations:
                         T = np.hstack((rot.as_matrix() @ rel_rot.as_matrix(), xyz.reshape(-1, 1)))
                         T = np.vstack((T, [0,0,0,1]))
+                        spin_idxs.append(len(lidar_poses))
+
                         lidar_poses.append(T)
 
                     dist_since_last_spin = 0
@@ -288,7 +295,6 @@ if __name__ == "__main__":
                 prev_pose = T
 
             lidar_poses = torch.from_numpy(np.stack(lidar_poses).astype(np.float32))
-        
 
             # rgbs = []
             depths = []
@@ -333,16 +339,20 @@ if __name__ == "__main__":
                     depths_nospin.append(d)
 
             save_video(f"{render_dir}/flythrough_depth.mp4", depths, depths[0].size(), 
-                    cmap='turbo', rescale=False, clahe=False, isdepth=True, fps=FPS*3)
+                    cmap='turbo', rescale=False, clahe=False, isdepth=True, fps=FPS*6)
 
             save_video(f"{render_dir}/flythrough_depth_nospin.mp4", depths_nospin, depths[0].size(), 
-                    cmap='turbo', rescale=False, clahe=False, isdepth=True, fps=FPS*3)
+                    cmap='turbo', rescale=False, clahe=False, isdepth=True, fps=FPS*6)
             
+            save_video(f"{render_dir}/flythrough_depth.gif", depths, depths[0].size(), 
+                    cmap='turbo', rescale=False, clahe=False, isdepth=True, fps=FPS*6)
+
+            save_video(f"{render_dir}/flythrough_depth_nospin.gif", depths_nospin, depths[0].size(), 
+                    cmap='turbo', rescale=False, clahe=False, isdepth=True, fps=FPS*6)            
             
             save_video(f"{render_dir}/flythrough_rgb.mp4", rgbs, rgbs[0].shape, 
-                    cmap='turbo', rescale=False, clahe=False, isdepth=False, fps=FPS*3)
+                    cmap='turbo', rescale=False, clahe=False, isdepth=False, fps=FPS*6)
                 
-
             save_video(f"{render_dir}/flythrough_rgb_nospin.mp4", rgbs_nospin, rgbs[0].shape, 
-                    cmap='turbo', rescale=False, clahe=False, isdepth=False, fps=FPS*3)
+                    cmap='turbo', rescale=False, clahe=False, isdepth=False, fps=FPS*6)
                 

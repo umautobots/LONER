@@ -116,6 +116,8 @@ class Optimizer:
         self._num_rgb_samples = self._settings.num_samples.rgb
         self._num_lidar_samples = self._settings.num_samples.lidar
 
+        self._grad_log = []
+
     ## Run one or more iterations of the optimizer, as specified by the stored settings
     # @param keyframe_window: The set of keyframes to use in the optimization.
     def iterate_optimizer(self, keyframe_window: List[KeyFrame], optimizer_settings: OptimizationSettings = None) -> float:
@@ -224,14 +226,20 @@ class Optimizer:
             if optimize_poses:
                 optimizable_poses = [kf.get_lidar_pose().get_pose_tensor() for kf in active_keyframe_window if not kf.is_anchored]
                         
-                self._optimizer = torch.optim.Adam([{'params': self._model.get_sigma_parameters(), 'lr': self._model_config.train.lrate_sigma_mlp},
-                                                    {'params': self._model.get_rgb_mlp_parameters(), 'lr': self._model_config.train.lrate_rgb, 'weight_decay': self._model_config.train.rgb_weight_decay},
+                self._optimizer = torch.optim.Adam([{'params': self._model.get_sigma_mlp_parameters(), 'lr': self._model_config.train.lrate_sigma_mlp,
+                                                       'weight_decay': self._model_config.train.sigma_weight_decay},
+                                                    {'params': self._model.get_sigma_feature_parameters(), 'lr': self._model_config.train.lrate_sigma_mlp},
+                                                    {'params': self._model.get_rgb_mlp_parameters(), 'lr': self._model_config.train.lrate_rgb,
+                                                        'weight_decay': self._model_config.train.rgb_weight_decay},
                                                     {'params': self._model.get_rgb_feature_parameters(), 'lr': self._model_config.train.lrate_rgb},
                                                     {'params': optimizable_poses, 'lr': self._model_config.train.lrate_pose}])
 
             else:
-                self._optimizer = torch.optim.Adam([{'params': self._model.get_sigma_parameters(), 'lr': self._model_config.train.lrate_sigma_mlp},
-                                                    {'params': self._model.get_rgb_mlp_parameters(), 'lr': self._model_config.train.lrate_rgb, 'weight_decay': self._model_config.train.rgb_weight_decay},
+                self._optimizer = torch.optim.Adam([{'params': self._model.get_sigma_mlp_parameters(), 'lr': self._model_config.train.lrate_sigma_mlp,
+                                                       'weight_decay': self._model_config.train.sigma_weight_decay},
+                                                    {'params': self._model.get_sigma_feature_parameters(), 'lr': self._model_config.train.lrate_sigma_mlp},
+                                                    {'params': self._model.get_rgb_mlp_parameters(), 'lr': self._model_config.train.lrate_rgb,
+                                                        'weight_decay': self._model_config.train.rgb_weight_decay},
                                                     {'params': self._model.get_rgb_feature_parameters(), 'lr': self._model_config.train.lrate_rgb}])
                 
             lrate_scheduler = torch.optim.lr_scheduler.ExponentialLR(self._optimizer, self._model_config.train.lrate_gamma)
@@ -244,11 +252,15 @@ class Optimizer:
                 self._results_lidar = None
         
                 camera_samples, lidar_samples = None, None
+                
+                # TODO deleteme
+                all_lidar_indices = []
 
                 for kf_idx, kf in enumerate(active_keyframe_window):                
                     if self.should_enable_lidar():
 
                         lidar_indices = torch.randint(len(kf.get_lidar_scan()), (self._num_lidar_samples,))
+                        all_lidar_indices.append(lidar_indices.clone())
 
                         new_rays, new_depths = kf.build_lidar_rays(lidar_indices, self._ray_range, self._world_cube, self._use_gt_poses)
                     
@@ -312,7 +324,22 @@ class Optimizer:
                     loss_dot.format = "png"
                     loss_dot.render(directory=graph_dir, filename=f"iteration_{self._global_step}")
 
-                loss.backward(retain_graph=False)
+                # TODO disable
+                loss.backward(retain_graph=True)
+                
+                for kf in keyframe_window:
+                    if kf.get_lidar_pose().get_pose_tensor().grad is not None:
+                        self._grad_log.append(kf.get_lidar_pose().get_pose_tensor().grad.cpu().clone())                   
+                    if kf.get_lidar_pose().get_pose_tensor().grad is not None and not kf.get_lidar_pose().get_pose_tensor().grad.isfinite().all():
+                        print("Warning: Encountered seinvalid gradient in pose.")
+                        breakpoint()
+
+                self._optimizer.step()
+
+                for kf in keyframe_window:
+                    if not kf.get_lidar_pose().get_pose_tensor().isfinite().all():
+                        print("Invalid tensor")
+                        breakpoint()
                 
                 self._optimizer.step()
                 lrate_scheduler.step()

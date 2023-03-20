@@ -83,6 +83,7 @@ class ClonerSLAM:
                               trial_idx: int = None):
         self._world_cube = compute_world_cube(
             camera_to_lidar, K_camera, image_size, all_lidar_poses, camera_range, padding=0.3)
+        
         self._initialized = True
         self._dataset_path = Path(dataset_path).resolve().as_posix()
         
@@ -184,6 +185,10 @@ class ClonerSLAM:
             self._mapping_process.daemon = True
             self._tracking_process.start()
             self._mapping_process.start()
+
+
+        if self._single_threaded and self._settings.debug.pytorch_detect_anomaly:
+            torch.autograd.set_detect_anomaly(True)
 
     # Stop the processes running the mapping and tracking
     def stop(self):

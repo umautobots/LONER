@@ -35,6 +35,7 @@ train:
     decay_rate: 0.001
 
     rgb_weight_decay: 1.e-5
+    sigma_weight_decay: 0
      
 loss:
     dynamic_depth_eps_JS: True         # boolean to enable JS divergence loss
