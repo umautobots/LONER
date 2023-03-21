@@ -16,10 +16,10 @@
       "name": "ClonerSLAM: Fusion Portable",
       "type": "python",
       "request": "launch",
-      "program": "${workspaceFolder}/examples/fusion_portable/run_fusion_portable.py",
+      "program": "${workspaceFolder}/examples/run_rosbag.py",
       "console": "integratedTerminal",
-      "args": ["${workspaceFolder}/cfg/fusion_portable/garden.yaml", "--num_repeats", "10"],
-      "cwd": "${workspaceFolder}/examples/fusion_portable",
+      "args": ["${workspaceFolder}/cfg/fusion_portable/canteen.yaml"],
+      "cwd": "${workspaceFolder}/fusion_portable",
       "subProcess": true
     },
     {

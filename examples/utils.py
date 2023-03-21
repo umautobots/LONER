@@ -9,43 +9,59 @@ import pytorch3d.transforms
 
 import geometry_msgs.msg
 
+from fusion_portable.fusion_portable_calibration import FusionPortableCalibration
+from kaist_complex_urban.kaist_urban_calibration import KaistUrbanCalibration
 
-def build_buffer_from_df(df: pd.DataFrame):
+def build_poses_from_df(df: pd.DataFrame):
+    data = torch.from_numpy(df.to_numpy(dtype=np.float64))
+
+    ts = data[:,0]
+    xyz = data[:,1:4]
+    quat = data[:,4:]
+
+    rots = torch.from_numpy(Rotation.from_quat(quat).as_matrix())
+    
+    poses = torch.cat((rots, xyz.unsqueeze(2)), dim=2)
+
+    homog = torch.Tensor([0,0,0,1]).tile((poses.shape[0], 1, 1))
+
+    poses = torch.cat((poses, homog), dim=1)
+
+    rot_inv = poses[0,:3,:3].T
+    t_inv = -rot_inv @ poses[0,:3,3]
+    start_inv = torch.hstack((rot_inv, t_inv.reshape(-1, 1)))
+    start_inv = torch.vstack((start_inv, torch.tensor([0,0,0,1.0])))
+    poses = start_inv.unsqueeze(0) @ poses
+
+    return poses.float(), ts
+
+def build_buffer_from_poses(poses, gt_timestamps):
     tf_buffer = tf2_py.BufferCore(rospy.Duration(10000))
     timestamps = []
-    for _, row in df.iterrows():
-        ts = rospy.Time.from_sec(row["timestamp"])
-        timestamps.append(ts)
+
+    for pose, ts in zip(poses, gt_timestamps):
+        timestamps.append(rospy.Time.from_sec(ts))
+
+        xyz = pose[:3, 3]
+        quat = Rotation.from_matrix(pose[:3,:3]).as_quat()
 
         new_transform = geometry_msgs.msg.TransformStamped()
         new_transform.header.frame_id = "map"
-        new_transform.header.stamp = ts
+        new_transform.header.stamp = timestamps[-1]
         new_transform.child_frame_id = "lidar"
 
-        new_transform.transform.translation.x = row["x"]
-        new_transform.transform.translation.y = row["y"]
-        new_transform.transform.translation.z = row["z"]
+        new_transform.transform.translation.x = xyz[0]
+        new_transform.transform.translation.y = xyz[2]
+        new_transform.transform.translation.z = xyz[2]
 
-        new_transform.transform.rotation.x = row["q_x"]
-        new_transform.transform.rotation.y = row["q_y"]
-        new_transform.transform.rotation.z = row["q_z"]
-        new_transform.transform.rotation.w = row["q_w"]
+        new_transform.transform.rotation.x = quat[0]
+        new_transform.transform.rotation.y = quat[1]
+        new_transform.transform.rotation.z = quat[2]
+        new_transform.transform.rotation.w = quat[3]
 
         tf_buffer.set_transform(new_transform, "default_authority")
     return tf_buffer, timestamps
 
-
-def build_poses_from_buffer(tf_buffer, timestamps):
-    lidar_poses = []
-    for t in timestamps:
-        try:
-            lidar_tf = tf_buffer.lookup_transform_core('map', "lidar", t)
-            lidar_poses.append(msg_to_transformation_mat(lidar_tf))
-        except Exception as e:
-            print("Skipping invalid tf")
-            lidar_poses.append(None)
-
-    return torch.stack(lidar_poses).float()
 
 def msg_to_transformation_mat(tf_msg):
     trans = tf_msg.transform.translation
@@ -104,3 +120,12 @@ def msg_to_transformation_mat(tf_msg):
     T = torch.hstack((rotmat, xyz))
     T = torch.vstack((T, torch.Tensor([0, 0, 0, 1])))
     return T.float()
+
+def load_calibration(dataset_family: str, calib_path: str):
+    if dataset_family.lower() == "fusion_portable":
+        return FusionPortableCalibration(calib_path)
+    elif dataset_family.lower() == "kaist_complex_urban":
+        return KaistUrbanCalibration(calib_path)
+    elif dataset_family.lower() == "hilti":
+        return KaistUrbanCalibration(calib_path)
+    raise RuntimeError(f"Can't load dataset of type {dataset_family}")

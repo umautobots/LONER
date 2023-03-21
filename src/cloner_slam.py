@@ -74,15 +74,21 @@ class ClonerSLAM:
 
         self._last_mapped_frame_time = mp.Value('d', 0.)
 
+        self._lidar_only = settings.system.lidar_only
+
     def initialize(self, camera_to_lidar: torch.Tensor, all_lidar_poses: torch.Tensor,
-                              K_camera: torch.Tensor, camera_range: List,
-                              image_size: torch.Tensor,
-                              dataset_path: str,
-                              experiment_name: str = None,
-                              config_idx: int = None,
-                              trial_idx: int = None):
+                         K_camera: torch.Tensor, ray_range: List,
+                         image_size: torch.Tensor,
+                         dataset_path: str,
+                         experiment_name: str = None,
+                         config_idx: int = None,
+                         trial_idx: int = None):
+        
+        if not self._lidar_only:
+            assert camera_to_lidar is not None and K_camera is not None and image_size is not None
+
         self._world_cube = compute_world_cube(
-            camera_to_lidar, K_camera, image_size, all_lidar_poses, camera_range, padding=0.3)
+            camera_to_lidar, K_camera, image_size, all_lidar_poses, ray_range, padding=0.3)
         
         self._initialized = True
         self._dataset_path = Path(dataset_path).resolve().as_posix()
@@ -128,9 +134,11 @@ class ClonerSLAM:
 
         self._settings["mapper"]["experiment_name"] = self._experiment_name
         self._settings["mapper"]["log_directory"] = self._log_directory
+        self._settings["mapper"]["lidar_only"] = self._lidar_only
 
         self._settings["tracker"]["experiment_name"] = self._experiment_name
         self._settings["tracker"]["log_directory"] = self._log_directory
+        self._settings["tracker"]["lidar_only"] = self._lidar_only
 
         # Pass debug settings through
         for key in self._settings.debug.flags:
@@ -238,17 +246,18 @@ class ClonerSLAM:
             self._profiler.step()
 
 
-    def process_lidar(self, lidar_scan: LidarScan) -> None:
+    def process_lidar(self, lidar_scan: LidarScan, gt_pose: Pose = None) -> None:
         assert torch.all(torch.diff(lidar_scan.timestamps) >= 0), "sort your points by timestamps!"
+        
         self._logger.update()
-        self._lidar_signal.emit(lidar_scan)
+        self._lidar_signal.emit((lidar_scan, gt_pose))
         
         if self._single_threaded:
             self._system_update()
             
-    def process_rgb(self, image: Image, gt_pose: Pose=None) -> None:
+    def process_rgb(self, image: Image) -> None:
         self._logger.update()
-        self._rgb_signal.emit((image, gt_pose))
+        self._rgb_signal.emit(image)
 
         if self._single_threaded:
             self._system_update()

@@ -53,8 +53,10 @@ class Tracker:
         self._t_lidar_to_camera = Pose.from_settings(
             settings.calibration.lidar_to_camera)
 
+        self._lidar_only = settings.system.lidar_only
+
         self._frame_synthesizer = FrameSynthesis(
-            self._settings.frame_synthesis, self._t_lidar_to_camera)
+            self._settings.frame_synthesis, self._t_lidar_to_camera, self._lidar_only)
 
         # Used to indicate to an external process that I've processed the stop signal
         self._processed_stop_signal = mp.Value("i", 0)
@@ -73,6 +75,7 @@ class Tracker:
         self._frame_rate = self._settings.frame_synthesis.frame_decimation_rate_hz
         self._max_time_delta = self._settings.synchronization.max_time_delta
 
+
     def update(self):
         
         if self._settings.synchronization.enabled and self._last_mapped_frame_time is not None:
@@ -83,24 +86,24 @@ class Tracker:
             print("Not updating tracker: Tracker already done.")
 
         if self._rgb_slot.has_value():
-            val = self._rgb_slot.get_value()
+            new_rgb = self._rgb_slot.get_value()
+
+            if isinstance(new_rgb, StopSignal):
+                self._processed_stop_signal.value = 1
+                return
+
+            self._frame_synthesizer.process_image(new_rgb)
+
+        if self._lidar_slot.has_value():
+            val = self._lidar_slot.get_value()
 
             if isinstance(val, StopSignal):
                 self._processed_stop_signal.value = 1
                 return
 
-            new_rgb, new_gt_pose = val
+            new_lidar, new_gt_pose = val
 
-            self._frame_synthesizer.process_image(new_rgb, new_gt_pose)
-
-        if self._lidar_slot.has_value():
-            new_lidar = self._lidar_slot.get_value()
-
-            if isinstance(new_lidar, StopSignal):
-                self._processed_stop_signal.value = 1
-                return
-
-            self._frame_synthesizer.process_lidar(new_lidar)
+            self._frame_synthesizer.process_lidar(new_lidar, new_gt_pose)
 
         while self._frame_synthesizer.has_frame():
             frame = self._frame_synthesizer.pop_frame()
@@ -162,7 +165,7 @@ class Tracker:
             self._reference_point_cloud = frame_point_cloud
             self._reference_point_cloud.estimate_normals()
 
-            self._reference_time = frame.image.timestamp
+            self._reference_time = frame.get_middle_time()
 
             self._velocity = torch.Tensor([0, 0, 0])
             self._angular_velocity = torch.Tensor([0, 0, 0])
@@ -199,7 +202,7 @@ class Tracker:
 
         tracked_position = reference_pose_mat @ registration_result
 
-        new_reference_time = frame.image.timestamp
+        new_reference_time = frame.get_middle_time()
         frame._lidar_pose = Pose(tracked_position.float().to(device), requires_tensor=True)
         
         if self._settings.motion_compensation.enabled:

@@ -1,0 +1,7 @@
+baseline: defaults.yaml
+dataset: ~/data/KaistUrban/urban08/bag/velodyne_points.bag
+calibration: NULL
+groundtruth_traj: ~/data/KaistUrban/urban08/groundtruth_traj_tum.txt
+experiment_name: hilti_exp21
+dataset_family: hilti
+changes: NULL

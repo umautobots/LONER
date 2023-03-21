@@ -35,14 +35,7 @@ class Model(nn.Module):
             return [p for p in params if p.requires_grad]
 
     def get_sigma_parameters(self):
-        return [ p for p in list(self.nerf_model._model_sigma.parameters()) if p.requires_grad] \
-             + [ p for p in list(self.nerf_model._sigma_pos_encoding.parameters()) if p.requires_grad]
-
-    def get_sigma_mlp_parameters(self):
         return [ p for p in list(self.nerf_model._model_sigma.parameters()) if p.requires_grad]
-
-    def get_sigma_feature_parameters(self):
-        return [ p for p in list(self.nerf_model._sigma_pos_encoding.parameters()) if p.requires_grad] 
 
     def freeze_sigma_head(self, should_freeze=True):
         for p in self.get_sigma_parameters():

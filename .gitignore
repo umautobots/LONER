@@ -12,7 +12,9 @@ graphs/
 *.bag
 *.pcd
 *.ply
+*.tar
 
 test/outputs/
+sandbox/
 
 docker/.etc*

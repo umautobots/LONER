@@ -60,7 +60,8 @@ class Optimizer:
     # @param world_cube: The world cube pre-computed that is used to scale the world.
     # @param device: Which device to put the data on and run the optimizer on
     def __init__(self, settings: Settings, calibration: Settings, world_cube: WorldCube, device: int,
-                 use_gt_poses: bool = False):
+                 use_gt_poses: bool = False, lidar_only: bool = True):
+
         self._settings = settings
         self._calibration = calibration
         self._device = device
@@ -69,11 +70,7 @@ class Optimizer:
 
         self._optimization_settings = OptimizationSettings()
 
-        # We pre-create random numbers to lookup at runtime to save runtime.
-        # This kills a lot of memory, but saves a ton of runtime
-        # self._lidar_shuffled_indices = torch.randperm(MAX_POSSIBLE_LIDAR_RAYS)
-        self._rgb_shuffled_indices = torch.randperm(
-            calibration.camera_intrinsic.width * calibration.camera_intrinsic.height)
+        self._lidar_only = lidar_only
 
         self._model_config = settings.model_config
 
@@ -104,7 +101,15 @@ class Optimizer:
         self._ray_sampler = OccGridRaySampler()
         self._ray_sampler.update_occ_grid(self._occupancy_grid.detach())
 
-        self._cam_ray_directions = CameraRayDirections(calibration, device=self._data_prep_device)
+        if not self._lidar_only:
+            # We pre-create random numbers to lookup at runtime to save runtime.
+            # This kills a lot of memory, but saves a ton of runtime
+            # self._lidar_shuffled_indices = torch.randperm(MAX_POSSIBLE_LIDAR_RAYS)
+            self._rgb_shuffled_indices = torch.randperm(
+                calibration.camera_intrinsic.width * calibration.camera_intrinsic.height)
+
+            self._cam_ray_directions = CameraRayDirections(calibration, device=self._data_prep_device)
+    
         self._keyframe_count = 0
         self._global_step = 0
 
@@ -196,7 +201,7 @@ class Optimizer:
                 self._optimization_settings.freeze_rgb_mlp = iteration_config["fix_rgb_mlp"]
                 self._optimization_settings.freeze_sigma_mlp = iteration_config["fix_sigma_mlp"]
                 self._optimization_settings.num_iterations = iteration_config["num_iterations"]
-                self._optimization_settings.stage = iteration_config["stage"]
+                self._optimization_settings.stage = 1 if self._lidar_only else iteration_config["stage"]
             else:
                 self._optimization_settings = optimizer_settings
                 self._optimization_settings.freeze_poses = self._optimization_settings.freeze_poses or self._settings.fix_poses 
@@ -226,18 +231,14 @@ class Optimizer:
             if optimize_poses:
                 optimizable_poses = [kf.get_lidar_pose().get_pose_tensor() for kf in active_keyframe_window if not kf.is_anchored]
                         
-                self._optimizer = torch.optim.Adam([{'params': self._model.get_sigma_mlp_parameters(), 'lr': self._model_config.train.lrate_sigma_mlp,
-                                                       'weight_decay': self._model_config.train.sigma_weight_decay},
-                                                    {'params': self._model.get_sigma_feature_parameters(), 'lr': self._model_config.train.lrate_sigma_mlp},
+                self._optimizer = torch.optim.Adam([{'params': self._model.get_sigma_parameters(), 'lr': self._model_config.train.lrate_sigma_mlp},
                                                     {'params': self._model.get_rgb_mlp_parameters(), 'lr': self._model_config.train.lrate_rgb,
                                                         'weight_decay': self._model_config.train.rgb_weight_decay},
                                                     {'params': self._model.get_rgb_feature_parameters(), 'lr': self._model_config.train.lrate_rgb},
                                                     {'params': optimizable_poses, 'lr': self._model_config.train.lrate_pose}])
 
             else:
-                self._optimizer = torch.optim.Adam([{'params': self._model.get_sigma_mlp_parameters(), 'lr': self._model_config.train.lrate_sigma_mlp,
-                                                       'weight_decay': self._model_config.train.sigma_weight_decay},
-                                                    {'params': self._model.get_sigma_feature_parameters(), 'lr': self._model_config.train.lrate_sigma_mlp},
+                self._optimizer = torch.optim.Adam([{'params': self._model.get_sigma_parameters(), 'lr': self._model_config.train.lrate_sigma_mlp},
                                                     {'params': self._model.get_rgb_mlp_parameters(), 'lr': self._model_config.train.lrate_rgb,
                                                         'weight_decay': self._model_config.train.rgb_weight_decay},
                                                     {'params': self._model.get_rgb_feature_parameters(), 'lr': self._model_config.train.lrate_rgb}])
@@ -324,24 +325,22 @@ class Optimizer:
                     loss_dot.format = "png"
                     loss_dot.render(directory=graph_dir, filename=f"iteration_{self._global_step}")
 
-                # TODO disable
-                loss.backward(retain_graph=True)
+                loss.backward(retain_graph=False)
                 
                 for kf in keyframe_window:
                     if kf.get_lidar_pose().get_pose_tensor().grad is not None:
                         self._grad_log.append(kf.get_lidar_pose().get_pose_tensor().grad.cpu().clone())                   
                     if kf.get_lidar_pose().get_pose_tensor().grad is not None and not kf.get_lidar_pose().get_pose_tensor().grad.isfinite().all():
-                        print("Warning: Encountered seinvalid gradient in pose.")
-                        breakpoint()
+                        raise RuntimeError("Fatal: Encountered invalid gradient in pose.")
 
                 self._optimizer.step()
 
                 for kf in keyframe_window:
                     if not kf.get_lidar_pose().get_pose_tensor().isfinite().all():
-                        print("Invalid tensor")
-                        breakpoint()
+                        raise RuntimeError("Fatal: Encountered pose tensor.")
                 
                 self._optimizer.step()
+
                 lrate_scheduler.step()
 
                 self._optimizer.zero_grad(set_to_none=True)
@@ -377,6 +376,9 @@ class Optimizer:
 
     ## @returns whether or not the camera should be use, as indicated by the settings
     def should_enable_camera(self) -> bool:
+        if self._lidar_only:
+            return False
+
         return self._optimization_settings.stage in [2, 3] \
                 and (not self._optimization_settings.freeze_rgb_mlp \
                      or (not self._settings.detach_rgb_from_poses \
@@ -409,8 +411,7 @@ class Optimizer:
             opaque_rays = (lidar_depths > 0)[..., 0]
 
             # Rendering lidar rays. Results need to be in class for occ update to happen
-            self._results_lidar = self._model(
-                lidar_rays, self._ray_sampler, scale_factor, camera=False)
+            self._results_lidar = self._model(lidar_rays, self._ray_sampler, scale_factor, camera=False)
             # (N_rays, N_samples)
             # Depths along ray
             self._lidar_depth_samples_fine = self._results_lidar['samples_fine'] * \

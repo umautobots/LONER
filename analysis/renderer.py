@@ -34,7 +34,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(
 sys.path.append(PROJECT_ROOT)
 sys.path.append(PROJECT_ROOT + "/src")
 
-IM_SCALE_FACTOR = 2
+IM_SCALE_FACTOR = 1
 
 from render_utils import *
 
@@ -84,10 +84,22 @@ os.makedirs(render_dir, exist_ok=True)
 with open(f"{args.experiment_directory}/full_config.pkl", 'rb') as f:
     full_config = pickle.load(f)
 
-full_config["calibration"]["camera_intrinsic"]["width"] *= IM_SCALE_FACTOR
-full_config["calibration"]["camera_intrinsic"]["height"] *= IM_SCALE_FACTOR
-full_config["calibration"]["camera_intrinsic"]["k"] *= IM_SCALE_FACTOR
-full_config["calibration"]["camera_intrinsic"]["new_k"] *= IM_SCALE_FACTOR
+if full_config["calibration"]["camera_intrinsic"]["width"] is not None:
+    full_config["calibration"]["camera_intrinsic"]["width"] *= IM_SCALE_FACTOR
+    full_config["calibration"]["camera_intrinsic"]["height"] *= IM_SCALE_FACTOR
+    full_config["calibration"]["camera_intrinsic"]["k"] *= IM_SCALE_FACTOR
+    full_config["calibration"]["camera_intrinsic"]["new_k"] *= IM_SCALE_FACTOR
+else:
+    # Sensible defaults for lidar-only case
+    full_config["calibration"]["camera_intrinsic"]["width"] = int(1024/2 * IM_SCALE_FACTOR)
+    full_config["calibration"]["camera_intrinsic"]["height"] = int(768/2 * IM_SCALE_FACTOR)
+    full_config["calibration"]["camera_intrinsic"]["k"] = torch.Tensor([[302,  0.0, 260],
+                                                                        [ 0.0, 302, 197],
+                                                                        [ 0.0,  0.0, 1.0]]) * IM_SCALE_FACTOR
+    full_config["calibration"]["camera_intrinsic"]["new_k"] = full_config["calibration"]["camera_intrinsic"]["k"]
+    full_config["calibration"]["camera_intrinsic"]["distortion"] = torch.zeros(4)
+    full_config["calibration"]["lidar_to_camera"]["orientation"] = np.array([0.5, -0.5, 0.5, -0.5]) # for weird compatability 
+
 
 intrinsic = full_config.calibration.camera_intrinsic
 im_size = torch.Tensor([intrinsic.height, intrinsic.width])
@@ -284,6 +296,7 @@ if __name__ == "__main__":
                     
                     
                     for rel_rot in rotations:
+                        spin_idxs.append(len(lidar_poses))
                         T = np.hstack((rot.as_matrix() @ rel_rot.as_matrix(), xyz.reshape(-1, 1)))
                         T = np.vstack((T, [0,0,0,1]))
                         spin_idxs.append(len(lidar_poses))

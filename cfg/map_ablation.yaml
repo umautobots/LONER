@@ -1,3 +1,5 @@
 mapper:
-  enable_view_dependence: [False, True]
-  
+  optimizer:
+    model_config:
+      loss:
+        depth_eps_decay_steps: [50, 250]

@@ -24,23 +24,24 @@ import torch.multiprocessing as mp
 
 PROJECT_ROOT = os.path.abspath(os.path.join(
     os.path.dirname(__file__),
-    os.pardir,
     os.pardir))
 
 sys.path.append(PROJECT_ROOT)
 sys.path.append(PROJECT_ROOT + "/src")
 
-from fusion_portable_calibration import FusionPortableCalibration
 
 from src.cloner_slam import ClonerSLAM
 from src.common.pose import Pose
 from src.common.sensors import Image, LidarScan
 from src.common.settings import Settings
+
 from utils import *
 
 LIDAR_MIN_RANGE = 0.3 #http://www.oxts.com/wp-content/uploads/2021/01/Ouster-datasheet-revc-v2p0-os0.pdf
 
 bridge = CvBridge()
+
+WARN_MOCOMP_ONCE = True
 
 def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time) -> LidarScan:
     lidar_data = ros_numpy.point_cloud2.pointcloud2_to_array(
@@ -53,7 +54,15 @@ def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time) -> LidarS
     valid_ranges = dists > LIDAR_MIN_RANGE
 
     xyz = xyz[valid_ranges].T
-    timestamps = (lidar_data[valid_ranges, -1] + timestamp.to_sec()).float()
+
+    if lidar_data.shape[1] == 4:
+        global WARN_MOCOMP_ONCE
+        if WARN_MOCOMP_ONCE:
+            print("Warning: LiDAR Data has No Associated Timestamps. Motion compensation is useless.")
+            WARN_MOCOMP_ONCE = False
+        timestamps = torch.full_like(xyz[0], timestamp.to_sec()).float()
+    else:
+        timestamps = (lidar_data[valid_ranges, -1] + timestamp.to_sec()).float()
 
     dists = dists[valid_ranges].float()
     directions = (xyz / dists).float()
@@ -91,39 +100,48 @@ def run_trial(config, settings, settings_description = None, config_idx = None, 
     init = False
 
     init_clock = time.time()
-
-    calibration = FusionPortableCalibration(os.path.expanduser(config["calibration"]))
+    
+    calibration = load_calibration(config["dataset_family"], config["calibration"])
 
     camera = settings.ros_names.camera
     lidar = settings.ros_names.lidar
     camera_suffix = settings.ros_names.camera_suffix
     topic_prefix = settings.ros_names.topic_prefix
 
-    image_topic = f"{topic_prefix}/{camera}/{camera_suffix}"
     lidar_topic = f"{topic_prefix}/{lidar}"
 
-    K = torch.from_numpy(calibration.left_cam_intrinsic["K"]).float()
-    K[:2, :] *= im_scale_factor
-    settings["calibration"]["camera_intrinsic"]["k"] = K
+    lidar_only = settings.system.lidar_only
 
-    new_k = torch.from_numpy(calibration.left_cam_intrinsic["projection_matrix"]).float()[:3,:3]
-    new_k[:2, :] *= im_scale_factor
-    settings["calibration"]["camera_intrinsic"]["new_k"] = new_k
+    if not lidar_only:
+        image_topic = f"{topic_prefix}/{camera}/{camera_suffix}"
+        
+        K = torch.from_numpy(calibration.left_cam_intrinsic["K"]).float()
+        K[:2, :] *= im_scale_factor
+        settings["calibration"]["camera_intrinsic"]["k"] = K
 
-    settings["calibration"]["camera_intrinsic"]["distortion"] = \
-        torch.from_numpy(calibration.left_cam_intrinsic["distortion_coeffs"]).float()
+        new_k = torch.from_numpy(calibration.left_cam_intrinsic["projection_matrix"]).float()[:3,:3]
+        new_k[:2, :] *= im_scale_factor
+        settings["calibration"]["camera_intrinsic"]["new_k"] = new_k
 
-    settings["calibration"]["camera_intrinsic"]["width"] = int(calibration.left_cam_intrinsic["width"] // (1/im_scale_factor))
-    
-    settings["calibration"]["camera_intrinsic"]["height"] = int(calibration.left_cam_intrinsic["height"] // (1/im_scale_factor))
+        settings["calibration"]["camera_intrinsic"]["distortion"] = \
+            torch.from_numpy(calibration.left_cam_intrinsic["distortion_coeffs"]).float()
+
+        settings["calibration"]["camera_intrinsic"]["width"] = int(calibration.left_cam_intrinsic["width"] // (1/im_scale_factor))
+        
+        settings["calibration"]["camera_intrinsic"]["height"] = int(calibration.left_cam_intrinsic["height"] // (1/im_scale_factor))
+
+        image_size = (settings.calibration.camera_intrinsic.height, settings.calibration.camera_intrinsic.width)
+
+        lidar_to_camera = Pose.from_settings(calibration.t_lidar_to_left_cam).get_transformation_matrix()
+        camera_to_lidar = lidar_to_camera.inverse()
+
+        settings["calibration"]["lidar_to_camera"] = calibration.t_lidar_to_left_cam
+    else:
+        camera_to_lidar = None
+        image_size = None
 
     ray_range = settings.mapper.optimizer.model_config.data.ray_range
-    image_size = (settings.calibration.camera_intrinsic.height, settings.calibration.camera_intrinsic.width)
 
-    lidar_to_camera = Pose.from_settings(calibration.t_lidar_to_left_cam).get_transformation_matrix()
-    camera_to_lidar = lidar_to_camera.inverse()
-
-    settings["calibration"]["lidar_to_camera"] = calibration.t_lidar_to_left_cam
     settings["experiment_name"] = config["experiment_name"]
 
     settings["run_config"] = config
@@ -131,10 +149,10 @@ def run_trial(config, settings, settings_description = None, config_idx = None, 
     cloner_slam = ClonerSLAM(settings)
 
     # Get ground truth trajectory. This is only used to construct the world cube.
-    ground_truth_file = rosbag_path.parent / "ground_truth_traj.txt"
+    ground_truth_file = os.path.expanduser(config["groundtruth_traj"])
     ground_truth_df = pd.read_csv(ground_truth_file, names=["timestamp","x","y","z","q_x","q_y","q_z","q_w"], delimiter=" ")
-    tf_buffer, timestamps = build_buffer_from_df(ground_truth_df)
-    lidar_poses = build_poses_from_buffer(tf_buffer, timestamps)
+    lidar_poses, timestamps = build_poses_from_df(ground_truth_df)
+    tf_buffer, timestamps = build_buffer_from_poses(lidar_poses, timestamps)
     
     if config_idx is None and trial_idx is None:
         ablation_name = None
@@ -169,7 +187,9 @@ def run_trial(config, settings, settings_description = None, config_idx = None, 
 
     warned_skip_once = False
 
-    for topic, msg, timestamp in bag.read_messages(topics=[lidar_topic, image_topic]):        
+    topics = [lidar_topic] if lidar_only else [lidar_topic, image_topic]
+    
+    for topic, msg, timestamp in bag.read_messages(topics=topics):        
         # Wait for lidar to init
         if topic == lidar_topic and not init and timestamp.to_sec() and timestamp >= timestamps[0]:
             init = True
@@ -184,9 +204,10 @@ def run_trial(config, settings, settings_description = None, config_idx = None, 
         if config["duration"] is not None and timestamp.to_sec() > config["duration"]:
             break
 
-        if topic == image_topic:
+        if (not lidar_only) and topic == image_topic:
             image = build_image_from_msg(msg, timestamp, im_scale_factor)
-
+            cloner_slam.process_rgb(image)
+        elif topic == lidar_topic:
             try:
                 lidar_tf = tf_buffer.lookup_transform_core('map', "lidar", timestamp + start_time)
             except tf2_py.ExtrapolationException as e:
@@ -201,12 +222,10 @@ def run_trial(config, settings, settings_description = None, config_idx = None, 
                 start_lidar_pose = T_lidar
 
             gt_lidar_pose = start_lidar_pose.inverse() @ T_lidar
-            gt_cam_pose = Pose(gt_lidar_pose @ lidar_to_camera)
-            
-            cloner_slam.process_rgb(image, gt_cam_pose)
-        elif topic == lidar_topic:
+
             lidar_scan = build_scan_from_msg(msg, timestamp)
-            cloner_slam.process_lidar(lidar_scan)
+            cloner_slam.process_lidar(lidar_scan, Pose(gt_lidar_pose))
+
         else:
             raise Exception("Should be unreachable")
 

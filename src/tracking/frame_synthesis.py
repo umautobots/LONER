@@ -17,11 +17,13 @@ class FrameSynthesis:
 
     ## Constructor
     # @param settings: Settings for the tracker (which includes frame synthesis)
-    def __init__(self, settings: Settings, T_lidar_to_camera: Pose) -> None:
+    def __init__(self, settings: Settings, T_lidar_to_camera: Pose, lidar_only: bool) -> None:
         self._settings = settings
 
         self._t_lidar_to_camera = T_lidar_to_camera
         self._t_camera_to_lidar = self._t_lidar_to_camera.inv()
+
+        self._lidar_only = lidar_only
 
         self._active_frame = Frame(T_lidar_to_camera=self._t_lidar_to_camera)
 
@@ -37,128 +39,39 @@ class FrameSynthesis:
         # Minimum dt between frames
         self._frame_delta_t_sec = 1/self._settings.frame_decimation_rate_hz
 
-        # This is used to queue up all the lidar points before they're assigned to frames
-        self._lidar_queue = LidarScan()
-
-        self._split_lidar_scans = self._settings.split_lidar_scans
-
         self._lidar_scans = []
         self._lidar_scan_timestamps = torch.Tensor()
 
     ## Reads data from the @p lidar_scan and adds the points to the appropriate frame(s)
     # @param lidar_scan: Set of lidar points to add to the in-progress frames(s)
-    def process_lidar(self, lidar_scan: LidarScan) -> List[int]:
-        if self._split_lidar_scans:
-            self._lidar_queue.merge(lidar_scan)
+    def process_lidar(self, lidar_scan: LidarScan, gt_pose: Pose) -> List[int]:
+        if self._lidar_only:
+            scan_time = lidar_scan.get_start_time()
+            if scan_time - self._prev_accepted_timestamp >= self._frame_delta_t_sec - FRAME_TOLERANCE:
+                new_frame = Frame(None, lidar_scan, self._t_lidar_to_camera)
+                new_frame._gt_lidar_pose = gt_pose
+                self._completed_frames.append(new_frame.clone())
+                self._prev_accepted_timestamp = lidar_scan.get_start_time()
         else:
-            self._lidar_scans.append(lidar_scan)
+            self._lidar_scans.append((lidar_scan, gt_pose))
             scan_ts = torch.Tensor([lidar_scan.timestamps[0], lidar_scan.timestamps[-1]]).view(2,1)
             self._lidar_scan_timestamps = torch.hstack((self._lidar_scan_timestamps, scan_ts))
-
-        self.create_frames()
+            self.create_frames()
 
     # Enqueues image from @p image.
     # @precond incoming images are in monotonically increasing order (in timestamp)
-    def process_image(self, image: Image, gt_pose: Pose = None) -> None:
+    def process_image(self, image: Image) -> None:
         if image.timestamp - self._prev_accepted_timestamp >= self._frame_delta_t_sec - FRAME_TOLERANCE:
             self._prev_accepted_timestamp = image.timestamp
             new_frame = Frame(image=image, T_lidar_to_camera=self._t_lidar_to_camera)
-            if gt_pose is not None:
-                new_frame._gt_lidar_pose = gt_pose * self._t_camera_to_lidar
-                
+
             self._in_progress_frames.append(new_frame.clone())
             self.create_frames()
 
     def create_frames(self):
-        if self._split_lidar_scans:
-            self._dequeue_lidar_points()
-        else:
-            self._match_images_to_scans()
-
-    ## Assigns lidar points from the queue to frames
-    def _dequeue_lidar_points(self):
-        completed_frames = 0
-        for frame in self._in_progress_frames:
-            start_time = frame.image.timestamp - self._frame_delta_t_sec / 2
-            end_time = frame.image.timestamp + self._frame_delta_t_sec / 2
-
-
-            # If there aren't lidar points to process, skip
-            if len(self._lidar_queue) == 0:
-                return
-
-            # If the start time of the frame is after the last lidar point, then the
-            # lidar queue is useless. Clear it out.
-            if start_time > self._lidar_queue.get_end_time():
-                print(
-                    "Warning: Got an image that starts after all queued lidar points. Dropping lidar points")
-                self._lidar_queue.clear()
-                return
-
-            # If the end time of the frame comes before all of the lidar points,
-            # then the frame is assumed done. Mark it complete and move on.
-            if end_time < self._lidar_queue.get_start_time():
-                completed_frames += 1
-                continue
-
-            # If there are some points we need to skip
-            if self._lidar_queue.get_start_time() < start_time:
-                first_valid_idx = torch.argmax(
-                    (self._lidar_queue.timestamps >= start_time).float())
-            else:
-                first_valid_idx = 0
-
-            # It's possible some of the input points should actually be added to future scans
-            if self._lidar_queue.get_end_time() > end_time:
-                last_valid_idx = torch.argmax(
-                    (self._lidar_queue.timestamps > end_time).float())
-            else:
-                last_valid_idx = len(self._lidar_queue)
-
-            point_step = self._settings.lidar_point_step
-
-            # Get the points from the queue that need to be moved to the current frame
-            new_ray_directions = self._lidar_queue.ray_directions[..., first_valid_idx:last_valid_idx:point_step]
-            new_distances = self._lidar_queue.distances[first_valid_idx:last_valid_idx:point_step]
-            new_timestamps = self._lidar_queue.timestamps[first_valid_idx:last_valid_idx:point_step]
-
-
-            frame.lidar_points.add_points(
-                new_ray_directions, new_distances, new_timestamps)
-
-            self._lidar_queue.remove_points(last_valid_idx)
-
-            # If any points remain in the queue, then the frame must be done since the remaining points
-            # imply the existance of points that come after the frame.
-            if len(self._lidar_queue) > 0:
-                completed_frames += 1
-
-        # For all the frames that are now complete, bundle them up and send off for tracking
-        for _ in range(completed_frames):
-            frame = self._in_progress_frames.pop(0)
-            if len(frame.lidar_points) == 0:
-                continue
-            self._completed_frames.append(frame)
+        self._match_images_to_scans()
 
     def _match_images_to_scans(self):
-
-        """
-        
-        images: 0.1
-
-        scans: 0.0->0.1, 0.1->0.2, 0.2->0.3
-        
-        lidar_start_times = [-0.01, 0.09, 0.19]
-        lidar_end_times = [0.11, 0.21, 0.31]
-
-        valid_start = [True True False]
-        valid_end = [True True True]
-
-        valid_scans = [True True False]
-
-        chosen_scan_idx = 0
-        
-        """
 
         class MatchResult(enum.Enum):
             COMPLETED = 0,
@@ -182,7 +95,8 @@ class FrameSynthesis:
 
             chosen_scan_idx = torch.argmax(torch.bitwise_and(valid_start, valid_end).float())
 
-            frame.lidar_points = self._lidar_scans[chosen_scan_idx]
+            frame.lidar_points = self._lidar_scans[chosen_scan_idx][0]
+            frame._gt_lidar_pose = self._lidar_scans[chosen_scan_idx][1]
 
             self._lidar_scans = self._lidar_scans[chosen_scan_idx+1:]
             self._lidar_scan_timestamps = self._lidar_scan_timestamps[:, chosen_scan_idx+1:]
