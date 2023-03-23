@@ -15,6 +15,15 @@ import open3d as o3d
 import pandas as pd
 from scipy.spatial.transform import Rotation, Slerp
 from scipy.interpolate import interp1d
+import os,sys
+
+PROJECT_ROOT = os.path.abspath(os.path.join(
+    os.path.dirname(__file__),
+    os.pardir, os.pardir))
+sys.path.append(PROJECT_ROOT)
+sys.path.append(PROJECT_ROOT + "/src")
+sys.path.append(PROJECT_ROOT + "/examples")
+
 from utils import *
 from more_itertools import peekable
 
@@ -70,6 +79,10 @@ bag_it = peekable(bag.read_messages(topics=all_topics))
 if bag.get_message_count(cam_topics) == 0:
     print("Got no messages for camera topic. Did you forget to specify --im_compressed correctly?")
     exit()
+
+
+os.makedirs("./projection", exist_ok=True)
+print("Saving images to ./projection")
 
 for idx in tqdm.trange(bag.get_message_count(cam_topics)//2):
 
@@ -198,7 +211,6 @@ for idx in tqdm.trange(bag.get_message_count(cam_topics)//2):
     depth_im = cv2.dilate(depth_im, np.ones((3,3)))
     color_coords = depth_im[:,:] != np.zeros(3)
     disp_im[color_coords] = depth_im[color_coords]
-
 
     if idx%100 == 0:
         cv2.imwrite(f"projection/projected_{idx}.png", disp_im)

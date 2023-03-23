@@ -3,7 +3,7 @@ from collections import defaultdict
 import torch
 import torch.nn as nn
 
-from models.nerf_tcnn import DecoupledNeRF, NeRF
+from models.nerf_tcnn import DecoupledNeRF
 from models.rendering_tcnn import render_rays, inference
 
 
@@ -14,9 +14,7 @@ class Model(nn.Module):
         super(Model, self).__init__()
         self.cfg = cfg
 
-        if cfg.model_type == 'nerf':
-            self.nerf_model = NeRF(cfg.nerf_config, cfg.num_colors)
-        elif cfg.model_type == 'nerf_decoupled':
+        if cfg.model_type == 'nerf_decoupled':
             self.nerf_model = DecoupledNeRF(cfg.nerf_config, cfg.num_colors)
         else:
             raise NotImplementedError()

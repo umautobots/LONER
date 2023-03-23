@@ -254,15 +254,11 @@ class Optimizer:
                 self._results_lidar = None
         
                 camera_samples, lidar_samples = None, None
-                
-                # TODO deleteme
-                all_lidar_indices = []
 
                 for kf_idx, kf in enumerate(active_keyframe_window):                
                     if self.should_enable_lidar():
 
                         lidar_indices = torch.randint(len(kf.get_lidar_scan()), (self._num_lidar_samples,))
-                        all_lidar_indices.append(lidar_indices.clone())
 
                         new_rays, new_depths = kf.build_lidar_rays(lidar_indices, self._ray_range, self._world_cube, self._use_gt_poses)
                     
@@ -333,8 +329,6 @@ class Optimizer:
                         self._grad_log.append(kf.get_lidar_pose().get_pose_tensor().grad.cpu().clone())                   
                     if kf.get_lidar_pose().get_pose_tensor().grad is not None and not kf.get_lidar_pose().get_pose_tensor().grad.isfinite().all():
                         raise RuntimeError("Fatal: Encountered invalid gradient in pose.")
-
-                self._optimizer.step()
 
                 for kf in keyframe_window:
                     if not kf.get_lidar_pose().get_pose_tensor().isfinite().all():
@@ -468,7 +462,7 @@ class Optimizer:
                                     mean.detach().cpu().numpy(), var.detach().cpu().numpy(), js_score.detach().cpu().numpy(), \
                                     self._lidar_depth_samples_fine.detach().cpu().numpy(), self._lidar_depths_gt.detach().cpu().numpy(), self._depth_eps)
             
-            if self._settings.debug.draw_samples and self._global_step > 2000 and self._global_step < 2100:
+            if self._settings.debug.draw_samples:
                 points = self._results_lidar["points_fine"].view(-1, 3).detach().cpu()
                 weights = self._results_lidar["weights_fine"].view(-1, 1).detach().cpu().flatten()
 
@@ -656,7 +650,3 @@ class Optimizer:
                 plt.ylabel("Predicted weight")
                 plt.legend(["Sample results", "Sample gt", "Sample distribution", "Goal distribution", "Training distribution"], loc ="upper center")
                 plt.show()
-                # loss_dir = f"{self._settings.log_directory}/visualize_loss/"
-                # os.makedirs(loss_dir, exist_ok=True)
-                # plt.savefig(f"{loss_dir}/loss_{i}.png")
-                # plt.clf()

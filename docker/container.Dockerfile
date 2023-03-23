@@ -70,6 +70,7 @@ RUN python3 -m pip install -r /tmp/requirements.txt \
      && pip3 install torch_tb_profiler \
      && pip3 install torchviz \
      && pip3 install --upgrade typing-extensions \
+     && pip3 install more_itertools \
      && rm /tmp/requirements.txt
 
 # Install tiny-cuda-nn

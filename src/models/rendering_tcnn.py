@@ -56,7 +56,7 @@ def sample_pdf(bins, weights, N_importance, det=False, eps=1e-5):
 
 
 # ref: https://github.com/yenchenlin/nerf-pytorch/blob/master/run_nerf.py#L262
-def raw2outputs(raw, z_vals, rays_d, raw_noise_std=0, white_bkgd=False, sigma_only=False, num_colors=3, softplus=False, far=None, ret_var=False):
+def raw2outputs(raw, z_vals, rays_d, raw_noise_std=0, white_bkgd=False, sigma_only=False, num_colors=3, softplus=False, far=None, compute_variance=False):
     """Transforms model's predictions to semantically meaningful values.
     Args:
         raw: [num_rays, num_samples along ray, 4(sigma_only=False) or 1(sigma_only=True)]. Prediction from model.
@@ -134,11 +134,50 @@ def raw2outputs(raw, z_vals, rays_d, raw_noise_std=0, white_bkgd=False, sigma_on
         if white_bkgd:
             rgb_map = rgb_map + 1-weights.sum(-1, keepdim=True)
 
-    if ret_var:
+    if compute_variance:
         variance = (weights * (depths.view(-1, 1) - z_vals)**2).sum(dim=1)
-        return rgb_map, depths, weights, opacity_map, variance
+    else:
+        variance = None
 
-    return rgb_map, depths, weights, opacity_map
+    return rgb_map, depths, weights, opacity_map, variance
+
+
+def inference(model, xyz_, dir_, sigma_only=False, netchunk=32768, detach_sigma=True):
+    """
+    Helper function that performs model inference.
+
+    Inputs:
+        model: NeRF model instantiated using Tiny Cuda NN
+        xyz_: (N_rays, N_samples_, 3) sampled positions
+                N_samples_ is the number of sampled points in each ray;
+        dir_: (N_rays, 3) ray directions
+        sigma_only: do inference on sigma only or not
+    Outputs:
+        if sigma_only:
+            raw: (N_rays, N_samples_, 1): predictions of each sample
+        else:
+            raw: (N_rays, N_samples_, num_colors + 1): predictions of each sample
+    """
+    N_rays, N_samples_ = xyz_.shape[0:2]
+    xyz_ = xyz_.view(-1, 3).contiguous()  # (N_rays*N_samples_, 3)
+    if sigma_only:
+        dir_ = None
+    else:
+        # (N_rays*N_samples_, embed_dir_channels)
+        dir_ = torch.repeat_interleave(
+            dir_, repeats=N_samples_, dim=0).contiguous()
+
+    # Perform model inference to get color and raw sigma
+    B = xyz_.shape[0]
+    if netchunk == 0:
+        out = model(xyz_, dir_, sigma_only, detach_sigma)
+    else:
+        out_chunks = []
+        for i in range(0, B, netchunk):
+            out_chunks += [model(xyz_, dir_, sigma_only, detach_sigma)]
+        out = torch.cat(out_chunks, 0)
+
+    return out.view(N_rays, N_samples_, -1)
 
 
 # Use Fully Fused MLP from Tiny CUDA NN
@@ -183,43 +222,6 @@ def render_rays(rays,
             raw: [num_rays, num_samples, 4 or 1]. Raw predictions from model.
     """
 
-    def inference(model, xyz_, dir_, sigma_only=False):
-        """
-        Helper function that performs model inference.
-
-        Inputs:
-            model: NeRF model instantiated using Tiny Cuda NN
-            xyz_: (N_rays, N_samples_, 3) sampled positions
-                   N_samples_ is the number of sampled points in each ray;
-            dir_: (N_rays, 3) ray directions
-            sigma_only: do inference on sigma only or not
-        Outputs:
-            if sigma_only:
-                raw: (N_rays, N_samples_, 1): predictions of each sample
-            else:
-                raw: (N_rays, N_samples_, num_colors + 1): predictions of each sample
-        """
-        N_samples_ = xyz_.shape[1]
-        xyz_ = xyz_.view(-1, 3).contiguous()  # (N_rays*N_samples_, 3)
-        if sigma_only:
-            dir_ = None
-        else:
-            # (N_rays*N_samples_, embed_dir_channels)
-            dir_ = torch.repeat_interleave(
-                dir_, repeats=N_samples_, dim=0).contiguous()
-
-        # Perform model inference to get color and raw sigma
-        B = xyz_.shape[0]
-        if netchunk == 0:
-            out = model(xyz_, dir_, sigma_only, detach_sigma)
-        else:
-            out_chunks = []
-            for i in range(0, B, netchunk):
-                out_chunks += [model(xyz_, dir_, sigma_only, detach_sigma)]
-            out = torch.cat(out_chunks, 0)
-
-        return out.view(N_rays, N_samples_, -1)
-
     # Decompose the inputs
     N_rays = rays.shape[0]
     rays_o, rays_d = rays[:, 0:3], rays[:, 3:6]  # both (N_rays, 3)
@@ -233,7 +235,7 @@ def render_rays(rays,
     raw = inference(nerf_model, xyz_samples, viewdirs, sigma_only=sigma_only)
 
     rgb, depth, weights, opacity, variance = raw2outputs(
-        raw, z_vals, rays_d, raw_noise_std, white_bkgd, sigma_only=sigma_only, num_colors=num_colors, far=far, ret_var=return_variance)
+        raw, z_vals, rays_d, raw_noise_std, white_bkgd, sigma_only=sigma_only, num_colors=num_colors, far=far, compute_variance=return_variance)
 
     result = {'rgb_fine': rgb,
               'depth_fine': depth,
@@ -255,41 +257,3 @@ def render_rays(rays,
             if (torch.isnan(result[k]).any() or torch.isinf(result[k]).any()):
                 print(f"! [Numerical Error] {k} contains nan or inf.")
     return result
-
-
-def inference(model, xyz_, dir_, netchunk=32768, sigma_only=False):
-    """
-    Helper function that performs model inference.
-
-    Inputs:
-        model: NeRF model instantiated using Tiny Cuda NN
-        xyz_: (N_rays, N_samples_, 3) sampled positions
-                N_samples_ is the number of sampled points in each ray;
-        dir_: (N_rays, 3) ray directions
-        sigma_only: do inference on sigma only or not
-    Outputs:
-        if sigma_only:
-            raw: (N_rays, N_samples_, 1): predictions of each sample
-        else:
-            raw: (N_rays, N_samples_, num_colors + 1): predictions of each sample
-    """
-    N_samples_ = xyz_.shape[1]
-    xyz_ = xyz_.view(-1, 3).contiguous()  # (N_rays*N_samples_, 3)
-    if sigma_only:
-        dir_ = None
-    else:
-        # (N_rays*N_samples_, embed_dir_channels)
-        dir_ = torch.repeat_interleave(
-            dir_, repeats=N_samples_, dim=0).contiguous()
-
-    # Perform model inference to get color and raw sigma
-    B = xyz_.shape[0]
-    if netchunk == 0:
-        out = model(xyz_, dir_, sigma_only)
-    else:
-        out_chunks = []
-        for i in range(0, B, netchunk):
-            out_chunks += [model(xyz_, dir_, sigma_only)]
-        out = torch.cat(out_chunks, 0)
-    return out
-    # return out.view(N_rays, N_samples_, -1)

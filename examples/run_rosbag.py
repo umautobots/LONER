@@ -228,8 +228,6 @@ def run_trial(config, settings, settings_description = None, config_idx = None, 
     start_lidar_pose = None
 
     start_clock = None
-    last_send = time.time()
-    prev_timestamp = None
 
     warned_skip_once = False
 
@@ -323,7 +321,7 @@ def run_trial(config, settings, settings_description = None, config_idx = None, 
     dist = torch.linalg.norm(diff, dim=1)
     rmse = torch.sqrt(torch.mean(dist**2))
 
-    print(f"RMSE: {rmse:.3f}")
+    print(f"Unaligned KeyFrame RMSE: {rmse:.3f}")
 
 
 # Implements a single worker in a thread-pool model.

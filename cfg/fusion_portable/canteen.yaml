@@ -4,4 +4,20 @@ calibration: ~/data/fusion_portable/calibration/20220209_calib
 groundtruth_traj: ~/data/fusion_portable/20220216_canteen_day/ground_truth_traj.txt
 experiment_name: canteen
 dataset_family: fusion_portable
-changes: NULL
+changes:
+  system:
+    world_cube:
+      compute_from_groundtruth: False
+      trajectory_bounding_box:
+        x: [-25, 10]
+        y: [-25, 15]
+        z: [-10, 10]
+  mapper:
+    optimizer:
+      model_config:
+        data:
+          ray_range: &ray_range [1, 40]
+        model:
+          ray_range: *ray_range
+          render:
+            N_samples_train: 512

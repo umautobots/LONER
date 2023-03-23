@@ -190,8 +190,6 @@ def compute_world_cube(camera_to_lidar, intrinsic_mats, image_sizes, lidar_poses
             assert image_sizes.shape[0] == camera_poses.shape[0]
             
         for K, hw, c2w in zip(intrinsic_mats, image_sizes, camera_poses):
-            # TODO: min_depth expects near plane value. ray_range[0] is the minimum distance along ray
-            # need to compute min_depth by looking at the z value of the corner ray with length ray_range[0]
             pts_homo = _get_view_frustum_corners(
                 K, hw[0], hw[1], min_depth=ray_range[0], max_depth=ray_range[1])    # (8, 4)
             corners = c2w[:3, :] @ pts_homo.T

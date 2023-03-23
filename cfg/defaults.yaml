@@ -28,7 +28,7 @@ debug:
     draw_loss_distribution: False
     log_losses: False
     profile: False
-    draw_samples: True
+    draw_samples: False
     visualize_loss: False
     
 mapper:
