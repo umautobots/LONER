@@ -1,7 +1,7 @@
 seed: 8
 
 data:
-    ray_range: &ray_range [1, 70]
+    ray_range: &ray_range [1, 40]
 
 model:
     num_colors: 3            # number of output colors
@@ -43,7 +43,6 @@ loss:
         min_js_score: 1.
         max_js_score: 10.
         alpha: 5
-    visualize_loss: False                     # boolean to enable loss visualization
 
     decay_depth_lambda: False          # boolean to enable decay
     depth_lambda: 1000.0                # Depth lambda used for loss.

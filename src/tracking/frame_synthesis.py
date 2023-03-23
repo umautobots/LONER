@@ -9,7 +9,7 @@ from common.pose_utils import WorldCube
 from common.sensors import Image, LidarScan
 from common.settings import Settings
 
-FRAME_TOLERANCE = 0.01
+FRAME_TOLERANCE = 0.02
 
 class FrameSynthesis:
     """ FrameSynthesis class to process streams of data and create frames.
@@ -88,6 +88,7 @@ class FrameSynthesis:
             lidar_end_times = self._lidar_scan_timestamps[1] + self._settings.frame_match_tolerance
 
             if lidar_start_times[0] > frame.image.timestamp:
+                print(lidar_start_times[0], frame.image.timestamp)
                 results.append(MatchResult.SKIPPED)
 
             valid_start = frame.image.timestamp >= lidar_start_times

@@ -142,12 +142,28 @@ def _get_view_frustum_corners(K, H, W, min_depth=1, max_depth=1e6):
 # @param lidar_poses: Groundtruth lidar poses
 # @param ray_range: A tuple with min and max camera range
 # @param padding: 0 means no extra padding is added, the cube is doubled in each axis
-def compute_world_cube(camera_to_lidar, intrinsic_mats, image_sizes, lidar_poses, ray_range, padding=0.1) -> WorldCube:
+def compute_world_cube(camera_to_lidar, intrinsic_mats, image_sizes, lidar_poses, ray_range, padding=0.1, traj_bounding_box=None) -> WorldCube:
 
     assert 0 <= padding < 1
+    
+    assert lidar_poses is not None or traj_bounding_box is not None
 
+    if lidar_poses is None:
+        x_min, x_max = traj_bounding_box['x']
+        y_min, y_max = traj_bounding_box['y']
+        z_min, z_max = traj_bounding_box['z']
 
-    lidar_poses = lidar_poses @ lidar_poses[0,:,:].inverse()
+        x_range = torch.Tensor([x_min, x_max])
+        y_range = torch.Tensor([y_min, y_max])
+        z_range = torch.Tensor([z_min, z_max])
+
+        all_combos = torch.stack(torch.meshgrid([x_range, y_range, z_range]), dim=-1).reshape(-1, 3, 1)
+        
+        lidar_poses = torch.eye(4).tile((8, 1, 1))
+        
+        lidar_poses[:,:3,3:4] = all_combos
+    else:
+        lidar_poses = lidar_poses @ lidar_poses[0,:,:].inverse()
 
     if camera_to_lidar is None:
         camera_poses = []
@@ -189,13 +205,13 @@ def compute_world_cube(camera_to_lidar, intrinsic_mats, image_sizes, lidar_poses
     else:
         max_depth = ray_range[1]
         lidar_view_corners = torch.Tensor([[-max_depth, -max_depth, -max_depth, 1],
-                                           [-max_depth, max_depth, -max_depth, 1],
-                                           [max_depth, -max_depth, -max_depth, 1],
-                                           [max_depth, max_depth, -max_depth, 1],
-                                           [-max_depth, -max_depth, max_depth, 1],
-                                           [-max_depth, max_depth, max_depth, 1],
-                                           [max_depth, -max_depth, max_depth, 1],
-                                           [max_depth, max_depth, max_depth, 1]])
+                                        [-max_depth, max_depth, -max_depth, 1],
+                                        [max_depth, -max_depth, -max_depth, 1],
+                                        [max_depth, max_depth, -max_depth, 1],
+                                        [-max_depth, -max_depth, max_depth, 1],
+                                        [-max_depth, max_depth, max_depth, 1],
+                                        [max_depth, -max_depth, max_depth, 1],
+                                        [max_depth, max_depth, max_depth, 1]])
 
         for c2l in lidar_poses:
             corners = c2l[:3,:] @ lidar_view_corners.T

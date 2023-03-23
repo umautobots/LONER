@@ -10,7 +10,6 @@ import pytorch3d.transforms
 import geometry_msgs.msg
 
 from fusion_portable.fusion_portable_calibration import FusionPortableCalibration
-from kaist_complex_urban.kaist_urban_calibration import KaistUrbanCalibration
 
 def build_poses_from_df(df: pd.DataFrame):
     data = torch.from_numpy(df.to_numpy(dtype=np.float64))
@@ -124,8 +123,5 @@ def msg_to_transformation_mat(tf_msg):
 def load_calibration(dataset_family: str, calib_path: str):
     if dataset_family.lower() == "fusion_portable":
         return FusionPortableCalibration(calib_path)
-    elif dataset_family.lower() == "kaist_complex_urban":
-        return KaistUrbanCalibration(calib_path)
-    elif dataset_family.lower() == "hilti":
-        return KaistUrbanCalibration(calib_path)
-    raise RuntimeError(f"Can't load dataset of type {dataset_family}")
+    print("Warning: Supplied dataset has no calibration configured. Don't enable the camera!")
+    return None

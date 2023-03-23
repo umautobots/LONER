@@ -63,3 +63,4 @@ tracker:
 system:
   synchronization:
     max_time_delta: *keyframe_interval
+  lidar_only: True

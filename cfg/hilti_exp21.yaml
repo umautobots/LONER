@@ -1,7 +1,29 @@
 baseline: defaults.yaml
-dataset: ~/data/KaistUrban/urban08/bag/velodyne_points.bag
+dataset: ~/data/hilti/exp21/exp21_outside_building.bag
 calibration: NULL
-groundtruth_traj: ~/data/KaistUrban/urban08/groundtruth_traj_tum.txt
+groundtruth_traj: NULL
 experiment_name: hilti_exp21
 dataset_family: hilti
-changes: NULL
+changes:
+  system:
+    lidar_only: True
+    world_cube:
+      compute_from_groundtruth: False
+      trajectory_bounding_box:
+        x: [0, 45]
+        y: [-30, 10]
+        z: [-10, 10]
+    ros_names:
+      camera: NULL
+      lidar: "hesai/pandar"
+      camera_suffix: NULL
+      topic_prefix: ""
+  mapper:
+    optimizer:
+      model_config:
+        data:
+          ray_range: &ray_range [1, 150]
+        model:
+          ray_range: *ray_range
+          render:
+            N_samples_train: 512

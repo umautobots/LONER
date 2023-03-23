@@ -19,7 +19,17 @@
       "program": "${workspaceFolder}/examples/run_rosbag.py",
       "console": "integratedTerminal",
       "args": ["${workspaceFolder}/cfg/fusion_portable/canteen.yaml"],
-      "cwd": "${workspaceFolder}/fusion_portable",
+      "cwd": "${workspaceFolder}/examples",
+      "subProcess": true
+    },
+    {
+      "name": "ClonerSLAM: Hilti",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/examples/run_rosbag.py",
+      "console": "integratedTerminal",
+      "args": ["${workspaceFolder}/cfg/hilti_exp21.yaml", "--lite"],
+      "cwd": "${workspaceFolder}/examples",
       "subProcess": true
     },
     {
@@ -29,6 +39,16 @@
       "program": "${workspaceFolder}/analysis/renderer.py",
       "console": "integratedTerminal",
       "args": ["${workspaceFolder}/outputs/debug_nan_031223_155004", "--render_video"],
+      "cwd": "${workspaceFolder}/analysis",
+      "subProcess": true
+    },
+    {
+      "name": "lidar_renderer",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/sandbox/lidar_renderer/renderer_lidar.py",
+      "console": "integratedTerminal",
+      "args": ["/mnt/ws-frb/projects/cloner_slam/results/map_ablation_study/canteen_proposed_031323_143441/config_0/trial_0/"],
       "cwd": "${workspaceFolder}/analysis",
       "subProcess": true
     },

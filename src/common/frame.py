@@ -94,7 +94,7 @@ class Frame:
         pcd = o3d.cuda.pybind.geometry.PointCloud()
 
         # Only take 1 scan
-        if time_per_scan is not None:
+        if time_per_scan is not None and self.lidar_points.get_end_time() - self.lidar_points.get_start_time() > 1e-3:
             lidar_timestamps = self.lidar_points.timestamps
             middle_time = (lidar_timestamps[0] + lidar_timestamps[-1])/2
             start_index = torch.argmax((lidar_timestamps - middle_time >= -time_per_scan/2).float())

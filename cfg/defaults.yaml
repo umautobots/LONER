@@ -28,13 +28,9 @@ debug:
     draw_loss_distribution: False
     log_losses: False
     profile: False
-
-ros_names:
-  camera: "stereo/frame_left"
-  lidar: "os_cloud_node/points"
-  camera_suffix: "image_raw"
-  topic_prefix: "" 
-
+    draw_samples: True
+    visualize_loss: False
+    
 mapper:
   device: 0 # don't change this, use CUDA_VISIBLE_DEVICES
   data_prep_on_cpu: &data_prep_on_cpu True
@@ -90,13 +86,30 @@ mapper:
 system:
   single_threaded: True
   log_dir_prefix: "~/ClonerSLAM/outputs"
-  lidar_only: False
+  lidar_only: True
   
   image_scale_factor: 0.5 # Setting is put here to emphasize that it needs to influence calibration loading
 
   synchronization: &synchronization
     enabled: True
     max_time_delta: *keyframe_interval
+
+  world_cube:
+    # If you don't have groundtruth, set this to False and specify a traj bounding box as demonstrated below
+    # The trajectory will be padded by ray range
+    compute_from_groundtruth: True
+    trajectory_bounding_box:
+      x: [-10, 10]
+      y: [-10, 10]
+      z: [-10, 10]
+
+  # For Ouster, timestamps start at 0, and we need to add the start time of the scan
+  lidar_timestamps_relative_to_start: True 
+  ros_names:
+    camera: "stereo/frame_left"
+    lidar: "os_cloud_node/points"
+    camera_suffix: "image_raw"
+    topic_prefix: "" 
 tracker:
   synchronization: *synchronization
   frame_synthesis:

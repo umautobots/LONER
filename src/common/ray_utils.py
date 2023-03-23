@@ -281,3 +281,28 @@ def rays_to_pcd(rays, depths, rays_fname, origins_fname, intensities=None):
         f.write("DATA ascii\n")
         for pt in origins:
             f.write(f"{pt[0]} {pt[1]} {pt[2]} \n")
+
+
+## Converts xyz points to a pcd file
+def points_to_pcd(points, fname, intensities=None):
+
+    if intensities is None:
+        intensities = torch.ones_like(intensities[:, :3])
+    
+    with open(fname, 'w+') as f:
+        if points.shape[0] <= 3:
+            points = points.T
+            assert points.shape[0] > 3, f"Too few points or wrong shape of pcd file."
+        f.write("# .PCD v0.7 - Point Cloud Data file format\n")
+        f.write("VERSION 0.7\n")
+        f.write("FIELDS x y z i\n")
+        f.write("SIZE 4 4 4 4\n")
+        f.write("TYPE F F F F\n")
+        f.write("COUNT 1 1 1 1\n")
+        f.write(f"WIDTH {points.shape[0]}\n")
+        f.write("HEIGHT 1\n")
+        f.write("VIEWPOINT 0 0 0 1 0 0 0\n")
+        f.write(f"POINTS {points.shape[0]}\n")
+        f.write("DATA ascii\n")
+        for pt, intensity in zip(points, intensities):
+            f.write(f"{pt[0]} {pt[1]} {pt[2]} {intensity.item()}\n")

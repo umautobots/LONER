@@ -196,7 +196,7 @@ for experiment_directory in experiment_directories:
         plt.tight_layout()
         
         plt.savefig(f"{experiment_directory}/poses.png")
-        # plt.show()
+        plt.show()
         plt.clf()
     
     all_gts.append(gt)

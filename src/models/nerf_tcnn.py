@@ -100,6 +100,8 @@ class DecoupledNeRF(nn.Module):
         self._max_float = torch.finfo(self._model_intensity.dtype).max
         self._min_float = torch.finfo(self._model_intensity.dtype).min
 
+        self._warn_infinite = True
+
     def forward(self, pos, dir, sigma_only=False, detach_sigma=True):
         # x: [N, 3], scaled to [-1, 1]
         # d: [N, 3], normalized to [-1, 1]
@@ -117,7 +119,9 @@ class DecoupledNeRF(nn.Module):
             sigma = h[..., [0]]
 
         if not torch.isfinite(sigma).all():
-            print("Warning: Clipping infinite outputs")
+            if self._warn_infinite:
+                print("Warning: Clipping infinite outputs. Will not warn about this again (but it will happen again)")
+                self._warn_infinite = False
             sigma = sigma.nan_to_num(posinf=self._max_float, neginf=self._min_float)
         
         if sigma_only:

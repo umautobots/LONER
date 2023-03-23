@@ -42,8 +42,10 @@ LIDAR_MIN_RANGE = 0.3 #http://www.oxts.com/wp-content/uploads/2021/01/Ouster-dat
 bridge = CvBridge()
 
 WARN_MOCOMP_ONCE = True
+WARN_LIDAR_TIMES_ONCE = True
 
 def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time) -> LidarScan:
+
     lidar_data = ros_numpy.point_cloud2.pointcloud2_to_array(
         lidar_msg)
 
@@ -55,14 +57,45 @@ def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time) -> LidarS
 
     xyz = xyz[valid_ranges].T
 
-    if lidar_data.shape[1] == 4:
-        global WARN_MOCOMP_ONCE
+    fields = [f.name for f in lidar_msg.fields]
+    time_idx = None
+    for f_idx, f in enumerate(fields):
+        if "time" in f:
+            time_idx = f_idx
+            break
+
+    
+    global WARN_MOCOMP_ONCE
+
+    if time_idx is None:
         if WARN_MOCOMP_ONCE:
             print("Warning: LiDAR Data has No Associated Timestamps. Motion compensation is useless.")
             WARN_MOCOMP_ONCE = False
         timestamps = torch.full_like(xyz[0], timestamp.to_sec()).float()
     else:
-        timestamps = (lidar_data[valid_ranges, -1] + timestamp.to_sec()).float()
+
+        timestamps = lidar_data[valid_ranges, time_idx]
+
+        global WARN_LIDAR_TIMES_ONCE
+        if timestamps[0] < 1e-5:
+            if WARN_LIDAR_TIMES_ONCE:
+                print("Assuming LiDAR timestamps within a scan are local, and start at 0")
+            timestamps += timestamp.to_sec()
+        else:
+            if WARN_LIDAR_TIMES_ONCE:
+                print("Assuming lidar timestamps within a scan are global.")
+            timestamps = timestamps - timestamps[0] + timestamp.to_sec()
+        WARN_LIDAR_TIMES_ONCE = False
+
+
+        if timestamps[-1] - timestamps[0] < 1e-3:
+            if WARN_MOCOMP_ONCE:
+                print("Warning: Timestamps in LiDAR data aren't unique. Motion compensation is useless")
+                WARN_MOCOMP_ONCE = False
+
+            timestamps = torch.full_like(xyz[0], timestamp.to_sec()).float()
+
+    timestamps = timestamps.float()
 
     dists = dists[valid_ranges].float()
     directions = (xyz / dists).float()
@@ -103,10 +136,10 @@ def run_trial(config, settings, settings_description = None, config_idx = None, 
     
     calibration = load_calibration(config["dataset_family"], config["calibration"])
 
-    camera = settings.ros_names.camera
-    lidar = settings.ros_names.lidar
-    camera_suffix = settings.ros_names.camera_suffix
-    topic_prefix = settings.ros_names.topic_prefix
+    camera = settings.system.ros_names.camera
+    lidar = settings.system.ros_names.lidar
+    camera_suffix = settings.system.ros_names.camera_suffix
+    topic_prefix = settings.system.ros_names.topic_prefix
 
     lidar_topic = f"{topic_prefix}/{lidar}"
 
@@ -149,18 +182,31 @@ def run_trial(config, settings, settings_description = None, config_idx = None, 
     cloner_slam = ClonerSLAM(settings)
 
     # Get ground truth trajectory. This is only used to construct the world cube.
-    ground_truth_file = os.path.expanduser(config["groundtruth_traj"])
-    ground_truth_df = pd.read_csv(ground_truth_file, names=["timestamp","x","y","z","q_x","q_y","q_z","q_w"], delimiter=" ")
-    lidar_poses, timestamps = build_poses_from_df(ground_truth_df)
-    tf_buffer, timestamps = build_buffer_from_poses(lidar_poses, timestamps)
-    
+    if config["groundtruth_traj"] is not None:
+        ground_truth_file = os.path.expanduser(config["groundtruth_traj"])
+        ground_truth_df = pd.read_csv(ground_truth_file, names=["timestamp","x","y","z","q_x","q_y","q_z","q_w"], delimiter=" ")
+        lidar_poses, timestamps = build_poses_from_df(ground_truth_df)
+        tf_buffer, timestamps = build_buffer_from_poses(lidar_poses, timestamps)
+    else:
+        tf_buffer = None
+        lidar_poses = None
+
     if config_idx is None and trial_idx is None:
         ablation_name = None
     else:
         ablation_name = config["experiment_name"]
 
-    cloner_slam.initialize(camera_to_lidar, lidar_poses, settings.calibration.camera_intrinsic.k,
-                            ray_range, image_size, rosbag_path.as_posix(), ablation_name, config_idx, trial_idx)
+    if settings.system.world_cube.compute_from_groundtruth:
+        assert lidar_poses is not None, "Must provide groundtruth file, or set system.world_cube.compute_from_groundtruth=False"
+        traj_bounding_box = None
+        lidar_poses_init = lidar_poses
+    else:
+        lidar_poses_init = None
+        traj_bounding_box = settings.system.world_cube.trajectory_bounding_box
+
+    cloner_slam.initialize(camera_to_lidar, lidar_poses_init, settings.calibration.camera_intrinsic.k,
+                            ray_range, image_size, rosbag_path.as_posix(), ablation_name, config_idx, trial_idx,
+                            traj_bounding_box)
 
     logdir = cloner_slam._log_directory
 
@@ -191,7 +237,7 @@ def run_trial(config, settings, settings_description = None, config_idx = None, 
     
     for topic, msg, timestamp in bag.read_messages(topics=topics):        
         # Wait for lidar to init
-        if topic == lidar_topic and not init and timestamp.to_sec() and timestamp >= timestamps[0]:
+        if topic == lidar_topic and (not init) and timestamp.to_sec() and (tf_buffer is None or timestamp >= timestamps[0]):
             init = True
             start_time = timestamp
         
@@ -208,22 +254,26 @@ def run_trial(config, settings, settings_description = None, config_idx = None, 
             image = build_image_from_msg(msg, timestamp, im_scale_factor)
             cloner_slam.process_rgb(image)
         elif topic == lidar_topic:
-            try:
-                lidar_tf = tf_buffer.lookup_transform_core('map', "lidar", timestamp + start_time)
-            except tf2_py.ExtrapolationException as e:
-                if not warned_skip_once:
-                    print("Warning: Skipping a camera message: No valid TF.")
-                    warned_skip_once = True
-                continue
+            if tf_buffer is not None:
+                try:
+                    lidar_tf = tf_buffer.lookup_transform_core('map', "lidar", timestamp + start_time)
+                except tf2_py.ExtrapolationException as e:
+                    if not warned_skip_once:
+                        print("Warning: Skipping a camera message: No valid TF.")
+                        warned_skip_once = True
+                    continue
 
-            T_lidar = msg_to_transformation_mat(lidar_tf)
+                T_lidar = msg_to_transformation_mat(lidar_tf)
 
-            if start_lidar_pose is None:
-                start_lidar_pose = T_lidar
+                if start_lidar_pose is None:
+                    start_lidar_pose = T_lidar
 
-            gt_lidar_pose = start_lidar_pose.inverse() @ T_lidar
+                gt_lidar_pose = start_lidar_pose.inverse() @ T_lidar
+            else:
+                gt_lidar_pose = torch.eye(4)
 
             lidar_scan = build_scan_from_msg(msg, timestamp)
+
             cloner_slam.process_lidar(lidar_scan, Pose(gt_lidar_pose))
 
         else:

@@ -82,13 +82,14 @@ class ClonerSLAM:
                          dataset_path: str,
                          experiment_name: str = None,
                          config_idx: int = None,
-                         trial_idx: int = None):
+                         trial_idx: int = None,
+                         traj_bounding_box: dict = None):
         
         if not self._lidar_only:
             assert camera_to_lidar is not None and K_camera is not None and image_size is not None
 
         self._world_cube = compute_world_cube(
-            camera_to_lidar, K_camera, image_size, all_lidar_poses, ray_range, padding=0.3)
+            camera_to_lidar, K_camera, image_size, all_lidar_poses, ray_range, padding=0.3, traj_bounding_box=traj_bounding_box)
         
         self._initialized = True
         self._dataset_path = Path(dataset_path).resolve().as_posix()
