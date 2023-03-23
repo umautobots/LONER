@@ -56,7 +56,7 @@ def sample_pdf(bins, weights, N_importance, det=False, eps=1e-5):
 
 
 # ref: https://github.com/yenchenlin/nerf-pytorch/blob/master/run_nerf.py#L262
-def raw2outputs(raw, z_vals, rays_d, raw_noise_std=0, white_bkgd=False, sigma_only=False, num_colors=3, softplus=False, far=None, compute_variance=False):
+def raw2outputs(raw, z_vals, rays_d, raw_noise_std=0, white_bkgd=False, sigma_only=False, num_colors=3, softplus=False, far=None, ret_var=False):
     """Transforms model's predictions to semantically meaningful values.
     Args:
         raw: [num_rays, num_samples along ray, 4(sigma_only=False) or 1(sigma_only=True)]. Prediction from model.
@@ -134,13 +134,11 @@ def raw2outputs(raw, z_vals, rays_d, raw_noise_std=0, white_bkgd=False, sigma_on
         if white_bkgd:
             rgb_map = rgb_map + 1-weights.sum(-1, keepdim=True)
 
-    if compute_variance:
+    if ret_var:
         variance = (weights * (depths.view(-1, 1) - z_vals)**2).sum(dim=1)
-    else:
-        variance = None
+        return rgb_map, depths, weights, opacity_map, variance
 
-    return rgb_map, depths, weights, opacity_map, variance
-
+    return rgb_map, depths, weights, opacity_map, None
 
 def inference(model, xyz_, dir_, sigma_only=False, netchunk=32768, detach_sigma=True):
     """
@@ -221,7 +219,7 @@ def render_rays(rays,
             acc_map: [num_rays]. Accumulated opacity along each ray.
             raw: [num_rays, num_samples, 4 or 1]. Raw predictions from model.
     """
-
+    
     # Decompose the inputs
     N_rays = rays.shape[0]
     rays_o, rays_d = rays[:, 0:3], rays[:, 3:6]  # both (N_rays, 3)
@@ -232,10 +230,11 @@ def render_rays(rays,
     z_vals = ray_sampler.get_samples(rays, N_samples, perturb)
 
     xyz_samples = rays_o.unsqueeze(1) + rays_d.unsqueeze(1) * z_vals.unsqueeze(2)  # (N_rays, N_samples, 3)
-    raw = inference(nerf_model, xyz_samples, viewdirs, sigma_only=sigma_only)
+
+    raw = inference(nerf_model, xyz_samples, viewdirs, netchunk=netchunk, sigma_only=sigma_only, detach_sigma=detach_sigma)
 
     rgb, depth, weights, opacity, variance = raw2outputs(
-        raw, z_vals, rays_d, raw_noise_std, white_bkgd, sigma_only=sigma_only, num_colors=num_colors, far=far, compute_variance=return_variance)
+        raw, z_vals, rays_d, raw_noise_std, white_bkgd, sigma_only=sigma_only, num_colors=num_colors, far=far, ret_var=return_variance)
 
     result = {'rgb_fine': rgb,
               'depth_fine': depth,
