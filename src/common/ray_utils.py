@@ -112,7 +112,7 @@ class CameraRayDirections:
     """
 
     ## Constructor for CameraRayDirections
-    # @param calibration: The top-level ClonerSLAM calibration settings.
+    # @param calibration: The top-level Loner calibration settings.
     # @param samples_per_pixel: How many samples to take for each pixel. Leave at 1 probably.
     def __init__(self, calibration: Settings, samples_per_pixel: int = 1, device = 'cpu', chunk_size=512):
 
@@ -145,7 +145,7 @@ class CameraRayDirections:
     def __len__(self):
         return self.directions.shape[0]
 
-    ## Given indices representing pixels, produce rays in ClonerSLAM format
+    ## Given indices representing pixels, produce rays in Loner format
     # @param indices in range (0, W*H)
     # @param pose: Camera pose, for origin of rays
     # @param image: The image to sample intensities from
@@ -203,7 +203,7 @@ class CameraRayDirections:
 
         return self.build_rays(indices, pose, None, world_cube, ray_range)[0]
 
-## Converts rays in ClonerSLAM format to an open3d point cloude
+## Converts rays in Loner format to an open3d point cloude
 def rays_to_o3d(rays, depths, intensities=None):
     origins = rays[:, :3]
     directions = rays[:, 3:6]
@@ -223,7 +223,7 @@ def rays_to_o3d(rays, depths, intensities=None):
 
     return pcd
 
-## Converts rays in ClonerSLAM format to a pcd file
+## Converts rays in Loner format to a pcd file
 def rays_to_pcd(rays, depths, rays_fname, origins_fname, intensities=None):
 
     if intensities is None:

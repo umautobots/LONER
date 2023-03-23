@@ -65,7 +65,7 @@ class KeyFrame:
         return self._frame.get_time()
 
 
-    ## For all the points in the frame, create lidar rays in the format Cloner wants
+    ## For all the points in the frame, create lidar rays in the format Loner wants
     def build_lidar_rays(self,
                          lidar_indices: torch.Tensor,
                          ray_range: torch.Tensor,
@@ -132,7 +132,7 @@ class KeyFrame:
             valid_idxs = (far > (near + 1. / world_cube.scale_factor))[..., 0]
             return rays[valid_idxs], depths[valid_idxs]
     
-    ## Given the images, create camera rays in Cloner's format
+    ## Given the images, create camera rays in Loner's format
     def build_camera_rays(self,
                           first_camera_indices: torch.Tensor,
                           ray_range: torch.Tensor,

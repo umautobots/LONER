@@ -1,5 +1,5 @@
 ### File: defaults.yaml
-### Provides default settings for cloner slam
+### Provides default settings for loner slam
 
 
 # This should be overwritten  at runtime by reading data logs,
@@ -85,7 +85,7 @@ mapper:
   
 system:
   single_threaded: True
-  log_dir_prefix: "~/ClonerSLAM/outputs"
+  log_dir_prefix: "~/LonerSLAM/outputs"
   lidar_only: True
   
   image_scale_factor: 0.5 # Setting is put here to emphasize that it needs to influence calibration loading

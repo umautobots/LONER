@@ -22,7 +22,7 @@ from src.logging.default_logger import DefaultLogger
 from pathlib import Path
 
 
-class ClonerSLAM:
+class Loner:
     """ Top-level SLAM module.
 
     To run sychronously, call Start with sychronous=true, then pass in measurements in the
@@ -182,7 +182,7 @@ class ClonerSLAM:
                                 self._lidar_signal,
                                 self._frame_signal)
 
-        print("Starting Cloner SLAM")
+        print("Starting Loner SLAM")
 
         if not self._single_threaded:
 
@@ -203,7 +203,7 @@ class ClonerSLAM:
     def stop(self):
         
         if not self._single_threaded:
-            print("Stopping ClonerSLAM Sub-Processes")
+            print("Stopping Loner SLAM Sub-Processes")
             
             self._lidar_signal.emit(StopSignal())
             self._rgb_signal.emit(StopSignal())

@@ -7,7 +7,7 @@ from common.sensors import Image, LidarScan
 from src.common.pose import Pose
 
 class Frame:
-    """ Frame Class representing the atomic unit of optimization in ClonerSLAM
+    """ Frame Class representing the atomic unit of optimization in Loner SLAM
 
     A Frame consists of an image, and lidar points that occured at nearby times.
 

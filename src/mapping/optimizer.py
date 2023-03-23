@@ -49,7 +49,7 @@ class OptimizationSettings:
 
 
 class Optimizer:
-    """ The Optimizer module is used to run iterations of the CLONeR Optimization.
+    """ The Optimizer module is used to run iterations of the Loner Optimization.
 
     The KeyFrameManager supplies the Optimizer with a window of KeyFrame objects,
     which the Optimizer then uses to draw samples and iterate the optimization

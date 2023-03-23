@@ -1,6 +1,6 @@
-# ClonerSLAM
+# Loner SLAM
 
-This is ClonerSLAM, a neural implicit SLAM algorithm for Camera-LiDAR fusion.
+This is Loner SLAM, a neural implicit SLAM algorithm for Camera-LiDAR fusion.
 
 
 ## Running the Code
@@ -25,10 +25,10 @@ cd <project_root>/docker
 
 If you get an error about cuda not being found, you have two options:
 1. Follow these instructions https://github.com/NVIDIA/nvidia-docker/issues/595#issuecomment-519714769
-2. Remove the line that installs `tiny-cuda-nn` from the dockerfile, then the build will finish properly. Start the container, install `tiny-cuda-nn`, then commit the result to the tag `cloner_slam`. Then re-run with `./run.sh restart`.
+2. Remove the line that installs `tiny-cuda-nn` from the dockerfile, then the build will finish properly. Start the container, install `tiny-cuda-nn`, then commit the result to the tag `loner_slam`. Then re-run with `./run.sh restart`.
 
 #### Data Preparation
-By default, we assume all data has been placed in `~/Documents/ClonerSlamData`. If you have data in a different, you can go into `docker/run.sh` and change `DATA_DIR` to whatever you want. If you need multiple directories mounted, you'll need to modify the run script.
+By default, we assume all data has been placed in `~/Documents/LonerSlamData`. If you have data in a different, you can go into `docker/run.sh` and change `DATA_DIR` to whatever you want. If you need multiple directories mounted, you'll need to modify the run script.
 
 
 #### Run Container
@@ -47,9 +47,9 @@ This repo contains everything you need to use the Docker extension in VSCode. To
 4. To make python recognize everything properly, go to the python environment extension 
 (python logo in the left toolbar) and change the environment to Conda Base 3.8.12.
 
-The DevContainer provided with this package assumes that datasets are stored in `~/Documents/ClonerSlamData`. If you put the data somewhere else, modify the `devcontainer.json` file to point to the correct location.
+The DevContainer provided with this package assumes that datasets are stored in `~/Documents/LonerSlamData`. If you put the data somewhere else, modify the `devcontainer.json` file to point to the correct location.
 
-When you launch the VSCode DevContainer, you might need to point VSCode manually to the workspace when prompted. It's in `/home/$USER/ClonerSLAM`
+When you launch the VSCode DevContainer, you might need to point VSCode manually to the workspace when prompted. It's in `/home/$USER/LonerSLAM`
 
 
 ## Running experiments
@@ -58,9 +58,9 @@ When you launch the VSCode DevContainer, you might need to point VSCode manually
 Download the sequences you care about from https://ram-lab.com/file/site/fusionportable/dataset/fusionportable/, along with the 20220209 calibration. 
 We have tested on 20220216_canteen_day, 20220216_garden_day, and 20220219_MCR_normal_01.
 
-Put them in the folder you pointed the docker scripts (or VSCode `devcontainer.json` file) to mount (by default `~/Documents/ClonerSlamData`). Also, download the groundtruth data.
+Put them in the folder you pointed the docker scripts (or VSCode `devcontainer.json` file) to mount (by default `~/Documents/LonerSlamData`). Also, download the groundtruth data.
 
-Now, modify `cfg/fusion_portable/<sequence_name>.yaml` to point to the location of the data, as seen from within the Docker container. So, if you clone the data to `~/Documents/ClonerSlamData/<sequence>`, docker will mount that to `~/data/<sequence>`.
+Now, modify `cfg/fusion_portable/<sequence_name>.yaml` to point to the location of the data, as seen from within the Docker container. So, if you clone the data to `~/Documents/LonerSlamData/<sequence>`, docker will mount that to `~/data/<sequence>`.
 
 Finally, `cd examples/fusion_portable` and `python3 run_fusion_portable.py ../../cfg/<sequence_name>.yaml`.
 
@@ -69,7 +69,7 @@ The results will be stored into `outputs/<experiment_name>_<timestamp>/` where `
 ### Analyzing the Results
 Dense trajectories are stored to `<output_dir>/trajectory`. This will contain three files:
 
-1. `estimated_trajectory.txt`: This is the dense trajectory as estimated by ClonerSLAM. 
+1. `estimated_trajectory.txt`: This is the dense trajectory as estimated by LonerSLAM. 
 2. `keyframe_trajectory.txt`: This includes only the keyframe poses.
 3. `tracking_only.txt`: This is the result of accumulating tracking before any optimization occurs.
 
@@ -106,7 +106,7 @@ Each sequence has a file specifying the settings for that sequence. For example,
 3. `experiment_name`: Specifies the default prefix for output directories.
 4. `changes`: This is a dictionary specifying which settings to override in the defaults. See `cfg/fusion_portable/mcr.yaml` for an example of this in use.
 
-Next, if you specified `--lite` when running `run_fusion_portable.py`, the settings as determined above will be augmented with the settings in `cfg/cloner_slam_lite.yaml`.
+Next, if you specified `--lite` when running `run_fusion_portable.py`, the settings as determined above will be augmented with the settings in `cfg/Loner_slam_lite.yaml`.
 
 Finally, if you want to run an ablation study or try sets of parameters, you may pass `--overrides <path_to_yaml>` to `run_fusion_portable.py`. See `cfg/traj_ablation.py` for an example. You specify a path (in yaml) to the parameter, then one or more possible values. By default, for each value you specified in the overrides file, one trial of the algorithm will be run. Each trial will run with the settings as determined above, but with that one additional parameter changed. You may also pass `--run_all_combos` which will try all combinations of parameters specified in the overrides.
 
@@ -141,10 +141,10 @@ changes:
 
 If you run without specifying any options, the algorithm will run once, with all default settings except for `system.image_resolution.x = 15`.
 
-Say our `cloner_slam_lite.yaml` file then looks like this:
+Say our `Loner_slam_lite.yaml` file then looks like this:
 
 ```
-## File: cloner_slam_lite.yaml
+## File: Loner_slam_lite.yaml
 
 system:
   number_of_keyframes: 5

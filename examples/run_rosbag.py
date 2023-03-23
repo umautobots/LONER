@@ -30,7 +30,7 @@ sys.path.append(PROJECT_ROOT)
 sys.path.append(PROJECT_ROOT + "/src")
 
 
-from src.cloner_slam import ClonerSLAM
+from src.loner import Loner
 from src.common.pose import Pose
 from src.common.sensors import Image, LidarScan
 from src.common.settings import Settings
@@ -179,7 +179,7 @@ def run_trial(config, settings, settings_description = None, config_idx = None, 
 
     settings["run_config"] = config
 
-    cloner_slam = ClonerSLAM(settings)
+    loner = Loner(settings)
 
     # Get ground truth trajectory. This is only used to construct the world cube.
     if config["groundtruth_traj"] is not None:
@@ -204,11 +204,11 @@ def run_trial(config, settings, settings_description = None, config_idx = None, 
         lidar_poses_init = None
         traj_bounding_box = settings.system.world_cube.trajectory_bounding_box
 
-    cloner_slam.initialize(camera_to_lidar, lidar_poses_init, settings.calibration.camera_intrinsic.k,
+    loner.initialize(camera_to_lidar, lidar_poses_init, settings.calibration.camera_intrinsic.k,
                             ray_range, image_size, rosbag_path.as_posix(), ablation_name, config_idx, trial_idx,
                             traj_bounding_box)
 
-    logdir = cloner_slam._log_directory
+    logdir = loner._log_directory
 
     if settings_description is not None:
         if trial_idx == 0:
@@ -221,7 +221,7 @@ def run_trial(config, settings, settings_description = None, config_idx = None, 
 
     bag = rosbag.Bag(rosbag_path.as_posix(), 'r')
 
-    cloner_slam.start()
+    loner.start()
 
     start_time = None
 
@@ -250,7 +250,7 @@ def run_trial(config, settings, settings_description = None, config_idx = None, 
 
         if (not lidar_only) and topic == image_topic:
             image = build_image_from_msg(msg, timestamp, im_scale_factor)
-            cloner_slam.process_rgb(image)
+            loner.process_rgb(image)
         elif topic == lidar_topic:
             if tf_buffer is not None:
                 try:
@@ -272,7 +272,7 @@ def run_trial(config, settings, settings_description = None, config_idx = None, 
 
             lidar_scan = build_scan_from_msg(msg, timestamp)
 
-            cloner_slam.process_lidar(lidar_scan, Pose(gt_lidar_pose))
+            loner.process_lidar(lidar_scan, Pose(gt_lidar_pose))
 
         else:
             raise Exception("Should be unreachable")
@@ -280,11 +280,11 @@ def run_trial(config, settings, settings_description = None, config_idx = None, 
         if start_clock is None:
             start_clock = time.time()
 
-    cloner_slam.stop()
+    loner.stop()
     end_clock = time.time()
 
 
-    with open(f"{cloner_slam._log_directory}/runtime.txt", 'w+') as runtime_f:
+    with open(f"{loner._log_directory}/runtime.txt", 'w+') as runtime_f:
         runtime_f.write(f"Execution Time (With Overhead): {end_clock - init_clock}\n")
         runtime_f.write(f"Execution Time (Without Overhead): {end_clock - start_clock}\n")
 
@@ -337,7 +337,7 @@ def _gpu_worker(config, gpu_id: int, job_queue: mp.Queue) -> None:
 
 if __name__ == "__main__":
 
-    parser = argparse.ArgumentParser("Run ClonerSLAM on RosBag")
+    parser = argparse.ArgumentParser("Run Loner SLAM on RosBag")
     parser.add_argument("configuration_path")
     parser.add_argument("experiment_name", nargs="?", default=None)
     parser.add_argument("--duration", help="How long to run for (in input data time, sec)", type=float, default=None)
@@ -359,13 +359,13 @@ if __name__ == "__main__":
     config["duration"] = args.duration
 
     if args.lite:
-        lite_mode_path = os.path.expanduser("~/ClonerSLAM/cfg/cloner_slam_lite.yaml")
+        lite_mode_path = os.path.expanduser("~/LonerSLAM/cfg/loner_slam_lite.yaml")
         with open(lite_mode_path, 'r') as lite_mode_f:
             lite_mode_changes = yaml.full_load(lite_mode_f)
     else:
         lite_mode_changes = None
 
-    baseline_settings_path = os.path.expanduser(f"~/ClonerSLAM/cfg/{config['baseline']}")
+    baseline_settings_path = os.path.expanduser(f"~/LonerSLAM/cfg/{config['baseline']}")
 
     if args.overrides is not None:
         settings_options, settings_descriptions = \

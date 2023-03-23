@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-IMAGE_TAG="cloner_slam"
+IMAGE_TAG="loner_slam"
 
 DOCKER_OPTIONS=""
 DOCKER_OPTIONS+="-t $IMAGE_TAG:latest "

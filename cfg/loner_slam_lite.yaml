@@ -9,10 +9,6 @@ mapper:
         num_recent_frames: 4
       window_size: 8
   optimizer:
-    model_config:
-      model:
-        occ_model:
-          voxel_size: 100
     num_samples:
       rgb: 0
       lidar: 512

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 
-DATA_DIR="/home/$USER/Documents/ClonerSlamData"
+DATA_DIR="/home/$USER/Documents/LonerSlamData"
 
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-IMAGE_TAG=cloner_slam
-CONTAINER_NAME=cloner_slam
+IMAGE_TAG=loner_slam
+CONTAINER_NAME=loner_slam
 
 capabilities_str=\""capabilities=compute,utility,graphics,display\""
 
@@ -15,7 +15,7 @@ getent passwd $(whoami) >> $SCRIPT_DIR/.etc_passwd
 
 DOCKER_OPTIONS=""
 DOCKER_OPTIONS+="-it "
-DOCKER_OPTIONS+="-v $SCRIPT_DIR/../:/home/$(whoami)/ClonerSLAM "
+DOCKER_OPTIONS+="-v $SCRIPT_DIR/../:/home/$(whoami)/LonerSLAM "
 DOCKER_OPTIONS+="-e DISPLAY=$DISPLAY "
 DOCKER_OPTIONS+="-v /tmp/.X11-unix:/tmp/.X11-unix "
 DOCKER_OPTIONS+="-v $HOME/.Xauthority:/home/$(whoami)/.Xauthority "
@@ -39,6 +39,7 @@ for cam in /dev/video*; do
   DOCKER_OPTIONS+="--device=${cam} "
 done
 
+echo $CONTAINER_NAME
 
 if [ ${1:-""} == "restart" ]; then 
   echo "Restarting Container"

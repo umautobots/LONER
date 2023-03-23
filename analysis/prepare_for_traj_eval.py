@@ -49,7 +49,7 @@ def write_config_data(path, gt_data):
 parser = argparse.ArgumentParser(description="Analyze KeyFrame Poses")
 parser.add_argument("experiment_directory", type=str, help="folder in outputs with all results")
 parser.add_argument("sequence_name", type=str, help="name of sequence")
-parser.add_argument("--study_name", type=str, required=False, default="cloner_slam_evaluation")
+parser.add_argument("--study_name", type=str, required=False, default="loner_evaluation")
 
 args = parser.parse_args()
 
@@ -75,7 +75,7 @@ gt_data[0] = gt_data[0] - gt_data[0][0]
 
 for config in config_names:
     if config is None:
-        config = "cloner_slam"
+        config = "loner"
         config_path = args.experiment_directory
     else:
         config_path = f"{args.experiment_directory}/{config}"

@@ -34,7 +34,7 @@ class Tracker:
     """
 
     ## Constructor
-    # @param settings: Top level settings for the entire Cloner-SLAM module. Needed for calib etc.
+    # @param settings: Top level settings for the entire Loner SLAM module. Needed for calib etc.
     # @param rgb_signal: A Signal which the Tracker creates a Slot for, used for fetching RGB frames
     # @param lidar_signal: Same as rgb_signal, but for lidar
     # @param frame_queue: A Signal which the Tracker emits to when it completes a frame

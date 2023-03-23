@@ -13,7 +13,7 @@ from mapping.optimizer import Optimizer, OptimizationSettings
 
 class Mapper:
     """ Mapper is the top-level Mapping module which manages and optimizes the 
-    CLONeR Map.
+    Loner Map.
 
     It reads in data from the frame_slot, and uses that to build and update
     the optimizer.
