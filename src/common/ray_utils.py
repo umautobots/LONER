@@ -7,7 +7,7 @@ import open3d as o3d
 from kornia.geometry.calibration import undistort_points
 
 from common.pose import Pose
-from common.sensors import Image
+from common.sensors import Image, LidarScan
 from common.settings import Settings
 from common.pose_utils import WorldCube
 
@@ -222,6 +222,86 @@ def rays_to_o3d(rays, depths, intensities=None):
         pcd.colors = o3d.utility.Vector3dVector(intensities)
 
     return pcd
+
+
+
+class LidarRayDirections:
+    def __init__(self, lidar_scan: LidarScan, chunk_size=512):
+        self.lidar_scan = lidar_scan
+        self._chunk_size = chunk_size
+        self.num_chunks = int(np.ceil(self.lidar_scan.ray_directions.shape[1] / self._chunk_size))
+        
+    def __len__(self):
+        return self.lidar_scan.ray_directions.shape[1]
+
+
+    def fetch_chunk_rays(self, chunk_idx: int, pose: Pose, world_cube: WorldCube, ray_range):
+        start_idx = chunk_idx*self._chunk_size
+        end_idx = min(self.lidar_scan.ray_directions.shape[1], (chunk_idx+1)*self._chunk_size)
+        indices = torch.arange(start_idx, end_idx, 1)
+        pose_mat = pose.get_transformation_matrix()
+        return self.build_lidar_rays(indices, ray_range, world_cube, torch.unsqueeze(pose_mat, 0))[0]
+
+    def build_lidar_rays(self,
+                         lidar_indices: torch.Tensor,
+                         ray_range: torch.Tensor,
+                         world_cube: WorldCube,
+                         lidar_poses: torch.Tensor, # 4x4
+                         ignore_world_cube: bool = False) -> torch.Tensor:
+
+        lidar_scan = self.lidar_scan
+
+        depths = lidar_scan.distances[lidar_indices] / world_cube.scale_factor
+        directions = lidar_scan.ray_directions[:, lidar_indices]
+        timestamps = lidar_scan.timestamps[lidar_indices]
+
+        ray_origins: torch.Tensor = lidar_poses[..., :3, 3]
+        ray_origins = ray_origins + world_cube.shift
+        ray_origins = ray_origins / world_cube.scale_factor
+
+        ray_origins = ray_origins.tile(len(timestamps), 1)
+
+        # N x 3 x 3 (N homogenous transformation matrices)
+        lidar_rotations = lidar_poses[..., :3, :3]
+        
+        # N x 3 x 1. This takes a 3xN matrix and makes it 1x3xN, then Nx3x1
+        directions_3d = directions.unsqueeze(0).swapaxes(0, 2)
+
+        # rotate ray directions from sensor coordinates to world coordinates
+        ray_directions = lidar_rotations @ directions_3d
+
+        # ray_directions is now Nx3x1, we want Nx3.
+        ray_directions = ray_directions.squeeze()
+
+        # Note to self: don't use /= here. Breaks autograd.
+        ray_directions = ray_directions / \
+            torch.norm(ray_directions, dim=1, keepdim=True)
+
+        view_directions = -ray_directions
+
+        if not ignore_world_cube:
+            assert (ray_origins.abs().max(dim=1)[0] > 1).sum() == 0, \
+                f"{(ray_origins.abs().max(dim=1)[0] > 1).sum()//3} ray origins are outside the world cube"
+
+        near = ray_range[0] / world_cube.scale_factor * \
+            torch.ones_like(ray_origins[:, :1])
+        far_range = ray_range[1] / world_cube.scale_factor * \
+            torch.ones_like(ray_origins[:, :1])
+
+        far_clip = get_far_val(ray_origins, ray_directions, no_nan=True)
+        far = torch.minimum(far_range, far_clip)
+
+        rays = torch.cat([ray_origins, ray_directions, view_directions,
+                            torch.zeros_like(ray_origins[:, :2]),
+                            near, far], 1)
+                            
+        # Only rays that have more than 1m inside world
+        if ignore_world_cube:
+            return rays, depths
+        else:
+            valid_idxs = (far > (near + 1. / world_cube.scale_factor))[..., 0]
+            return rays[valid_idxs], depths[valid_idxs]
+
 
 ## Converts rays in Loner format to a pcd file
 def rays_to_pcd(rays, depths, rays_fname, origins_fname, intensities=None):

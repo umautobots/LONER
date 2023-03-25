@@ -17,7 +17,6 @@ from tracking.frame_synthesis import FrameSynthesis
 
 # Yanked from http://www.open3d.org/docs/release/python_example/pipelines/index.html#icp-registration-py
 def transform_cloud(source, transformation):
-
     source_temp = o3d.cuda.pybind.geometry.PointCloud()
     source_temp.points = copy.deepcopy(source.points)
     source_temp.paint_uniform_color([1, 0.706, 0])
