@@ -105,6 +105,25 @@ def raw2outputs(raw, z_vals, rays_d, raw_noise_std=0, white_bkgd=False, sigma_on
     # (N_rays, N_samples_)
     weights = alphas * torch.cumprod(alphas_shifted, -1)[:, :-1]
     # weights = weights / (weights.sum(dim=1, keepdim=True) + 1e-6)
+
+    ##### Frank Change ##### !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    # print('noise ', noise)
+    # weights = 1-torch.exp(-deltas*torch.relu(sigmas)) #!!!
+    # print(alphas[0].shape)
+    # print(alphas_shifted[0].shape)
+    # from matplotlib import pyplot as plt
+    # import numpy as np
+    # x = np.linspace(0, alphas.shape[1], num=alphas.shape[1])
+    # sigma_ = sigmas[0].cpu().detach().numpy()
+    # alphas_ = alphas[0].cpu().detach().numpy()
+    # w = weights[0].cpu().detach().numpy()
+    # alphas_s = alphas_shifted[0][:-1].cpu().detach().numpy()
+    # plt.figure(figsize=(15, 10))
+    # plt.plot(x,sigma_,'.', linewidth=0.5) 
+    # plt.plot(x,w,'.', linewidth=0.5) 
+    # plt.show()
+    ##### Frank Change End ##### !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
     opacity_map = torch.sum(weights, -1)
     # weights_sum = weights.sum(1) # (N_rays), the accumulated opacity along the rays
     # equals "1 - (1-a1)(1-a2)...(1-an)" mathematically
@@ -406,14 +425,14 @@ def inference(model, xyz_, dir_, netchunk=32768, sigma_only=False):
         else:
             raw: (N_rays, N_samples_, num_colors + 1): predictions of each sample
     """
-    N_samples_ = xyz_.shape[1]
+    # N_samples_ = xyz_.shape[1]
     xyz_ = xyz_.view(-1, 3).contiguous()  # (N_rays*N_samples_, 3)
     if sigma_only:
         dir_ = None
-    else:
-        # (N_rays*N_samples_, embed_dir_channels)
-        dir_ = torch.repeat_interleave(
-            dir_, repeats=N_samples_, dim=0).contiguous()
+    # else:
+    #     # (N_rays*N_samples_, embed_dir_channels)
+    #     dir_ = torch.repeat_interleave(
+    #         dir_, repeats=N_samples_, dim=0).contiguous()
 
     # Perform model inference to get color and raw sigma
     B = xyz_.shape[0]

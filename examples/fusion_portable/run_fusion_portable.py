@@ -47,6 +47,7 @@ def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time) -> LidarS
         lidar_msg)
 
     lidar_data = torch.from_numpy(pd.DataFrame(lidar_data).to_numpy()).cuda()
+    mask = torch.ones((lidar_data.shape[0]))
     xyz = lidar_data[:, :3]
     
     dists = torch.linalg.norm(xyz, dim=1)
@@ -63,7 +64,10 @@ def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time) -> LidarS
     dists = dists[indices]
     directions = directions[:, indices]
 
-    return LidarScan(directions.float().cpu(), dists.float().cpu(), timestamps.float().cpu())
+    mask = mask[valid_ranges].float()
+    mask = mask[indices]
+
+    return LidarScan(directions.float().cpu(), dists.float().cpu(), timestamps.float().cpu(), mask.float().cpu())
 
 
 def tf_to_settings(tf_msg):

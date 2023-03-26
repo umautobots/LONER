@@ -119,7 +119,6 @@ def get_ray_directions(H, W, newK, dist=None, K=None, sppd=1, with_indices=False
 class LidarRayDirections:
     def __init__(self, lidar_scan: LidarScan, device = 'cpu', chunk_size=512):
         self.lidar_scan = lidar_scan
-        print('rays number: ', self.lidar_scan.ray_directions.shape[1])
         self._chunk_size = chunk_size
         self.num_chunks = int(np.ceil(self.lidar_scan.ray_directions.shape[1] / self._chunk_size))
         
@@ -132,11 +131,17 @@ class LidarRayDirections:
                         world_cube: WorldCube,
                         lidar_poses: torch.Tensor, # 4x4
                         ignore_world_cube: bool = False) -> torch.Tensor:
+
         rotate_lidar_opengl = torch.eye(4) #.to(self._device)
         rotate_lidar_points_opengl = torch.eye(3) #.to(self._device)
-        depths = self.lidar_scan.distances[lidar_indices] / world_cube.scale_factor
-        directions = self.lidar_scan.ray_directions[:, lidar_indices]
-        timestamps = self.lidar_scan.timestamps[lidar_indices]
+        if len(lidar_indices)>1:
+            depths = self.lidar_scan.distances[lidar_indices] / world_cube.scale_factor
+            directions = self.lidar_scan.ray_directions[:, lidar_indices]
+            timestamps = self.lidar_scan.timestamps[lidar_indices]
+        else:
+            depths = self.lidar_scan.distances / world_cube.scale_factor
+            directions = self.lidar_scan.ray_directions[:, lidar_indices]
+            timestamps = self.lidar_scan.timestamps
 
         # Now that we're in OpenGL frame, we can apply world cube transformation
         ray_origins: torch.Tensor = lidar_poses[..., :3, 3]
@@ -161,6 +166,9 @@ class LidarRayDirections:
         # Only now we swap it to opengl coordinates
         ray_directions = ray_directions @ rotate_lidar_points_opengl.T
 
+        if ray_directions.dim()<2:
+            ray_directions = torch.unsqueeze(ray_directions, 0)
+
         # Note to self: don't use /= here. Breaks autograd.
         ray_directions = ray_directions / \
             torch.norm(ray_directions, dim=1, keepdim=True)
@@ -182,7 +190,6 @@ class LidarRayDirections:
         rays = torch.cat([ray_origins, ray_directions, view_directions,
                             torch.zeros_like(ray_origins[:, :2]),
                             near, far], 1)
-                            
         # Only rays that have more than 1m inside world
         if ignore_world_cube:
             return rays, depths
@@ -190,12 +197,12 @@ class LidarRayDirections:
             valid_idxs = (far > (near + 1. / world_cube.scale_factor))[..., 0]
             return rays[valid_idxs], depths[valid_idxs]
 
-    def fetch_chunk_rays(self, chunk_idx: int, pose: Pose, world_cube: WorldCube, ray_range):
+    def fetch_chunk_rays(self, chunk_idx: int, pose: Pose, world_cube: WorldCube, ray_range, ignore_world_cube=False):
         start_idx = chunk_idx*self._chunk_size
         end_idx = min(self.lidar_scan.ray_directions.shape[1], (chunk_idx+1)*self._chunk_size)
         indices = torch.arange(start_idx, end_idx, 1)
         pose_mat = pose.get_transformation_matrix()
-        return self.build_lidar_rays(indices, ray_range, world_cube, torch.unsqueeze(pose_mat, 0))[0]
+        return self.build_lidar_rays(indices, ray_range, world_cube, torch.unsqueeze(pose_mat, 0), ignore_world_cube)[0]
 
     # Sample distribution is 1D, in row-major order (size of grid_dimensions)
     def sample_chunks(self, sample_distribution: torch.Tensor = None, total_grid_samples = None) -> torch.Tensor:

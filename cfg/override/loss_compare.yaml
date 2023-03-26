@@ -1,0 +1,22 @@
+mapper:
+  optimizer:
+    model_config:
+      loss:
+        dynamic_depth_eps_JS: [False]
+        depth_eps_decay_steps: [50, 250, 500]
+
+
+# loss:
+#     dynamic_depth_eps_JS: True         # boolean to enable JS divergence loss
+#     JS_loss:
+#         min_js_score: 1.
+#         max_js_score: 10.
+#         alpha: 5
+#     visualize_loss: False                     # boolean to enable loss visualization
+
+#     decay_depth_lambda: False          # boolean to enable decay
+#     depth_lambda: 1000.                # Depth lambda used for loss.
+#     min_depth_lambda: 10.              # Minimum value after decay
+#     depth_lambda_decay_steps: 15000
+
+#     term_lambda: 0.0      # weight for lidar termination depth

@@ -41,53 +41,69 @@ from sensor_msgs.msg import Image, PointCloud2
 import pandas as pd
 import ros_numpy
 from src.common.lidar_ray_utils import LidarRayDirections, get_far_val
-from src.common.mesher import Mesher
+from analysis.mesher import Mesher
 
 assert torch.cuda.is_available(), 'Unable to find GPU'
 
 parser = argparse.ArgumentParser(description="Render ground truth maps using trained nerf models")
 parser.add_argument("experiment_directory", type=str, help="folder in outputs with all results")
-parser.add_argument("seqence", type=str, default="canteen", help="sequence name. Used to decide meshing bound [canteen | mcr]")
+parser.add_argument("sequence", type=str, default="canteen", help="sequence name. Used to decide meshing bound [canteen | mcr]")
 parser.add_argument("--debug", default=False, dest="debug", action="store_true")
 parser.add_argument("--ckpt_id", type=str, default=None)
 parser.add_argument("--resolution", type=float, default=0.1)
 parser.add_argument("--color", default=False, dest="color", action="store_true")
+parser.add_argument("--viz", default=False, dest="viz", action="store_true")
+parser.add_argument("--save", default=False, dest="save", action="store_true")
 parser.add_argument("--use_gt_poses", default=False, dest="use_gt_poses", action="store_true")
+
+parser.add_argument("--use_lidar_fov_mask", default=False, dest="use_lidar_fov_mask", action="store_true")
+parser.add_argument("--use_convex_hull_mask", default=False, dest="use_convex_hull_mask", action="store_true")
+parser.add_argument("--use_lidar_pointcloud_mask", default=False, dest="use_lidar_pointcloud_mask", action="store_true")
+parser.add_argument("--use_occ_mask", default=False, dest="use_occ_mask", action="store_true")
+
 args = parser.parse_args()
 checkpoints = os.listdir(f"{args.experiment_directory}/checkpoints")
 
-if args.seqence=='canteen':
+if args.sequence=='canteen':
     meshing_bound = [[-35,25], [-30,45], [-3,15]] # canteen
-elif args.seqence=='mcr':
-    meshing_bound = [[-16,10], [-6,5], [-3,3]] # mcr
+    # meshing_bound = [[0,15], [-10,10], [-3,15]]
+    rosbag_path = '/hostroot/mnt/ws-frb/projects/loner_slam/fusion_portable/20220216_canteen_day/20220216_canteen_day_ref.bag'
+elif args.sequence=='mcr':
+    meshing_bound = [[-18,10], [-20,20], [-4,4]] # mcr
+    rosbag_path = '/hostroot/mnt/ws-frb/projects/loner_slam/fusion_portable/20220219_MCR_slow_01/20220219_MCR_slow_01_ref.bag'
+elif args.sequence=='large_checkboard':
+    meshing_bound = [[0,10], [-4,4], [-4,7]] # large_checkboard
+    rosbag_path = '/hostroot/mnt/ws-frb/projects/loner_slam/fusion_portable/calibration_sequences/Recalib_LargeCheckerboard.bag'
 else:
     print('Please provide sequence name')
 
+lidar_topic = '/os_cloud_node/points'
+
 resolution = args.resolution
 sigma_only = not args.color
-use_lidar_fov_mask = True
-use_convex_hull_mask = False
 
-# rosbag_path = '/hostroot/home/pckung/fusion_portable/20220216_canteen_day/20220216_canteen_day_ref.bag'
-# lidar_topic = '/os_cloud_node/points'
+use_lidar_fov_mask = args.use_lidar_fov_mask
+use_convex_hull_mask = args.use_convex_hull_mask
+use_lidar_pointcloud_mask = args.use_lidar_pointcloud_mask
+use_occ_mask = args.use_occ_mask
 
-if not os.path.exists(f"{args.experiment_directory}/meshing"):
-    os.makedirs(f"{args.experiment_directory}/meshing")
-mesh_out_file=f"{args.experiment_directory}/meshing/meshing_ckpt_{args.ckpt_id}_res_{resolution}.ply"
-
-# mesh_out_file="/hostroot/home/pckung/meshing_mcr_res0.02.ply"
 
 if args.ckpt_id is None:
     #https://stackoverflow.com/a/2669120
     convert = lambda text: int(text) if text.isdigit() else text 
     alphanum_key = lambda key: [ convert(c) for c in re.split('([0-9]+)', key) ] 
     checkpoint = sorted(checkpoints, key = alphanum_key)[-1]
+    args.ckpt_id = checkpoint.split('.')[0]
 elif args.ckpt_id=='final':
     checkpoint = f"final.tar"
 else:
     checkpoint = f"ckpt_{args.ckpt_id}.tar"
-
 checkpoint_path = pathlib.Path(f"{args.experiment_directory}/checkpoints/{checkpoint}")
+
+if not os.path.exists(f"{args.experiment_directory}/meshing"):
+    os.makedirs(f"{args.experiment_directory}/meshing")
+mesh_out_file=f"{args.experiment_directory}/meshing/meshing_ckpt_{args.ckpt_id}_res_{resolution}.ply"
+
 # override any params loaded from yaml
 with open(f"{args.experiment_directory}/full_config.pkl", 'rb') as f:
     full_config = pickle.load(f)
@@ -96,11 +112,14 @@ if args.debug:
 torch.backends.cudnn.enabled = True
 torch.backends.cudnn.benchmark = True
 _DEVICE = torch.device(full_config.mapper.device)
+print('_DEVICE', _DEVICE)
 torch.set_default_tensor_type('torch.cuda.FloatTensor')
 if not checkpoint_path.exists():
     print(f'Checkpoint {checkpoint_path} does not exist. Quitting.')
     exit()
 
+occ_model_config = full_config.mapper.optimizer.model_config.model.occ_model
+assert isinstance(occ_model_config, dict), f"OGM enabled but model.occ_model is empty"
 scale_factor = full_config.world_cube.scale_factor.to(_DEVICE)
 shift = full_config.world_cube.shift
 world_cube = WorldCube(scale_factor, shift).to(_DEVICE)
@@ -110,16 +129,30 @@ model_config = full_config.mapper.optimizer.model_config.model
 model = Model(model_config).to(_DEVICE)
 
 print(f'Loading checkpoint from: {checkpoint_path}') 
-ckpt = torch.load(str(checkpoint_path)) 
+ckpt = torch.load(str(checkpoint_path))
+
+occ_model = OccupancyGridModel(occ_model_config).to(_DEVICE)
+occ_model.load_state_dict(ckpt['occ_model_state_dict'])
+occupancy_grid = occ_model()
+ray_sampler = OccGridRaySampler()
+ray_sampler.update_occ_grid(occupancy_grid.detach())
+
 model.load_state_dict(ckpt['network_state_dict']) 
 
-mesher = Mesher(model, ckpt, world_cube, resolution=resolution, marching_cubes_bound=meshing_bound, points_batch_size=500000)
-mesh_o3d, mesh_lidar_frames, origin_frame = mesher.get_mesh(_DEVICE, sigma_only=sigma_only, threshold=0, 
-                                                            use_lidar_fov_mask=use_lidar_fov_mask, use_convex_hull_mask=use_convex_hull_mask)
+ray_range = full_config.mapper.optimizer.model_config.data.ray_range
+mesher = Mesher(model, ckpt, world_cube, rosbag_path=rosbag_path, lidar_topic=lidar_topic,  resolution=resolution, marching_cubes_bound=meshing_bound, points_batch_size=500000)
+mesh_o3d, mesh_lidar_frames = mesher.get_mesh(_DEVICE, ray_sampler, occupancy_grid, occ_voxel_size=occ_model_config.voxel_size, sigma_only=sigma_only, threshold=0, 
+                                                            use_lidar_fov_mask=use_lidar_fov_mask, use_convex_hull_mask=use_convex_hull_mask,use_lidar_pointcloud_mask=use_lidar_pointcloud_mask, use_occ_mask=use_occ_mask)
 mesh_o3d.compute_vertex_normals()
-o3d.visualization.draw_geometries([mesh_o3d, origin_frame],
+
+if args.viz:
+    # origin_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=3, origin=np.squeeze(shift))
+    origin_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=3)
+
+    o3d.visualization.draw_geometries([mesh_o3d, origin_frame],
                                     mesh_show_back_face=True, mesh_show_wireframe=False)
 
-print('mesh_out_file: ', mesh_out_file)
-o3d.io.write_triangle_mesh(mesh_out_file, mesh_o3d, compressed=False, write_vertex_colors=True, 
-                           write_triangle_uvs=False, print_progress=True)
+if args.save:
+    print('mesh_out_file: ', mesh_out_file)
+    o3d.io.write_triangle_mesh(mesh_out_file, mesh_o3d, compressed=False, write_vertex_colors=True, 
+                            write_triangle_uvs=False, print_progress=True)

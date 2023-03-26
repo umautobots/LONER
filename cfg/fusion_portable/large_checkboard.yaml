@@ -1,0 +1,6 @@
+baseline: fusion_portable/defaults.yaml
+dataset: /hostroot/home/pckung/fusion_portable/calibration_sequences/Recalib_LargeCheckerboard.bag
+calibration: /hostroot/mnt/ws-frb/projects/loner_slam/fusion_portable/calibration/20220209_calib # TODO
+groundtruth_traj: /hostroot/home/pckung/fusion_portable/calibration_sequences/ground_truth_traj.txt # TODO
+experiment_name: large_checkboard_mapping_init500_it20_mostrecent1
+changes: NULL

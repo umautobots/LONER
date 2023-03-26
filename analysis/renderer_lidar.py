@@ -40,7 +40,7 @@ from src.common.sensors import Image, LidarScan
 from sensor_msgs.msg import Image, PointCloud2
 import pandas as pd
 import ros_numpy
-from src.common.lidar_ray_utils import LidarRayDirections, Mesher, get_far_val
+from src.common.lidar_ray_utils import LidarRayDirections, get_far_val
 
 assert torch.cuda.is_available(), 'Unable to find GPU'
 
@@ -210,9 +210,7 @@ def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time) -> LidarS
     dists = dists[indices]
     directions = directions[:, indices]
 
-    feature_mask = torch.zeros(lidar_data.shape[0])
-
-    return LidarScan(directions.float(), dists.float(), feature_mask.float(), timestamps.float())
+    return LidarScan(directions.float(), dists.float(), timestamps.float())
 
 def build_lidar_rays(lidar_scan: LidarScan,
                     lidar_indices: torch.Tensor,
@@ -346,6 +344,9 @@ with torch.no_grad():
         lidar_pose = Pose(pose_tensor=kf[pose_key]).to(_DEVICE)
         # print('lidar_pose: \n', lidar_pose.get_transformation_matrix())
         ray_directions = LidarRayDirections(lidar_scan, chunk_size=CHUNK_SIZE, device=_DEVICE)
+
+        print(lidar_scan.distances.shape , lidar_scan.ray_directions.shape)
+        print('ray_range', ray_range)
 
         size = lidar_scan.ray_directions.shape[1]
         rgb_fine = torch.zeros((size,3), dtype=torch.float32).view(-1, 3)

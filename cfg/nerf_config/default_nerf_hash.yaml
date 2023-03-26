@@ -20,6 +20,9 @@ pos_encoding_sigma:
   n_features_per_level: 2
   n_levels: 16
   otype: HashGrid
+# pos_encoding_sigma:
+#   otype: Frequency
+#   n_frequencies": 16
 sigma_network:
   activation: ReLU
   n_hidden_layers: 1

@@ -20,6 +20,7 @@ debug:
   flags:
     pytorch_detect_anomaly: False
     draw_comp_graph: False
+    draw_rays_eps: False
     write_ray_point_clouds: False
     write_frame_point_clouds: False
     write_icp_point_clouds: False
@@ -58,11 +59,13 @@ mapper:
     num_samples:
       rgb: 512
       lidar: 512
+    rays_selection:
+      strategy: RANDOM # FIX, MASK     
     keyframe_schedule:
       - 
         num_keyframes: 1
         iteration_schedule:
-          - num_iterations: 1000
+          - num_iterations: 500 # 1000
             stage: 3
             fix_poses: True
             fix_sigma_mlp: False
@@ -78,17 +81,18 @@ mapper:
             fix_sigma_mlp: True
             fix_rgb_mlp: True
           # Now joint optimization
-          - stage: 3
-            num_iterations: 150
-            fix_poses: False
+          - stage: 1 # 3
+            num_iterations: 20 # 150
+            fix_poses: True #False
             fix_sigma_mlp: False
-            fix_rgb_mlp: False
+            fix_rgb_mlp: True #False
 
     model_config: !include ../model_config/default_model_config.yaml
   
 system:
   single_threaded: True
-  log_dir_prefix: "~/ClonerSLAM/outputs"
+  # log_dir_prefix: "~/ClonerSLAM/outputs"
+  log_dir_prefix: "/hostroot/mnt/ws-frb/users/frank/frank/cloner-slam_experiment_data"
   image_scale_factor: 0.5 # Setting is put here to emphasize that it needs to influence calibration loading
 
   synchronization: &synchronization

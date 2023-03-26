@@ -12,7 +12,14 @@ graphs/
 *.bag
 *.pcd
 *.ply
+*.npy
+*.tar
+ws_outputs/
+temp/
 
 test/outputs/
+
+examples/fusion_portable/feature_index/
+*.npy
 
 docker/.etc*

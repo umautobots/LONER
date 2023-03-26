@@ -121,10 +121,12 @@ class FrameSynthesis:
             new_ray_directions = self._lidar_queue.ray_directions[..., first_valid_idx:last_valid_idx:point_step]
             new_distances = self._lidar_queue.distances[first_valid_idx:last_valid_idx:point_step]
             new_timestamps = self._lidar_queue.timestamps[first_valid_idx:last_valid_idx:point_step]
+            new_mask = self._lidar_queue.mask[first_valid_idx:last_valid_idx:point_step]
+
 
 
             frame.lidar_points.add_points(
-                new_ray_directions, new_distances, new_timestamps)
+                new_ray_directions, new_distances, new_timestamps, new_mask)
 
             self._lidar_queue.remove_points(last_valid_idx)
 

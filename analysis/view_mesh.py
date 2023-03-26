@@ -1,12 +1,22 @@
+#!/usr/bin/env python
+# coding: utf-8
 import argparse
 import pathlib
 import os
+import sys
+PROJECT_ROOT = os.path.abspath(os.path.join(
+    os.path.dirname(__file__),
+    os.pardir))
+sys.path.append(PROJECT_ROOT)
+sys.path.append(PROJECT_ROOT + "/src")
+
 import torch
 import re
 import open3d as o3d
 import numpy as np
 import matplotlib.pyplot as plt
-from common.pose import Pose
+from src.common.pose import Pose
+import trimesh
 
 parser = argparse.ArgumentParser(description="Render ground truth maps using trained nerf models")
 parser.add_argument("experiment_directory", type=str, help="folder in outputs with all results")
@@ -14,25 +24,27 @@ parser.add_argument("--use_gt_poses", default=False, dest="use_gt_poses", action
 parser.add_argument("--ckpt_id", type=str, default=None)
 parser.add_argument("--resolution", type=float, default=0.1)
 parser.add_argument("--start_idx", type=int, default=0)
+parser.add_argument("--viz", default=False, dest="viz", action="store_true")
 
 args = parser.parse_args()
 
-# file_name = 'meshing_mcr_res0.02_smooth_taubin_it50'
-# render_img_path = "/hostroot/home/pckung/TestData/"+file_name+"/image/"
-# render_img_color_path = "/hostroot/home/pckung/TestData/"+file_name+"/image_color/"
-# render_depth_path = "/hostroot/home/pckung/TestData/"+file_name+"/depth/"
-
-# mesh = o3d.io.read_triangle_mesh(f"/hostroot/home/pckung/meshing_color_res0.05.ply")
-# mesh = o3d.io.read_triangle_mesh("/hostroot/home/pckung/meshing_mcr_res0.02.ply")
-
-render_img_path = f"{args.experiment_directory}/meshing/ckpt_{args.ckpt_id}/image/"
-render_img_color_path = f"{args.experiment_directory}/meshing/ckpt_{args.ckpt_id}/image_color/"
-render_depth_path = f"{args.experiment_directory}/meshing/ckpt_{args.ckpt_id}/depth/"
+render_img_path = f"{args.experiment_directory}/meshing/ckpt_{args.ckpt_id}_res_{args.resolution}/image/"
+render_img_color_path = f"{args.experiment_directory}/meshing/ckpt_{args.ckpt_id}_res_{args.resolution}/image_color/"
+render_depth_path = f"{args.experiment_directory}/meshing/ckpt_{args.ckpt_id}_res_{args.resolution}/depth/"
+print('loading mesh...')
 mesh = o3d.io.read_triangle_mesh(f"{args.experiment_directory}/meshing/meshing_ckpt_{args.ckpt_id}_res_{args.resolution}.ply")
 
-# mesh = mesh.filter_smooth_simple(number_of_iterations=1)
-mesh = mesh.filter_smooth_taubin(number_of_iterations=50)
+# tri_mesh = trimesh.load_mesh(f"{args.experiment_directory}/meshing/meshing_ckpt_{args.ckpt_id}_res_{args.resolution}.ply")
+# tri_mesh.show()
+# import sys
+# sys.exit()
+
+mesh = mesh.filter_smooth_simple(number_of_iterations=1)
+# mesh = mesh.filter_smooth_taubin(number_of_iterations=50)
 mesh.compute_vertex_normals()
+
+if args.viz:
+    o3d.visualization.draw_geometries([mesh], mesh_show_back_face=True, mesh_show_wireframe=False)
 
 checkpoints = os.listdir(f"{args.experiment_directory}/checkpoints")
 if args.ckpt_id is None:
@@ -60,7 +72,7 @@ if not os.path.exists(render_depth_path):
 
 H = 1000
 W = 1000
-focal = 10
+focal = 1
 fx = focal
 fy = focal
 cx = H/2.0-0.5
@@ -76,6 +88,14 @@ lidar2cam = np.array([[0,0,1,0],
                       [-1,0,0,0],
                       [0,-1,0,0],
                       [0,0,0,1]])
+
+from scipy.spatial.transform import Rotation as R
+r = R.from_euler('x', 0, degrees=True) # -25
+r = r.as_matrix()
+cam_pitch_down = np.identity(4)
+cam_pitch_down[:3,:3] = r
+
+lidar2cam = lidar2cam @ cam_pitch_down
 
 poses = ckpt["poses"]
 for i, kf in enumerate(poses):
@@ -98,6 +118,7 @@ for i, kf in enumerate(poses):
     vis.poll_events()
     vis.update_renderer()
     depth = vis.capture_depth_float_buffer(True)
+    # vis.get_render_option().mesh_shade_option= o3d.visualization.MeshShadeOption.Color
     vis.get_render_option().mesh_color_option= o3d.visualization.MeshColorOption.Color 
     image_color = vis.capture_screen_float_buffer(True)
     vis.get_render_option().mesh_color_option= o3d.visualization.MeshColorOption.Normal 

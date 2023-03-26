@@ -38,29 +38,47 @@ class NeRF(nn.Module):
                                              n_output_dims=self.num_colors,
                                              network_config=self.cfg["intensity_network"])
 
-    def forward(self, pos, dir, sigma_only=False):
+        self._warn_infinite = True
+
+    def forward(self, pos, dir, sigma_only=False, detach_sigma=True):
         # x: [N, 3], scaled to [-1, 1]
         # d: [N, 3], normalized to [-1, 1]
 
         pos = (pos + 1) / 2
-        h = self._model_sigma(pos)
-        sigma = h[..., [0]]
+        if sigma_only:
+            h = self._model_sigma(pos)
+            sigma = h[..., [0]]
+        elif detach_sigma:
+            with torch.no_grad():
+                h = self._model_sigma(pos)
+                sigma = h[..., [0]]
+        else:
+            h = self._model_sigma(pos)
+            sigma = h[..., [0]]
 
+        if not torch.isfinite(sigma).all():
+            if self._warn_infinite:
+                print("Warning: Clipping infinite outputs. Will not warn about this again (but it will happen again)")
+                self._warn_infinite = False
+            sigma = sigma.nan_to_num(posinf=self._max_float, neginf=self._min_float)
+        
         if sigma_only:
             return sigma
 
-        # dir = (dir + 1) / 2
-        # dir = self._encoder_dir(dir)
-        # h_c = torch.cat([dir, h[..., 1:]], dim=-1)
+        dir = (dir + 1) / 2
+        h_x = self._pos_encoding(pos)
 
-        # No view dependence:
-        h_c = h[..., 1:]
-        
-        h_c = self._model_intensity(h_c)
+        if self._enable_view_dependence:
+            h_d = self._dir_encoding(dir)
+            h_xd = torch.cat([h_x, h_d], dim=-1)
+
+            h_c = self._model_intensity(h_xd)
+        else:
+            h_c = self._model_intensity(h_x)
+            
         color = torch.sigmoid(h_c)
 
         return torch.cat([color, sigma], dim=-1)
-
 
 class DecoupledNeRF(nn.Module):
     def __init__(self, cfg, num_colors=3):
