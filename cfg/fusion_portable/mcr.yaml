@@ -1,5 +1,5 @@
 baseline: defaults.yaml
-dataset: /mnt/ws-frb/projects/loner_slam/fusion_portable/20220219_MCR_slow_01/20220219_MCR_slow_01_ref.bag
+dataset: ~/data/fusion_portable/fusion_portable/20220219_MCR_slow_01/20220219_MCR_slow_01_ref.bag
 dataset_family: fusion_portable
 calibration: ~/data/fusion_portable/calibration/20220209_calib
 groundtruth_traj: ~/data/fusion_portable/20220219_MCR_slow_01/ground_truth_traj.txt
@@ -13,3 +13,8 @@ changes:
           ray_range: &ray_range [1, 35]
         model:
           ray_range: *ray_range
+
+meshing_bounding_box:
+  x: [-18,10]
+  y: [-20,20]
+  z: [-4,4]

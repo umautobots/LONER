@@ -12,6 +12,7 @@ graphs/
 *.bag
 *.pcd
 *.ply
+*.npy
 *.tar
 
 test/outputs/

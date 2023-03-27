@@ -20,6 +20,7 @@ debug:
   flags:
     pytorch_detect_anomaly: False
     draw_comp_graph: False
+    draw_rays_eps: False
     write_ray_point_clouds: False
     write_frame_point_clouds: False
     write_icp_point_clouds: False
@@ -55,6 +56,8 @@ mapper:
     num_samples:
       rgb: 1024
       lidar: 1024
+    rays_selection:
+      strategy: RANDOM # FIXED     
     keyframe_schedule:
       - 
         num_keyframes: 1
