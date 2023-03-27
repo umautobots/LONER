@@ -39,7 +39,6 @@ def get_align_transformation(rec_pc, gt_pc, trans_init):
     return transformation
 
 for topic, msg, ts in bag.read_messages(topics=[lidar_topic]):
-    # print(msg)
 
     lidar_data = ros_numpy.point_cloud2.pointcloud2_to_array(msg)
     lidar_data = pd.DataFrame(lidar_data).to_numpy()

@@ -159,7 +159,7 @@ def raw2outputs(raw, z_vals, rays_d, raw_noise_std=0, white_bkgd=False, sigma_on
 
     return rgb_map, depths, weights, opacity_map, None
 
-def inference(model, xyz_, dir_, sigma_only=False, netchunk=32768, detach_sigma=True):
+def inference(model, xyz_, dir_, sigma_only=False, netchunk=32768, detach_sigma=True, meshing=False):
     """
     Helper function that performs model inference.
 
@@ -194,7 +194,10 @@ def inference(model, xyz_, dir_, sigma_only=False, netchunk=32768, detach_sigma=
             out_chunks += [model(xyz_, dir_, sigma_only, detach_sigma)]
         out = torch.cat(out_chunks, 0)
 
-    return out.view(N_rays, N_samples_, -1)
+    if meshing:
+        return out
+    else:
+        return out.view(N_rays, N_samples_, -1)
 
 
 # Use Fully Fused MLP from Tiny CUDA NN

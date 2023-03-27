@@ -50,7 +50,9 @@ parser.add_argument("experiment_directory", type=str, help="folder in outputs wi
 parser.add_argument("sequence", type=str, default="canteen", help="sequence name. Used to decide meshing bound [canteen | mcr]")
 parser.add_argument("--debug", default=False, dest="debug", action="store_true")
 parser.add_argument("--ckpt_id", type=str, default=None)
-parser.add_argument("--resolution", type=float, default=0.1)
+parser.add_argument("--resolution", type=float, default=0.1, help="grid resolution (m)")
+parser.add_argument("--threshold", type=float, default=0.0, help="threshold for sigma MLP output. default as 0")
+
 parser.add_argument("--color", default=False, dest="color", action="store_true")
 parser.add_argument("--viz", default=False, dest="viz", action="store_true")
 parser.add_argument("--save", default=False, dest="save", action="store_true")
@@ -61,23 +63,22 @@ parser.add_argument("--use_convex_hull_mask", default=False, dest="use_convex_hu
 parser.add_argument("--use_lidar_pointcloud_mask", default=False, dest="use_lidar_pointcloud_mask", action="store_true")
 parser.add_argument("--use_occ_mask", default=False, dest="use_occ_mask", action="store_true")
 
+parser.add_argument("--color_render_from_ray", default=False, dest="color_render_from_ray", action="store_true")
+
 args = parser.parse_args()
 checkpoints = os.listdir(f"{args.experiment_directory}/checkpoints")
 
 if args.sequence=='canteen':
     meshing_bound = [[-35,25], [-30,45], [-3,15]] # canteen
-    # meshing_bound = [[0,15], [-10,10], [-3,15]]
-    rosbag_path = '/hostroot/mnt/ws-frb/projects/loner_slam/fusion_portable/20220216_canteen_day/20220216_canteen_day_ref.bag'
+    rosbag_path = '/mnt/ws-frb/projects/loner_slam/fusion_portable/20220216_canteen_day/20220216_canteen_day_ref.bag'
 elif args.sequence=='mcr':
     meshing_bound = [[-18,10], [-20,20], [-4,4]] # mcr
-    rosbag_path = '/hostroot/mnt/ws-frb/projects/loner_slam/fusion_portable/20220219_MCR_slow_01/20220219_MCR_slow_01_ref.bag'
+    rosbag_path = '/mnt/ws-frb/projects/loner_slam/fusion_portable/20220219_MCR_slow_01/20220219_MCR_slow_01_ref.bag'
 elif args.sequence=='large_checkboard':
     meshing_bound = [[0,10], [-4,4], [-4,7]] # large_checkboard
-    rosbag_path = '/hostroot/mnt/ws-frb/projects/loner_slam/fusion_portable/calibration_sequences/Recalib_LargeCheckerboard.bag'
+    rosbag_path = '/mnt/ws-frb/projects/loner_slam/fusion_portable/calibration_sequences/Recalib_LargeCheckerboard.bag'
 else:
     print('Please provide sequence name')
-
-lidar_topic = '/os_cloud_node/points'
 
 resolution = args.resolution
 sigma_only = not args.color
@@ -86,7 +87,12 @@ use_lidar_fov_mask = args.use_lidar_fov_mask
 use_convex_hull_mask = args.use_convex_hull_mask
 use_lidar_pointcloud_mask = args.use_lidar_pointcloud_mask
 use_occ_mask = args.use_occ_mask
+threshold = args.threshold
 
+if args.color_render_from_ray:
+    color_mesh_extraction_method = 'render_ray'
+else:
+    color_mesh_extraction_method = 'direct_point_query'
 
 if args.ckpt_id is None:
     #https://stackoverflow.com/a/2669120
@@ -139,20 +145,22 @@ ray_sampler.update_occ_grid(occupancy_grid.detach())
 
 model.load_state_dict(ckpt['network_state_dict']) 
 
+# rosbag_path = full_config.dataset_path
+lidar_topic = '/os_cloud_node/points'
 ray_range = full_config.mapper.optimizer.model_config.data.ray_range
 mesher = Mesher(model, ckpt, world_cube, rosbag_path=rosbag_path, lidar_topic=lidar_topic,  resolution=resolution, marching_cubes_bound=meshing_bound, points_batch_size=500000)
-mesh_o3d, mesh_lidar_frames = mesher.get_mesh(_DEVICE, ray_sampler, occupancy_grid, occ_voxel_size=occ_model_config.voxel_size, sigma_only=sigma_only, threshold=0, 
-                                                            use_lidar_fov_mask=use_lidar_fov_mask, use_convex_hull_mask=use_convex_hull_mask,use_lidar_pointcloud_mask=use_lidar_pointcloud_mask, use_occ_mask=use_occ_mask)
+mesh_o3d, mesh_lidar_frames = mesher.get_mesh(_DEVICE, ray_sampler, occupancy_grid, occ_voxel_size=occ_model_config.voxel_size, sigma_only=sigma_only, threshold=threshold, 
+                                                            use_lidar_fov_mask=use_lidar_fov_mask, use_convex_hull_mask=use_convex_hull_mask,use_lidar_pointcloud_mask=use_lidar_pointcloud_mask, use_occ_mask=use_occ_mask,
+                                                            color_mesh_extraction_method=color_mesh_extraction_method)
 mesh_o3d.compute_vertex_normals()
 
 if args.viz:
     # origin_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=3, origin=np.squeeze(shift))
     origin_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=3)
-
     o3d.visualization.draw_geometries([mesh_o3d, origin_frame],
                                     mesh_show_back_face=True, mesh_show_wireframe=False)
 
 if args.save:
-    print('mesh_out_file: ', mesh_out_file)
+    print('mesh store at: ', mesh_out_file)
     o3d.io.write_triangle_mesh(mesh_out_file, mesh_o3d, compressed=False, write_vertex_colors=True, 
                             write_triangle_uvs=False, print_progress=True)

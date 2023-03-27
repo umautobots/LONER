@@ -1,11 +1,4 @@
-# baseline: fusion_portable/defaults.yaml
-# dataset: /hostroot/mnt/ws-frb/projects/cloner_slam/fusion_portable/20220216_garden_day/20220216_garden_day_ref.bag
-# calibration: /hostroot/mnt/ws-frb/projects/cloner_slam/fusion_portable/calibration/20220209_calib
-# groundtruth_traj: /hostroot/mnt/ws-frb/projects/cloner_slam/fusion_portable/20220216_garden_day/ground_truth_traj.txt
-# experiment_name: garden
-# changes: NULL
-
-baseline: fusion_portable/defaults.yaml
+baseline: defaults.yaml
 dataset: ~/data/fusion_portable/20220216_garden_day/20220216_garden_day_ref.bag
 calibration: ~/data/fusion_portable/calibration/20220209_calib
 groundtruth_traj: ~/data/fusion_portable/20220216_garden_day/ground_truth_traj.txt

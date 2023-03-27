@@ -198,7 +198,6 @@ class Mesher(object):
         mask = np.zeros((pnts.shape[0]))
         distances, _ = lidar_map_kd_tree.query(pnts)
         mask = distances < 0.1 # (m)
-        print(mask.shape)
         return mask
 
     def get_lidar_positions(self, use_gt_poses=False):
@@ -226,7 +225,7 @@ class Mesher(object):
         return out
 
     def get_mesh(self, device, ray_sampler, occupancy_grid, occ_voxel_size, sigma_only=True, threshold=0, 
-                 use_lidar_fov_mask=False, use_convex_hull_mask=False, use_lidar_pointcloud_mask=False, use_occ_mask=False):
+                 use_lidar_fov_mask=False, use_convex_hull_mask=False, use_lidar_pointcloud_mask=False, use_occ_mask=False, color_mesh_extraction_method='direct_point_query'):
         with torch.no_grad():
             grid = self.get_grid_uniform(self.resolution)
             points = grid['grid_points']
@@ -239,7 +238,6 @@ class Mesher(object):
             for i, pnts in enumerate(torch.split(points, self.points_batch_size, dim=0)):
                 results.append(self.model.inference_points(pnts, dir_=None, sigma_only=True).cpu().numpy()[:, -1])
             results = np.concatenate(results, axis=0)
-
             # results = np.ones_like(results) * 1000
 
             mesh_lidar_frames = o3d.geometry.TriangleMesh.create_coordinate_frame(size=1, origin=(0,0,0))
@@ -270,14 +268,9 @@ class Mesher(object):
                 self.lidar_ts_to_seq_ = self.lidar_ts_to_seq(self.bag, self.lidar_topic)
                 lidar_map = self.get_lidar_map(use_gt_poses=False)
                 
-                # o3d.io.write_point_cloud('/hostroot/mnt/ws-frb/users/frank/frank/cloner-slam_experiment_data/mcr_occ_size1000_lr0.001_032123_180843/meshing/lidar_map_gt.pcd', lidar_map)
-                # o3d.visualization.draw_geometries([lidar_map])
-                
                 lidar_map_mask = []
                 from scipy.spatial import cKDTree as KDTree
-                # lidar_map_np = (np.asarray(lidar_map.points)+ self.world_cube_shift) / self.world_cube_scale_factor
                 lidar_map_np = np.asarray(lidar_map.points)
-                print('lidar_map_np.shape: ', lidar_map_np.shape)
                 lidar_map_kd_tree = KDTree(lidar_map_np)
                 for i, pnts in enumerate(torch.split(points, self.points_batch_size, dim=0)):
                     lidar_map_mask.append(self.mask_with_pc((pnts.cpu().numpy()*self.world_cube_scale_factor - self.world_cube_shift), lidar_map_kd_tree))
@@ -296,14 +289,9 @@ class Mesher(object):
                     x, y, z = np.meshgrid(x_, x_, x_, indexing='ij')
                     # X = np.stack([x.reshape(-1)[nonzero_indices], y.reshape(-1)[nonzero_indices], -z.reshape(-1)[nonzero_indices], occ_probs[nonzero_indices]], axis=1)
                     X = np.stack([x.reshape(-1)[nonzero_indices], y.reshape(-1)[nonzero_indices], z.reshape(-1)[nonzero_indices], occ_probs[nonzero_indices]], axis=1)
-                    print('X.shape: ', X.shape)
-
                     # pcd = o3d.geometry.PointCloud()
                     # pcd.points = o3d.utility.Vector3dVector(X[:,:3]-(occ_voxel_size/2.))
                     # pcd.colors = o3d.utility.Vector3dVector(np.repeat(X[:,3].reshape((-1,1)), 3, axis=1)/255.)
-                    # print(np.mean(X[:,:3], axis=0))
-                    # print(np.mean(np.repeat(X[:,3].reshape((-1,1)), 3, axis=1), axis=0))
-                    # print(np.max(X[:,3]), np.min(X[:,3]))
                     # mesh_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=10, origin=[0, 0, 0])
                     # o3d.visualization.draw_geometries([pcd, mesh_frame])
 
@@ -314,8 +302,6 @@ class Mesher(object):
                         point_probs = 1. / (1 + torch.exp(-point_logits))
                         point_probs = 2 * (point_probs.clamp(min=0.5, max=1.0) - 0.5)
                         point_logits = torch.squeeze(point_logits)
-                        print('point_logits.shape: ', point_logits.shape)
-                        print('point_logits: ', torch.max(point_logits), torch.min(point_logits))
                         occ_mask.append((point_logits > 0).cpu().detach().numpy())
                     occ_mask = np.concatenate(occ_mask, axis=0)
                     results[~occ_mask] = -1000
@@ -325,7 +311,6 @@ class Mesher(object):
             volume = np.copy(results.reshape(grid['xyz'][1].shape[0], grid['xyz'][0].shape[0],
                         grid['xyz'][2].shape[0]).transpose([1, 0, 2]))
             print('volume.shape: ', volume.shape)
-            # np.save("/hostroot/home/pckung/cloner_slam/analysis/volume.npy", volume)
 
             # marching cube
             try:
@@ -363,7 +348,6 @@ class Mesher(object):
             if sigma_only:
                 vertex_colors = None
             else:
-                color_mesh_extraction_method = 'direct_point_query'
                 points = torch.from_numpy(vertices)
                 # color is extracted by passing the coordinates of mesh vertices through the network
                 if color_mesh_extraction_method == 'direct_point_query':
@@ -412,9 +396,6 @@ class Mesher(object):
             mesh_o3d.triangles = o3d.utility.Vector3iVector(faces)
             if not sigma_only:
                 mesh_o3d.vertex_colors = o3d.utility.Vector3dVector(vertex_colors)
-            
-            # origin_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=3, origin=np.squeeze(self.world_cube_shift)) 
-            # o3d.visualization.draw_geometries([mesh_o3d, lidar_map, origin_frame])
 
             return mesh_o3d, mesh_lidar_frames
 

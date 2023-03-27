@@ -420,11 +420,6 @@ class Optimizer:
 
             self._lidar_depths_gt = lidar_depths * scale_factor
             weights_pred_lidar = self._results_lidar['weights_fine']
-
-            ##### new loss #####
-            # eps_min = self._model_config.loss.min_depth_eps
-            # weights_pred_lidar[self._lidar_depth_samples_fine > self._lidar_depths_gt+3*eps_min] = 0
-            ##### new loss end #####
             
             # Compute JS divergence (also calculate when using fix depth_eps for visualization)
             mean = torch.sum(self._lidar_depth_samples_fine * weights_pred_lidar, axis=1) / (torch.sum(weights_pred_lidar, axis=1) + 1e-10) # weighted mean # [N_rays]
@@ -434,9 +429,7 @@ class Optimizer:
             eps_min = self._model_config.loss.min_depth_eps
             js_score = self.calculate_JS_divergence(self._lidar_depths_gt, eps_min, mean, eps).squeeze()
 
-            #print('self._model_config.loss.use_JS_loss: ', self._model_config.loss.use_JS_loss)
             if self._model_config.loss.use_JS_loss:
-                #print('using JS divergence loss')
                 min_js_score = self._model_config.loss.JS_loss.min_js_score
                 max_js_score = self._model_config.loss.JS_loss.max_js_score
                 alpha = self._model_config.loss.JS_loss.alpha
@@ -623,7 +616,7 @@ class Optimizer:
         std_m = 0.5 * torch.sqrt(std1**2+std2**2)
         return 0.5 * self.calculate_KL_divergence(mean1, std1, mean_m, std_m) + 0.5 * self.calculate_KL_divergence(mean2, std2, mean_m, std_m)
 
-    def visualize_loss(self, i, viz_idx: np.ndarray, opaque_rays: torch.Tensor, weights_gt_lidar: torch.Tensor, weights_pred_lidar: torch.Tensor,
+    def visualize_loss(self, iteration_idx, viz_idx: np.ndarray, opaque_rays: torch.Tensor, weights_gt_lidar: torch.Tensor, weights_pred_lidar: torch.Tensor,
                         mean: torch.Tensor, var: torch.Tensor, js_score: torch.Tensor, \
                         s_vals_lidar: torch.Tensor, depth_gt_lidar: torch.Tensor, eps_: torch.Tensor)->None:
         
@@ -637,7 +630,7 @@ class Optimizer:
         depth_gt_lidar = depth_gt_lidar.detach().cpu().numpy()
         eps_ = eps_.detach().cpu().numpy()
 
-        if i > 0:
+        if iteration_idx > 0:
             # max_js_ids = np.where(js_score == self._model_config.loss.JS_loss.max_js_score)[0]
             # opaque_ids = np.where(opaque_rays == True)[0]
             # print('maxjs_count: ', len(np.intersect1d(max_js_ids, opaque_ids)) )
@@ -666,11 +659,11 @@ class Optimizer:
                     print("u_gt:", depth_gt_lidar[j], "eps: ", depth_eps_)
                 if self._model_config.loss.use_JS_loss:
                     if js_score.ndim>0:
-                        plt.title('Iter: %d\n mean: %1.3f std: %1.3f\n JS(P||Q) = %1.3f' % (i, u, np.sqrt(variance), js_score[j]))
+                        plt.title('Iter: %d\n mean: %1.3f std: %1.3f\n JS(P||Q) = %1.3f' % (iteration_idx, u, np.sqrt(variance), js_score[j]))
                     else:
-                        plt.title('Iter: %d\n mean: %1.3f std: %1.3f\n JS(P||Q) = %1.3f' % (i, u, np.sqrt(variance), js_score))
+                        plt.title('Iter: %d\n mean: %1.3f std: %1.3f\n JS(P||Q) = %1.3f' % (iteration_idx, u, np.sqrt(variance), js_score))
                 else:
-                    plt.title('Iter: %d\n mean: %1.3f std: %1.3f\n mean err: %1.3f std err: %1.3f' % (i, u, np.sqrt(variance), depth_gt_lidar[j]-u, eps_min-np.sqrt(variance)))
+                    plt.title('Iter: %d\n mean: %1.3f std: %1.3f\n mean err: %1.3f std err: %1.3f' % (iteration_idx, u, np.sqrt(variance), depth_gt_lidar[j]-u, eps_min-np.sqrt(variance)))
 
                 x_axis = np.arange(np.amin(x), np.amax(x), 0.01)
                 plt.plot(x_axis, norm.pdf(x_axis, u, np.sqrt(variance)), '-m', linewidth=2) # np.amax(y)

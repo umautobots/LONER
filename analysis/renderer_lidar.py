@@ -53,7 +53,10 @@ parser.add_argument("--debug", default=False, dest="debug", action="store_true")
 parser.add_argument("--eval", default=False, dest="eval", action="store_true")
 parser.add_argument("--ckpt_id", type=str, default=None)
 parser.add_argument("--use_gt_poses", default=False, dest="use_gt_poses", action="store_true")
+
+parser.add_argument("--skip_step", type=int, default=10, dest="skip_step")
 parser.add_argument("--only_last_frame", default=False, dest="only_last_frame", action="store_true")
+
 parser.add_argument("--norm_var_threshold", type=float, default = 1e-4, help="Threshold for variance")
 parser.add_argument("--write_intermediate_clouds", default=False, action="store_true")
 
@@ -66,12 +69,14 @@ if args.ckpt_id is None:
     convert = lambda text: int(text) if text.isdigit() else text 
     alphanum_key = lambda key: [ convert(c) for c in re.split('([0-9]+)', key) ] 
     checkpoint = sorted(checkpoints, key = alphanum_key)[-1]
+elif args.ckpt_id=='final':
+    checkpoint = f"final.tar"
 else:
     checkpoint = f"ckpt_{args.ckpt_id}.tar"
 
 checkpoint_path = pathlib.Path(f"{args.experiment_directory}/checkpoints/{checkpoint}")
 
-render_dir = pathlib.Path(f"{args.experiment_directory}/renders/{checkpoint}_gt_poses_{args.use_gt_poses}")
+render_dir = pathlib.Path(f"{args.experiment_directory}/renders/{checkpoint}")
 os.makedirs(render_dir, exist_ok=True)
 
 # override any params loaded from yaml
@@ -81,14 +86,7 @@ with open(f"{args.experiment_directory}/full_config.pkl", 'rb') as f:
 if args.debug:
     full_config['debug'] = True
 
-
-# TODO (Seth): Manual Seed
-# seed = cfg.seed
 torch.backends.cudnn.enabled = True
-# torch.manual_seed(seed)
-# torch.cuda.manual_seed(seed)
-# np.random.seed(seed)
-
 torch.backends.cudnn.benchmark = True
 # rng = default_rng(seed)
 _DEVICE = torch.device(full_config.mapper.device)
@@ -194,7 +192,7 @@ pcd = o3d.geometry.PointCloud()
 with torch.no_grad():
     poses = ckpt["poses"]    
     all_poses = []
-    skip_step = 1 #10
+    skip_step = args.skip_step #10
 
     if args.only_last_frame:
         tqdm_poses = tqdm([poses[-1]])
@@ -239,7 +237,6 @@ with torch.no_grad():
         rendered_colors = rgb_fine.cpu().numpy()
         gt_lidar = (lidar_scan.ray_directions.t() * depth_gt).cpu().numpy()
 
-
         good_idx = variance < 1e-4
         good_idx = good_idx.squeeze(1).cpu()
         rendered_lidar = rendered_lidar[good_idx]
@@ -254,7 +251,6 @@ with torch.no_grad():
         lidar_pcd.paint_uniform_color([1, 0, 0.25])
 
         pcd = merge_o3d_pc(pcd, rendered_pcd.transform(lidar_pose.get_transformation_matrix().cpu().numpy()))
-
         
         if args.write_intermediate_clouds and pose_idx % 10 == 0:
             o3d.io.write_point_cloud(f"{args.experiment_directory}/lidar_renders/render_{pose_idx}.pcd", pcd)
