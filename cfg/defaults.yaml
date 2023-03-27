@@ -54,8 +54,8 @@ mapper:
     detach_rgb_from_sigma: True
     skip_pose_refinement: True # If set, skips the tracking refinement part of the optimization
     num_samples:
-      rgb: 512
-      lidar: 512
+      rgb: 1024
+      lidar: 1024
     rays_selection:
       strategy: RANDOM # FIX, MASK     
     keyframe_schedule:
