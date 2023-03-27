@@ -429,7 +429,7 @@ class Optimizer:
             eps_min = self._model_config.loss.min_depth_eps
             js_score = self.calculate_JS_divergence(self._lidar_depths_gt, eps_min, mean, eps).squeeze()
 
-            if self._model_config.JS_loss.enable:
+            if self._model_config.loss.JS_loss.enable:
                 min_js_score = self._model_config.loss.JS_loss.min_js_score
                 max_js_score = self._model_config.loss.JS_loss.max_js_score
                 alpha = self._model_config.loss.JS_loss.alpha
