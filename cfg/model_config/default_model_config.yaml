@@ -41,7 +41,7 @@ loss:
     dynamic_depth_eps_JS: True         # boolean to enable JS divergence loss
     JS_loss:
         min_js_score: 1.
-        max_js_score: 20.
+        max_js_score: 40.
         alpha: 2
 
     decay_depth_lambda: False          # boolean to enable decay
@@ -51,7 +51,7 @@ loss:
         
     decay_depth_eps: True              # boolean to enable decay
     depth_eps: 3.0                     # starting tolerance for line of sight loss in euclidean space
-    min_depth_eps: 0.05                # Minimum value after decay
+    min_depth_eps: 0.5                 # Minimum value after decay
     depth_eps_decay_steps: 50
 
     term_lambda: 0.0      # weight for lidar termination depth
