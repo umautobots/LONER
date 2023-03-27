@@ -51,7 +51,7 @@ class KeyFrameManager:
 
         if should_use_frame:
 
-            self._last_accepted_frame_ts = frame.image.timestamp
+            self._last_accepted_frame_ts = frame.get_time()
         
             new_keyframe = KeyFrame(frame, self._device)
 

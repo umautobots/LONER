@@ -1,4 +1,4 @@
-enable_view_dependence: True
+enable_view_dependence: False
 dir_encoding_intensity:
   degree: 4
   otype: SphericalHarmonics
@@ -9,7 +9,7 @@ intensity_network:
   otype: FullyFusedMLP
   output_activation: None
 pos_encoding_intensity:
-  base_resolution: 16
+  base_resolution: 32
   log2_hashmap_size: 18
   n_features_per_level: 2
   n_levels: 16

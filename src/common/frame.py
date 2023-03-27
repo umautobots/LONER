@@ -7,7 +7,7 @@ from common.sensors import Image, LidarScan
 from src.common.pose import Pose
 
 class Frame:
-    """ Frame Class representing the atomic unit of optimization in ClonerSLAM
+    """ Frame Class representing the atomic unit of optimization in Loner SLAM
 
     A Frame consists of an image, and lidar points that occured at nearby times.
 
@@ -60,7 +60,9 @@ class Frame:
     ## Moves all items in the frame to the specified device, in-place. Also returns the current frame.
     # @param device: Target device, as int (GPU) or string (CPU or GPU)
     def to(self, device: Union[int, str]) -> "Frame":
-        self.image.to(device)
+        if self.image is not None:
+            self.image.to(device)
+        
         self.lidar_points.to(device)
 
         for pose in [self._lidar_to_camera, self._lidar_pose, self._gt_lidar_pose]:
@@ -76,9 +78,12 @@ class Frame:
 
         return self
 
-    ## Gets the timestamp of the image
+    ## Gets the timestamp of the start of the scan
     def get_time(self) -> float:
-        return self.image.timestamp
+        return self.lidar_points.get_start_time()
+
+    def get_middle_time(self) -> float:
+        return self.lidar_points.get_start_time()/2. + self.lidar_points.get_end_time()/2.
 
     ## Builds a point cloud from the lidar scan.
     # @p time_per_scan: The maximum time to allow in a scan. This prevents aliasing without motion compensation.
@@ -89,7 +94,7 @@ class Frame:
         pcd = o3d.cuda.pybind.geometry.PointCloud()
 
         # Only take 1 scan
-        if time_per_scan is not None:
+        if time_per_scan is not None and self.lidar_points.get_end_time() - self.lidar_points.get_start_time() > 1e-3:
             lidar_timestamps = self.lidar_points.timestamps
             middle_time = (lidar_timestamps[0] + lidar_timestamps[-1])/2
             start_index = torch.argmax((lidar_timestamps - middle_time >= -time_per_scan/2).float())

@@ -29,7 +29,7 @@ from render_utils import *
 
 from src.common.pose import Pose
 from src.common.pose_utils import WorldCube
-from src.common.ray_utils import CameraRayDirections
+from src.common.ray_utils import points_to_pcd
 from src.models.losses import *
 from src.models.model_tcnn import Model, OccupancyGridModel
 from src.models.ray_sampling import OccGridRaySampler
@@ -40,7 +40,7 @@ from src.common.sensors import Image, LidarScan
 from sensor_msgs.msg import Image, PointCloud2
 import pandas as pd
 import ros_numpy
-from src.common.lidar_ray_utils import LidarRayDirections, get_far_val
+from src.common.ray_utils import LidarRayDirections, get_far_val
 
 assert torch.cuda.is_available(), 'Unable to find GPU'
 
@@ -54,6 +54,8 @@ parser.add_argument("--eval", default=False, dest="eval", action="store_true")
 parser.add_argument("--ckpt_id", type=str, default=None)
 parser.add_argument("--use_gt_poses", default=False, dest="use_gt_poses", action="store_true")
 parser.add_argument("--only_last_frame", default=False, dest="only_last_frame", action="store_true")
+parser.add_argument("--norm_var_threshold", type=float, default = 1e-4, help="Threshold for variance")
+parser.add_argument("--write_intermediate_clouds", default=False, action="store_true")
 
 args = parser.parse_args()
 
@@ -75,11 +77,6 @@ os.makedirs(render_dir, exist_ok=True)
 # override any params loaded from yaml
 with open(f"{args.experiment_directory}/full_config.pkl", 'rb') as f:
     full_config = pickle.load(f)
-
-intrinsic = full_config.calibration.camera_intrinsic
-im_size = torch.Tensor([intrinsic.height, intrinsic.width]) #/ 2
-# full_config["calibration"]["camera_intrinsic"]["height"] = int(im_size[0])
-# full_config["calibration"]["camera_intrinsic"]["width"] = int(im_size[1])
 
 if args.debug:
     full_config['debug'] = True
@@ -110,9 +107,6 @@ scale_factor = full_config.world_cube.scale_factor.to(_DEVICE)
 shift = full_config.world_cube.shift
 world_cube = WorldCube(scale_factor, shift).to(_DEVICE)
 
-# ray_directions = LidarRayDirections(chunk_size=CHUNK_SIZE, device=_DEVICE)
-# ray_directions = CameraRayDirections(full_config.calibration, chunk_size=CHUNK_SIZE, device=_DEVICE)
-
 # Returns the 3D logits as a 5D tensor
 occ_model = OccupancyGridModel(occ_model_config).to(_DEVICE)
 
@@ -135,59 +129,6 @@ occ_model.load_state_dict(ckpt['occ_model_state_dict'])
 occupancy_grid = occ_model()
 ray_sampler.update_occ_grid(occupancy_grid.detach())
 
-def render_dataset_frame(pose: Pose):
-    tic_img = time.time()
-    size = (int(im_size[0]), int(im_size[1]), 1)
-    rgb_size = (int(im_size[0]), int(im_size[1]), 3)
-    rgb_fine = torch.zeros(rgb_size, dtype=torch.float32).view(-1, 3)
-    depth_fine = torch.zeros(size, dtype=torch.float32).view(-1, 1)
-    peak_depth_consistency = torch.zeros(size, dtype=torch.float32).view(-1, 1)
-    print("--------------------")
-    print("render_dataset_frame")
-
-    for chunk_idx in range(ray_directions.num_chunks):
-        # tic = time.time()
-        eval_rays = ray_directions.fetch_chunk_rays(chunk_idx, pose, world_cube, ray_range)
-        eval_rays = eval_rays.to(_DEVICE)
-
-        results = model(eval_rays, ray_sampler, scale_factor, testing=True)
-
-        rgb_fine[chunk_idx * CHUNK_SIZE: (chunk_idx+1) * CHUNK_SIZE, :] = results['rgb_fine']
-        depth = results['depth_fine'].unsqueeze(1)
-        depth_fine[chunk_idx * CHUNK_SIZE: (chunk_idx+1) * CHUNK_SIZE, :] = results['depth_fine'].unsqueeze(1)
-
-        s_vals = results['samples_fine']
-        weights_pred = results['weights_fine']
-        s_peaks = s_vals[torch.arange(eval_rays.shape[0]), weights_pred.argmax(dim=1)].unsqueeze(1)
-        peak_depth_consistency[chunk_idx * CHUNK_SIZE: (chunk_idx+1) * CHUNK_SIZE, :] = torch.abs(s_peaks - depth)
-
-    rgb_fine = rgb_fine.reshape(1, rgb_size[0] , rgb_size[1], rgb_size[2]).permute(0, 3, 1, 2)
-    depth_fine = depth_fine.reshape(1, size[0], size[1] , 1).permute(0, 3, 1, 2) * scale_factor
-    peak_depth_consistency = peak_depth_consistency.reshape(1, size[0], size[1], 1).permute(0, 3, 1, 2) * scale_factor
-    print(f'Took: {time.time() - tic_img} seconds for rendering an image')
-    
-    return rgb_fine.clamp(0, 1), depth_fine, peak_depth_consistency
-
-def render_spiral(center_pose: Pose):
-    rgbs = []
-    depths = []
-
-    focus_depth = 3.5 # hardcoded, this is numerically close to the formula
-                    # given in the original repo. Mathematically if near=1
-                    # and far=infinity, then this number will converge to 4
-
-    radii = torch.Tensor([1, 1, 1]) * scale_factor
-    spiral_poses = create_spiral_poses(radii, focus_depth, n_poses=5, homogenous=True)
-
-    render_poses = (center_pose.get_transformation_matrix() @ spiral_poses)[...,:3,:]
-
-    for pose in tqdm.tqdm(render_poses):
-        rgb, depth, _ = render_dataset_frame(Pose(pose))
-
-        rgbs.append(rgb.detach().cpu().numpy().reshape((int(im_size[0]), int(im_size[1]), 3)) * 255)
-        depths.append(depth.detach().squeeze().cpu().numpy())
-    
-    return rgbs, depths
 
 def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time) -> LidarScan:
     lidar_data = ros_numpy.point_cloud2.pointcloud2_to_array(
@@ -212,73 +153,7 @@ def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time) -> LidarS
 
     return LidarScan(directions.float(), dists.float(), timestamps.float())
 
-def build_lidar_rays(lidar_scan: LidarScan,
-                    lidar_indices: torch.Tensor,
-                    ray_range: torch.Tensor,
-                    world_cube: WorldCube,
-                    lidar_poses: torch.Tensor, # 4x4
-                    ignore_world_cube: bool = False) -> torch.Tensor:
-    # _use_simple_frame = True
 
-    rotate_lidar_opengl = torch.eye(4) #.to(self._device)
-    rotate_lidar_points_opengl = torch.eye(3) #.to(self._device)
-
-    depths = lidar_scan.distances[lidar_indices] / world_cube.scale_factor
-    directions = lidar_scan.ray_directions[:, lidar_indices]
-    timestamps = lidar_scan.timestamps[lidar_indices]
-
-    # N x 4 x 4
-    print('lidar_poses.shape: ', lidar_poses.shape)
-    # Now that we're in OpenGL frame, we can apply world cube transformation
-    ray_origins: torch.Tensor = lidar_poses[..., :3, 3]
-    ray_origins = ray_origins + world_cube.shift
-    ray_origins = ray_origins / world_cube.scale_factor
-    ray_origins = ray_origins @ rotate_lidar_opengl[:3,:3]
-
-    ray_origins = ray_origins.tile(len(timestamps), 1)
-
-    # N x 3 x 3 (N homogenous transformation matrices)
-    lidar_rotations = lidar_poses[..., :3, :3]
-    
-    # N x 3 x 1. This takes a 3xN matrix and makes it 1x3xN, then Nx3x1
-    directions_3d = directions.unsqueeze(0).swapaxes(0, 2)
-
-    # rotate ray directions from sensor coordinates to world coordinates
-    ray_directions = lidar_rotations @ directions_3d
-
-    # ray_directions is now Nx3x1, we want Nx3.
-    ray_directions = ray_directions.squeeze()
-    # Only now we swap it to opengl coordinates
-    ray_directions = ray_directions @ rotate_lidar_points_opengl.T
-
-    # Note to self: don't use /= here. Breaks autograd.
-    ray_directions = ray_directions / \
-        torch.norm(ray_directions, dim=1, keepdim=True)
-
-    view_directions = -ray_directions
-
-    if not ignore_world_cube:
-        assert (ray_origins.abs().max(dim=1)[0] > 1).sum() == 0, \
-            f"{(ray_origins.abs().max(dim=1)[0] > 1).sum()//3} ray origins are outside the world cube"
-
-    near = ray_range[0] / world_cube.scale_factor * \
-        torch.ones_like(ray_origins[:, :1])
-    far_range = ray_range[1] / world_cube.scale_factor * \
-        torch.ones_like(ray_origins[:, :1])
-
-    far_clip = get_far_val(ray_origins, ray_directions, no_nan=True)
-    far = torch.minimum(far_range, far_clip)
-
-    rays = torch.cat([ray_origins, ray_directions, view_directions,
-                        torch.zeros_like(ray_origins[:, :2]),
-                        near, far], 1)
-                        
-    # Only rays that have more than 1m inside world
-    if ignore_world_cube:
-        return rays, depths
-    else:
-        valid_idxs = (far > (near + 1. / world_cube.scale_factor))[..., 0]
-        return rays[valid_idxs], depths[valid_idxs]
 
 def find_corresponding_lidar_scan(bag, lidar_topic, seq):
     for topic, msg, ts in bag.read_messages(topics=[lidar_topic]):
@@ -307,11 +182,14 @@ def lidar_ts_to_seq(bag, lidar_topic):
         lidar_ts_to_seq.append(timestamp)
     return lidar_ts_to_seq
 
-rosbag_path = '/hostroot/home/pckung/fusion_portable/20220216_canteen_day/20220216_canteen_day_ref.bag'
+rosbag_path = full_config.dataset_path
 lidar_topic = '/os_cloud_node/points'
 
 bag = rosbag.Bag(rosbag_path, 'r')
 lidar_ts_to_seq_ = lidar_ts_to_seq(bag, lidar_topic)
+
+os.makedirs(f"{args.experiment_directory}/lidar_renders", exist_ok=True)
+
 pcd = o3d.geometry.PointCloud()
 with torch.no_grad():
     poses = ckpt["poses"]    
@@ -323,7 +201,7 @@ with torch.no_grad():
     else:
         poses = poses[15:]
         tqdm_poses = tqdm(poses[::skip_step])
-    for i, kf in enumerate(tqdm_poses):
+    for pose_idx, keyframe in enumerate(tqdm_poses):
         if args.use_gt_poses:
             start_key = "gt_start_lidar_pose"
             end_key = "gt_end_lidar_pose"
@@ -333,97 +211,52 @@ with torch.no_grad():
             end_key = "end_lidar_pose"
             pose_key = "lidar_pose"
 
-        kf_timestamp = kf["timestamp"].numpy()
-        print(kf_timestamp)
+        kf_timestamp = keyframe["timestamp"].numpy()
 
         seq = np.argmin(np.abs(np.array(lidar_ts_to_seq_) - kf_timestamp))
-        print('seq: ', seq)
 
         lidar_msg = find_corresponding_lidar_scan(bag, lidar_topic, seq)
         lidar_scan = build_scan_from_msg(lidar_msg, lidar_msg.header.stamp).to(_DEVICE)
-        lidar_pose = Pose(pose_tensor=kf[pose_key]).to(_DEVICE)
-        # print('lidar_pose: \n', lidar_pose.get_transformation_matrix())
-        ray_directions = LidarRayDirections(lidar_scan, chunk_size=CHUNK_SIZE, device=_DEVICE)
-
-        print(lidar_scan.distances.shape , lidar_scan.ray_directions.shape)
-        print('ray_range', ray_range)
+        lidar_pose = Pose(pose_tensor=keyframe[pose_key]).to(_DEVICE)
+        ray_directions = LidarRayDirections(lidar_scan, chunk_size=CHUNK_SIZE)
 
         size = lidar_scan.ray_directions.shape[1]
         rgb_fine = torch.zeros((size,3), dtype=torch.float32).view(-1, 3)
         depth_fine = torch.zeros((size,1), dtype=torch.float32).view(-1, 1)
+        variance = torch.zeros((size,1), dtype=torch.float32).view(-1, 1)
         for chunk_idx in range(ray_directions.num_chunks):
             eval_rays = ray_directions.fetch_chunk_rays(chunk_idx, lidar_pose, world_cube, ray_range)
             eval_rays = eval_rays.to(_DEVICE)
-            # print('eval_rays.shape: ', eval_rays.shape)
-            results = model(eval_rays, ray_sampler, scale_factor, testing=True)
+            results = model(eval_rays, ray_sampler, scale_factor, testing=True, return_variance=True)
 
             rgb_fine[chunk_idx * CHUNK_SIZE: (chunk_idx+1) * CHUNK_SIZE, :] = results['rgb_fine']
             depth_fine[chunk_idx * CHUNK_SIZE: (chunk_idx+1) * CHUNK_SIZE, :] = results['depth_fine'].unsqueeze(1)  * scale_factor
-
-        print('lidar_scan.ray_directions.shape: ', lidar_scan.ray_directions.shape)
-        print('depth_fine.shape: ', depth_fine.shape)
+            variance[chunk_idx * CHUNK_SIZE: (chunk_idx+1) * CHUNK_SIZE, :] = results['variance'].unsqueeze(1)
 
         depth_gt = torch.unsqueeze(lidar_scan.distances, 1)
-        print('depth_gt.shape: ', depth_gt.shape)
 
         rendered_lidar = (lidar_scan.ray_directions.t() * depth_fine).cpu().numpy()
-        print('rgb_fine.shape: ', rgb_fine.shape)
         rendered_colors = rgb_fine.cpu().numpy()
         gt_lidar = (lidar_scan.ray_directions.t() * depth_gt).cpu().numpy()
+
+
+        good_idx = variance < 1e-4
+        good_idx = good_idx.squeeze(1).cpu()
+        rendered_lidar = rendered_lidar[good_idx]
+        rendered_colors = rendered_colors[good_idx]
 
         rendered_pcd = o3d.geometry.PointCloud()
         rendered_pcd.points = o3d.utility.Vector3dVector(rendered_lidar)
         rendered_pcd.colors = o3d.utility.Vector3dVector(rendered_colors)
-        # rendered_pcd.paint_uniform_color([0, 1, 0.25])
+
         lidar_pcd = o3d.geometry.PointCloud()
         lidar_pcd.points = o3d.utility.Vector3dVector(gt_lidar)
         lidar_pcd.paint_uniform_color([1, 0, 0.25])
 
         pcd = merge_o3d_pc(pcd, rendered_pcd.transform(lidar_pose.get_transformation_matrix().cpu().numpy()))
-        # o3d.visualization.draw_geometries([pcd])
-        o3d.visualization.draw_geometries([rendered_pcd])
 
+        
+        if args.write_intermediate_clouds and pose_idx % 10 == 0:
+            o3d.io.write_point_cloud(f"{args.experiment_directory}/lidar_renders/render_{pose_idx}.pcd", pcd)
 
-        # pcd.normals = o3d.utility.Vector3dVector(np.zeros((1, 3)))  # invalidate existing normals
-        # pcd.estimate_normals()
-        # o3d.visualization.draw_geometries([pcd], point_show_normal=True)
-        # mesh, densities = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(pcd, depth=9)
-        # o3d.visualization.draw_geometries([pcd, mesh])
-
-        # alpha = 0.5
-        # tetra_mesh, pt_map = o3d.geometry.TetraMesh.create_from_point_cloud(pcd)
-        # mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_alpha_shape(pcd, alpha, tetra_mesh, pt_map)
-        # mesh.compute_vertex_normals()
-        # o3d.visualization.draw_geometries([mesh])
-
-        # rendered_pcd.normals = o3d.utility.Vector3dVector(np.zeros((1, 3)))  # invalidate existing normals
-        # rendered_pcd.estimate_normals()
-        # radii = [0.005, 0.01, 0.02, 0.04, 0.1, 0.2, 0.4, 1, 2, 4]
-        # rec_mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_ball_pivoting(
-        #     rendered_pcd, o3d.utility.DoubleVector(radii))
-        # o3d.visualization.draw_geometries([rec_mesh])
-
-        # import sys
-        # sys.exit()
-
-        # if start_key in kf:
-        #     start_lidar_pose = Pose(pose_tensor=kf[start_key])
-        #     end_lidar_pose = Pose(pose_tensor=kf[end_key])
-        #     start_camera_pose = start_lidar_pose * lidar_to_camera
-        #     end_camera_pose = end_lidar_pose * lidar_to_camera
-
-        #     start_rendered, start_depth_rendered, _ = render_dataset_frame(start_camera_pose.to(_DEVICE))
-        #     end_rendered, end_depth_rendered, _ = render_dataset_frame(end_camera_pose.to(_DEVICE))
-            
-        #     save_img(start_rendered, [], f"predicted_img_{label}_start.png", render_dir)
-        #     save_img(end_rendered, [], f"predicted_img_{label}_end.png", render_dir)
-        #     save_depth(start_depth_rendered, f"predicted_depth_{label}_start.png", render_dir)
-        #     save_depth(end_depth_rendered, f"predicted_depth_{label}_end.png", render_dir)
-          
-        # else:
-        #     lidar_pose= Pose(pose_tensor=kf[pose_key])
-        #     cam_pose = lidar_pose * lidar_to_camera
-        #     rgb, depth, _ = render_dataset_frame(cam_pose.to(_DEVICE))
-        #     save_img(rgb, [], f"predicted_img_{label}.png", render_dir)
-        #     save_depth(depth, f"predicted_depth_{label}.png", render_dir)
-
+    o3d.io.write_point_cloud(f"{args.experiment_directory}/lidar_renders/render_full.pcd", pcd)

@@ -6,7 +6,7 @@ import open3d as o3d
 from kornia.geometry.calibration import undistort_points
 
 from common.pose import Pose
-from common.sensors import Image
+from common.sensors import Image, LidarScan
 from common.settings import Settings
 from common.pose_utils import WorldCube
 
@@ -108,8 +108,18 @@ def get_ray_directions(H, W, newK, dist=None, K=None, sppd=1, with_indices=False
 
 
 class CameraRayDirections:
-    def __init__(self, calibration: Settings, samples_per_pixel: int = 1, device = 'cpu', chunk_size=512,
-                 grid_dimensions = (8,8), samples_per_grid_cell = 12):
+    """ A class used for computing camera ray directions.
+
+    Stores relavent calibration-related information and pre-computes camera rays for each pixel,
+    accounting for distortion.
+    """
+
+    ## Constructor for CameraRayDirections
+    # @param calibration: The top-level Loner calibration settings.
+    # @param samples_per_pixel: How many samples to take for each pixel. Leave at 1 probably.
+    def __init__(self, calibration: Settings, samples_per_pixel: int = 1, device = 'cpu', chunk_size=512):
+
+        assert samples_per_pixel == 1, "Only 1 sample per pixel currently supported"
 
         K = calibration.camera_intrinsic.k.to(device)
         distortion = calibration.camera_intrinsic.distortion.to(device)
@@ -134,26 +144,16 @@ class CameraRayDirections:
 
         self._chunk_size = chunk_size
         self.num_chunks = int(np.ceil(self.directions.shape[0] / self._chunk_size))
-
-        self.grid_dimensions = grid_dimensions
-        self.samples_per_grid_cell = samples_per_grid_cell
-        self.grid_cell_width = int(self.im_width // self.grid_dimensions[1])
-        self.grid_cell_height = int(self.im_height // self.grid_dimensions[0])
-        self.total_grid_samples = self.grid_dimensions[0]*self.grid_dimensions[1]*samples_per_grid_cell
-        x_cell_offsets = torch.arange(0, self.im_width, int(self.im_width // self.grid_dimensions[1]))
-        y_cell_offsets = torch.arange(0, self.im_height, int(self.im_height // self.grid_dimensions[0]))
-
-        x_offsets_grid, y_offsets_grid =torch.meshgrid([x_cell_offsets, y_cell_offsets])
-
-        x_cell_offsets = x_offsets_grid.permute(1,0).reshape(-1,1)
-        y_cell_offsets = y_offsets_grid.permute(1,0).reshape(-1,1)
-
-        # Stored in row-major order
-        self.cell_offsets = torch.hstack((y_cell_offsets,x_cell_offsets)).unsqueeze(1).to(torch.int32)
         
     def __len__(self):
         return self.directions.shape[0]
 
+    ## Given indices representing pixels, produce rays in Loner format
+    # @param indices in range (0, W*H)
+    # @param pose: Camera pose, for origin of rays
+    # @param image: The image to sample intensities from
+    # @param world_cube: Specifies transformation to stay within world cube
+    # @param ray_range: 2-tensor with min and max range of each ray
     def build_rays(self, camera_indices: torch.Tensor, pose: Pose, image: Image, world_cube: WorldCube, ray_range):
 
         directions = self.directions[camera_indices]
@@ -164,7 +164,6 @@ class CameraRayDirections:
 
         world_to_camera[:3, 3] = world_to_camera[:3, 3] + world_cube.shift
         world_to_camera[:3, 3] = world_to_camera[:3, 3] / world_cube.scale_factor
-        
         
         ray_directions = directions @ world_to_camera[:3, :3].T
         
@@ -183,16 +182,12 @@ class CameraRayDirections:
         near = ray_range[0] / world_cube.scale_factor * \
             torch.ones_like(ray_origins[:, :1])
 
-        # TODO: Does no_nan cause problems here?
         far = get_far_val(ray_origins, ray_directions, no_nan=True)
         rays = torch.cat([ray_origins, ray_directions, view_directions,
                             ray_i_grid, ray_j_grid, near, far], 1).float()
 
         if image is not None:
-            # Get intensities
             img = image.image
-
-            # TODO: Handle distortion and sppd > 1
             intensities = img.view(-1, img.shape[2])[camera_indices]
         else:
             intensities = None
@@ -206,55 +201,7 @@ class CameraRayDirections:
 
         return self.build_rays(indices, pose, None, world_cube, ray_range)[0]
 
-    # Sample distribution is 1D, in row-major order (size of grid_dimensions)
-    def sample_chunks(self, sample_distribution: torch.Tensor = None, total_grid_samples = None) -> torch.Tensor:
-        
-        if total_grid_samples is None:
-            total_grid_samples = self.total_grid_samples
-
-        # TODO: This method potentially ignores the upper-right border of each cell. fixme.
-        num_grid_cells = self.grid_dimensions[0]*self.grid_dimensions[1]
-        
-        if sample_distribution is None:
-            local_xs = torch.randint(0, self.grid_cell_width, (total_grid_samples,))
-            local_ys = torch.randint(0, self.grid_cell_height, (total_grid_samples,))
-
-            local_xs = local_xs.reshape(num_grid_cells, self.samples_per_grid_cell, 1)
-            local_ys = local_ys.reshape(num_grid_cells, self.samples_per_grid_cell, 1)
-
-            # num_grid_cells x samples_per_grid_cell x 2
-            local_samples = torch.cat((local_ys, local_xs), dim=2)
-
-            # Row-major order
-            samples = local_samples + self.cell_offsets
-
-            indices = samples[:,:,0]*self.im_width + samples[:,:,1]
-        else:
-            local_xs = torch.randint(0, self.grid_cell_width, (total_grid_samples,))
-            local_ys = torch.randint(0, self.grid_cell_height, (total_grid_samples,))     
-            all_samples = torch.vstack((local_ys, local_xs)).T
-
-            # TODO: There must be a better way
-            samples_per_cell: torch.Tensor = sample_distribution * total_grid_samples
-            samples_per_cell = samples_per_cell.floor().to(torch.int32)
-            remainder = total_grid_samples - samples_per_cell.sum()
-
-            while remainder > len(samples_per_cell):
-                samples_per_cell += 1
-                remainder -= len(samples_per_cell)
-
-            _, best_indices = samples_per_cell.topk(remainder)
-            samples_per_cell[best_indices] += 1
-            
-
-            repeated_cell_offsets = self.cell_offsets.squeeze(1).repeat_interleave(samples_per_cell, dim=0)
-            all_samples += repeated_cell_offsets
-            
-            indices = all_samples[:,0]*self.im_width + all_samples[:,1]
-
-        return indices
-
-
+## Converts rays in Loner format to an open3d point cloude
 def rays_to_o3d(rays, depths, intensities=None):
     origins = rays[:, :3]
     directions = rays[:, 3:6]
@@ -274,6 +221,87 @@ def rays_to_o3d(rays, depths, intensities=None):
 
     return pcd
 
+
+
+class LidarRayDirections:
+    def __init__(self, lidar_scan: LidarScan, chunk_size=512):
+        self.lidar_scan = lidar_scan
+        self._chunk_size = chunk_size
+        self.num_chunks = int(np.ceil(self.lidar_scan.ray_directions.shape[1] / self._chunk_size))
+        
+    def __len__(self):
+        return self.lidar_scan.ray_directions.shape[1]
+
+
+    def fetch_chunk_rays(self, chunk_idx: int, pose: Pose, world_cube: WorldCube, ray_range):
+        start_idx = chunk_idx*self._chunk_size
+        end_idx = min(self.lidar_scan.ray_directions.shape[1], (chunk_idx+1)*self._chunk_size)
+        indices = torch.arange(start_idx, end_idx, 1)
+        pose_mat = pose.get_transformation_matrix()
+        return self.build_lidar_rays(indices, ray_range, world_cube, torch.unsqueeze(pose_mat, 0))[0]
+
+    def build_lidar_rays(self,
+                         lidar_indices: torch.Tensor,
+                         ray_range: torch.Tensor,
+                         world_cube: WorldCube,
+                         lidar_poses: torch.Tensor, # 4x4
+                         ignore_world_cube: bool = False) -> torch.Tensor:
+
+        lidar_scan = self.lidar_scan
+
+        depths = lidar_scan.distances[lidar_indices] / world_cube.scale_factor
+        directions = lidar_scan.ray_directions[:, lidar_indices]
+        timestamps = lidar_scan.timestamps[lidar_indices]
+
+        ray_origins: torch.Tensor = lidar_poses[..., :3, 3]
+        ray_origins = ray_origins + world_cube.shift
+        ray_origins = ray_origins / world_cube.scale_factor
+
+        ray_origins = ray_origins.tile(len(timestamps), 1)
+
+        # N x 3 x 3 (N homogenous transformation matrices)
+        lidar_rotations = lidar_poses[..., :3, :3]
+        
+        # N x 3 x 1. This takes a 3xN matrix and makes it 1x3xN, then Nx3x1
+        directions_3d = directions.unsqueeze(0).swapaxes(0, 2)
+
+        # rotate ray directions from sensor coordinates to world coordinates
+        ray_directions = lidar_rotations @ directions_3d
+
+        # ray_directions is now Nx3x1, we want Nx3.
+        ray_directions = ray_directions.squeeze()
+
+        # Note to self: don't use /= here. Breaks autograd.
+        ray_directions = ray_directions / \
+            torch.norm(ray_directions, dim=1, keepdim=True)
+
+        view_directions = -ray_directions
+
+        if not ignore_world_cube:
+            assert (ray_origins.abs().max(dim=1)[0] > 1).sum() == 0, \
+                f"{(ray_origins.abs().max(dim=1)[0] > 1).sum()//3} ray origins are outside the world cube"
+
+        near = ray_range[0] / world_cube.scale_factor * \
+            torch.ones_like(ray_origins[:, :1])
+        far_range = ray_range[1] / world_cube.scale_factor * \
+            torch.ones_like(ray_origins[:, :1])
+
+        far_clip = get_far_val(ray_origins, ray_directions, no_nan=True)
+        far = torch.minimum(far_range, far_clip)
+
+        rays = torch.cat([ray_origins, ray_directions, view_directions,
+                            torch.zeros_like(ray_origins[:, :2]),
+                            near, far], 1)
+                            
+        # Only rays that have more than 1m inside world
+        if ignore_world_cube:
+            return rays, depths
+        else:
+            valid_idxs = (far > (near + 1. / world_cube.scale_factor))[..., 0]
+            return rays[valid_idxs], depths[valid_idxs]
+
+
+## Converts rays in Loner format to a pcd file
 def rays_to_pcd(rays, depths, rays_fname, origins_fname, intensities=None):
 
     if intensities is None:
@@ -331,3 +359,28 @@ def rays_to_pcd(rays, depths, rays_fname, origins_fname, intensities=None):
         f.write("DATA ascii\n")
         for pt in origins:
             f.write(f"{pt[0]} {pt[1]} {pt[2]} \n")
+
+
+## Converts xyz points to a pcd file
+def points_to_pcd(points, fname, intensities=None):
+
+    if intensities is None:
+        intensities = torch.ones_like(intensities[:, :3])
+    
+    with open(fname, 'w+') as f:
+        if points.shape[0] <= 3:
+            points = points.T
+            assert points.shape[0] > 3, f"Too few points or wrong shape of pcd file."
+        f.write("# .PCD v0.7 - Point Cloud Data file format\n")
+        f.write("VERSION 0.7\n")
+        f.write("FIELDS x y z i\n")
+        f.write("SIZE 4 4 4 4\n")
+        f.write("TYPE F F F F\n")
+        f.write("COUNT 1 1 1 1\n")
+        f.write(f"WIDTH {points.shape[0]}\n")
+        f.write("HEIGHT 1\n")
+        f.write("VIEWPOINT 0 0 0 1 0 0 0\n")
+        f.write(f"POINTS {points.shape[0]}\n")
+        f.write("DATA ascii\n")
+        for pt, intensity in zip(points, intensities):
+            f.write(f"{pt[0]} {pt[1]} {pt[2]} {intensity.item()}\n")

@@ -56,7 +56,7 @@ def sample_pdf(bins, weights, N_importance, det=False, eps=1e-5):
 
 
 # ref: https://github.com/yenchenlin/nerf-pytorch/blob/master/run_nerf.py#L262
-def raw2outputs(raw, z_vals, rays_d, raw_noise_std=0, white_bkgd=False, sigma_only=False, num_colors=3, softplus=False, far=None):
+def raw2outputs(raw, z_vals, rays_d, raw_noise_std=0, white_bkgd=False, sigma_only=False, num_colors=3, softplus=False, far=None, ret_var=False):
     """Transforms model's predictions to semantically meaningful values.
     Args:
         raw: [num_rays, num_samples along ray, 4(sigma_only=False) or 1(sigma_only=True)]. Prediction from model.
@@ -94,11 +94,11 @@ def raw2outputs(raw, z_vals, rays_d, raw_noise_std=0, white_bkgd=False, sigma_on
     # compute alpha by the formula (3)
     if softplus == True:
         # (N_rays, N_samples_)
-        alphas = 1 - \
-            torch.exp(-deltas*torch.nn.functional.softplus(sigmas+noise))
+        alphas = 1 - torch.exp(-deltas*torch.nn.functional.softplus(sigmas+noise))
     else:
         # (N_rays, N_samples_)
         alphas = 1-torch.exp(-deltas*torch.relu(sigmas+noise))
+
     alphas_shifted = \
         torch.cat([torch.ones_like(alphas[:, :1]), 1. -
                   alphas+1e-10], -1)  # [1, a1, a2, ...]
@@ -137,9 +137,9 @@ def raw2outputs(raw, z_vals, rays_d, raw_noise_std=0, white_bkgd=False, sigma_on
         weights_appended = torch.cat(
             [weights, 1-weights.sum(dim=1, keepdim=True)], dim=1)
         # + (1 - weights_sum) * 100
-        depth_map = torch.sum(weights_appended*z_vals_appended, -1)
+        depths = torch.sum(weights_appended*z_vals_appended, -1)
     else:
-        depth_map = torch.sum(weights*z_vals, -1)  # + (1 - weights_sum) * 100
+        depths = torch.sum(weights*z_vals, -1)  # + (1 - weights_sum) * 100
 
     # disp_map = 1./torch.max(1e-10 * torch.ones_like(depth_map), depth_map)
 
@@ -153,7 +153,48 @@ def raw2outputs(raw, z_vals, rays_d, raw_noise_std=0, white_bkgd=False, sigma_on
         if white_bkgd:
             rgb_map = rgb_map + 1-weights.sum(-1, keepdim=True)
 
-    return rgb_map, depth_map, weights, opacity_map
+    if ret_var:
+        variance = (weights * (depths.view(-1, 1) - z_vals)**2).sum(dim=1)
+        return rgb_map, depths, weights, opacity_map, variance
+
+    return rgb_map, depths, weights, opacity_map, None
+
+def inference(model, xyz_, dir_, sigma_only=False, netchunk=32768, detach_sigma=True):
+    """
+    Helper function that performs model inference.
+
+    Inputs:
+        model: NeRF model instantiated using Tiny Cuda NN
+        xyz_: (N_rays, N_samples_, 3) sampled positions
+                N_samples_ is the number of sampled points in each ray;
+        dir_: (N_rays, 3) ray directions
+        sigma_only: do inference on sigma only or not
+    Outputs:
+        if sigma_only:
+            raw: (N_rays, N_samples_, 1): predictions of each sample
+        else:
+            raw: (N_rays, N_samples_, num_colors + 1): predictions of each sample
+    """
+    N_rays, N_samples_ = xyz_.shape[0:2]
+    xyz_ = xyz_.view(-1, 3).contiguous()  # (N_rays*N_samples_, 3)
+    if sigma_only:
+        dir_ = None
+    else:
+        # (N_rays*N_samples_, embed_dir_channels)
+        dir_ = torch.repeat_interleave(
+            dir_, repeats=N_samples_, dim=0).contiguous()
+
+    # Perform model inference to get color and raw sigma
+    B = xyz_.shape[0]
+    if netchunk == 0:
+        out = model(xyz_, dir_, sigma_only, detach_sigma)
+    else:
+        out_chunks = []
+        for i in range(0, B, netchunk):
+            out_chunks += [model(xyz_, dir_, sigma_only, detach_sigma)]
+        out = torch.cat(out_chunks, 0)
+
+    return out.view(N_rays, N_samples_, -1)
 
 
 # Use Fully Fused MLP from Tiny CUDA NN
@@ -171,7 +212,9 @@ def render_rays(rays,
                 netchunk=32768,
                 num_colors=3,
                 sigma_only=False,
-                DEBUG=False
+                DEBUG=False,
+                detach_sigma=True,
+                return_variance = False
                 ):
     """
     Render rays by computing the output of @occ_model, sampling points based on the class probabilities, applying volumetric rendering using @tcnn_model applied on sampled points
@@ -195,44 +238,7 @@ def render_rays(rays,
             acc_map: [num_rays]. Accumulated opacity along each ray.
             raw: [num_rays, num_samples, 4 or 1]. Raw predictions from model.
     """
-
-    def inference(model, xyz_, dir_, sigma_only=False):
-        """
-        Helper function that performs model inference.
-
-        Inputs:
-            model: NeRF model instantiated using Tiny Cuda NN
-            xyz_: (N_rays, N_samples_, 3) sampled positions
-                   N_samples_ is the number of sampled points in each ray;
-            dir_: (N_rays, 3) ray directions
-            sigma_only: do inference on sigma only or not
-        Outputs:
-            if sigma_only:
-                raw: (N_rays, N_samples_, 1): predictions of each sample
-            else:
-                raw: (N_rays, N_samples_, num_colors + 1): predictions of each sample
-        """
-        N_samples_ = xyz_.shape[1]
-        xyz_ = xyz_.view(-1, 3).contiguous()  # (N_rays*N_samples_, 3)
-        if sigma_only:
-            dir_ = None
-        else:
-            # (N_rays*N_samples_, embed_dir_channels)
-            dir_ = torch.repeat_interleave(
-                dir_, repeats=N_samples_, dim=0).contiguous()
-
-        # Perform model inference to get color and raw sigma
-        B = xyz_.shape[0]
-        if netchunk == 0:
-            out = model(xyz_, dir_, sigma_only)
-        else:
-            out_chunks = []
-            for i in range(0, B, netchunk):
-                out_chunks += [model(xyz_, dir_, sigma_only)]
-            out = torch.cat(out_chunks, 0)
-
-        return out.view(N_rays, N_samples_, -1)
-
+    
     # Decompose the inputs
     N_rays = rays.shape[0]
     rays_o, rays_d = rays[:, 0:3], rays[:, 3:6]  # both (N_rays, 3)
@@ -242,19 +248,21 @@ def render_rays(rays,
 
     z_vals = ray_sampler.get_samples(rays, N_samples, perturb)
 
-    xyz_samples = rays_o.unsqueeze(
-        1) + rays_d.unsqueeze(1) * z_vals.unsqueeze(2)  # (N_rays, N_samples, 3)
+    xyz_samples = rays_o.unsqueeze(1) + rays_d.unsqueeze(1) * z_vals.unsqueeze(2)  # (N_rays, N_samples, 3)
 
-    raw = inference(nerf_model, xyz_samples, viewdirs, sigma_only=sigma_only)
+    raw = inference(nerf_model, xyz_samples, viewdirs, netchunk=netchunk, sigma_only=sigma_only, detach_sigma=detach_sigma)
 
-    rgb, depth, weights, opacity = raw2outputs(
-        raw, z_vals, rays_d, raw_noise_std, white_bkgd, sigma_only=sigma_only, num_colors=num_colors, far=far)
+    rgb, depth, weights, opacity, variance = raw2outputs(
+        raw, z_vals, rays_d, raw_noise_std, white_bkgd, sigma_only=sigma_only, num_colors=num_colors, far=far, ret_var=return_variance)
 
     result = {'rgb_fine': rgb,
               'depth_fine': depth,
               'weights_fine': weights,
               'opacity_fine': opacity,
               }
+
+    if return_variance:
+        result["variance"] = variance
 
     if retraw:
         result['samples_fine'] = z_vals
@@ -267,181 +275,3 @@ def render_rays(rays,
             if (torch.isnan(result[k]).any() or torch.isinf(result[k]).any()):
                 print(f"! [Numerical Error] {k} contains nan or inf.")
     return result
-
-
-# Use Fully Fused MLP from Tiny CUDA NN
-# Volumetric rendering
-# Coarse Fine rendering
-def render_rays_cf(rays,
-                   nerf_model_coarse,
-                   nerf_model_fine,
-                   ray_range,
-                   scale_factor,
-                   N_samples=64,
-                   N_importance=192,
-                   retraw=False,
-                   perturb=0,
-                   white_bkgd=False,
-                   raw_noise_std=0.,
-                   netchunk=32768,
-                   num_colors=3,
-                   sigma_only=False,
-                   DEBUG=False
-                   ):
-    """
-    Coarse-fine version of render_rays
-    """
-
-    def inference(model, xyz_, dir_, sigma_only=False):
-        """
-        Helper function that performs model inference.
-
-        Inputs:
-            model: NeRF model instantiated using Tiny Cuda NN
-            xyz_: (N_rays, N_samples_, 3) sampled positions
-                   N_samples_ is the number of sampled points in each ray;
-            dir_: (N_rays, 3) ray directions
-            sigma_only: do inference on sigma only or not
-        Outputs:
-            if sigma_only:
-                raw: (N_rays, N_samples_, 1): predictions of each sample
-            else:
-                raw: (N_rays, N_samples_, num_colors + 1): predictions of each sample
-        """
-        N_samples_ = xyz_.shape[1]
-        xyz_ = xyz_.view(-1, 3).contiguous()  # (N_rays*N_samples_, 3)
-        if sigma_only:
-            dir_ = None
-        else:
-            # (N_rays*N_samples_, embed_dir_channels)
-            dir_ = torch.repeat_interleave(
-                dir_, repeats=N_samples_, dim=0).contiguous()
-
-        # Perform model inference to get color and raw sigma
-        B = xyz_.shape[0]
-        if netchunk == 0:
-            out = model(xyz_, dir_, sigma_only)
-        else:
-            out_chunks = []
-            for i in range(0, B, netchunk):
-                out_chunks += [model(xyz_, dir_, sigma_only)]
-            out = torch.cat(out_chunks, 0)
-
-        return out.view(N_rays, N_samples_, -1)
-
-    # Decompose the inputs
-    N_rays = rays.shape[0]
-    rays_o, rays_d = rays[:, 0:3], rays[:, 3:6]  # both (N_rays, 3)
-    viewdirs = rays[:, 6:9]  # (N_rays, 3)
-    near = rays[:, -2:-1]
-    far = rays[:, -1:]
-
-    # Sample depth points
-    z_steps = torch.linspace(
-        0, 1, N_samples, device=rays.device)  # (N_samples)
-    # use linear sampling in depth space
-    z_vals = near * (1-z_steps) + far * z_steps
-    z_vals = z_vals.expand(N_rays, N_samples)
-
-    xyz_samples_coarse = rays_o.unsqueeze(
-        1) + rays_d.unsqueeze(1) * z_vals.unsqueeze(2)  # (N_rays, N_samples, 3)
-
-    raw = inference(nerf_model_coarse, xyz_samples_coarse,
-                    viewdirs, sigma_only=sigma_only)
-
-    rgb_coarse, depth_coarse, weights_coarse, opacity_coarse = raw2outputs(
-        raw, z_vals, rays_d, raw_noise_std, white_bkgd, sigma_only=sigma_only, num_colors=num_colors, far=far)
-
-    result = {'rgb_coarse': rgb_coarse,
-              'depth_coarse': depth_coarse,
-              'weights_coarse': weights_coarse,
-              'opacity_coarse': opacity_coarse
-              }
-
-    if retraw:
-        result['samples_coarse'] = z_vals
-        result['points_coarse'] = xyz_samples_coarse
-
-    if N_importance > 0:
-        # (N_rays, N_samples-1) interval mid points
-        z_vals_mid = 0.5 * (z_vals[:, :-1] + z_vals[:, 1:])
-        z_vals_ = sample_pdf(
-            z_vals_mid, weights_coarse[:, 1:-1], N_importance, det=False).detach()
-        # detach so that grad doesn't propogate to weights_coarse from here
-
-        z_vals, _ = torch.sort(torch.cat([z_vals, z_vals_], -1), -1)
-
-        if perturb > 0:  # perturb sampling depths (z_vals)
-            # (N_rays, N_samples-1) interval mid points
-            z_vals_mid = 0.5 * (z_vals[:, :-1] + z_vals[:, 1:])
-            # get intervals between samples
-            upper = torch.cat([z_vals_mid, z_vals[:, -1:]], -1)
-            lower = torch.cat([z_vals[:, :1], z_vals_mid], -1)
-            perturb_rand = perturb * \
-                torch.rand(z_vals.shape, device=rays.device)
-            z_vals = lower + (upper - lower) * perturb_rand
-
-        # (N_rays, N_samples+N_importance, 3)
-        xyz_samples_fine = rays_o.unsqueeze(
-            1) + rays_d.unsqueeze(1) * z_vals.unsqueeze(2)
-
-        raw = inference(nerf_model_fine, xyz_samples_fine,
-                        viewdirs, sigma_only=sigma_only)
-
-        rgb_fine, depth_fine, weights_fine, opacity_fine = raw2outputs(
-            raw, z_vals, rays_d, raw_noise_std, white_bkgd, sigma_only=sigma_only, num_colors=num_colors, far=far)
-
-        result['rgb_fine'] = rgb_fine
-        result['depth_fine'] = depth_fine
-        result['weights_fine'] = weights_fine
-        result['opacity_fine'] = opacity_fine
-
-        if retraw:
-            result['samples_fine'] = z_vals
-            result['points_fine'] = xyz_samples_fine
-
-    if DEBUG:
-        result['raw_fine'] = raw
-
-        for k in result:
-            if (torch.isnan(result[k]).any() or torch.isinf(result[k]).any()):
-                print(f"! [Numerical Error] {k} contains nan or inf.")
-    return result
-
-
-def inference(model, xyz_, dir_, netchunk=32768, sigma_only=False):
-    """
-    Helper function that performs model inference.
-
-    Inputs:
-        model: NeRF model instantiated using Tiny Cuda NN
-        xyz_: (N_rays, N_samples_, 3) sampled positions
-                N_samples_ is the number of sampled points in each ray;
-        dir_: (N_rays, 3) ray directions
-        sigma_only: do inference on sigma only or not
-    Outputs:
-        if sigma_only:
-            raw: (N_rays, N_samples_, 1): predictions of each sample
-        else:
-            raw: (N_rays, N_samples_, num_colors + 1): predictions of each sample
-    """
-    # N_samples_ = xyz_.shape[1]
-    xyz_ = xyz_.view(-1, 3).contiguous()  # (N_rays*N_samples_, 3)
-    if sigma_only:
-        dir_ = None
-    # else:
-    #     # (N_rays*N_samples_, embed_dir_channels)
-    #     dir_ = torch.repeat_interleave(
-    #         dir_, repeats=N_samples_, dim=0).contiguous()
-
-    # Perform model inference to get color and raw sigma
-    B = xyz_.shape[0]
-    if netchunk == 0:
-        out = model(xyz_, dir_, sigma_only)
-    else:
-        out_chunks = []
-        for i in range(0, B, netchunk):
-            out_chunks += [model(xyz_, dir_, sigma_only)]
-        out = torch.cat(out_chunks, 0)
-    return out
-    # return out.view(N_rays, N_samples_, -1)

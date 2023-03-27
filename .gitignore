@@ -18,6 +18,7 @@ ws_outputs/
 temp/
 
 test/outputs/
+sandbox/
 
 examples/fusion_portable/feature_index/
 *.npy

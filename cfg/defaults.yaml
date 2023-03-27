@@ -1,0 +1,143 @@
+### File: defaults.yaml
+### Provides default settings for loner slam
+
+
+# This should be overwritten  at runtime by reading data logs,
+# camera info messages, etc.
+calibration:
+  lidar_to_camera:
+    xyz: [0,0,0]
+    orientation: [0,0,0,1] 
+  camera_intrinsic:
+    k: NULL
+    distortion: NULL
+    new_k: NULL
+    width: NULL
+    height: NULL
+
+debug:
+  global_enabled: True
+  flags:
+    pytorch_detect_anomaly: False
+    draw_comp_graph: False
+    draw_rays_eps: False
+    write_ray_point_clouds: False
+    write_frame_point_clouds: False
+    write_icp_point_clouds: False
+    profile_optimizer: False
+    use_groundtruth_poses: False
+    draw_loss_distribution: False
+    log_losses: False
+    profile: False
+    draw_samples: False
+    visualize_loss: False
+    
+mapper:
+  device: 0 # don't change this, use CUDA_VISIBLE_DEVICES
+  data_prep_on_cpu: &data_prep_on_cpu True
+  log_verbose: False
+  keyframe_manager:
+    keyframe_selection:
+      strategy: TEMPORAL
+      temporal:
+        time_diff_seconds: &keyframe_interval 1
+    window_selection:
+      strategy: HYBRID
+      hybrid_settings:
+        num_recent_frames: 5
+      window_size: 10
+  optimizer:
+    fix_poses: False # Overrides all other related settings and disables poses
+    data_prep_on_cpu: *data_prep_on_cpu
+    enabled: True
+    detach_rgb_from_poses: True
+    detach_rgb_from_sigma: True
+    skip_pose_refinement: True # If set, skips the tracking refinement part of the optimization
+    num_samples:
+      rgb: 512
+      lidar: 512
+    rays_selection:
+      strategy: RANDOM # FIX, MASK     
+    keyframe_schedule:
+      - 
+        num_keyframes: 1
+        iteration_schedule:
+          - num_iterations: 50
+            stage: 3
+            fix_poses: True
+            fix_sigma_mlp: False
+            fix_rgb_mlp: False
+      -
+        num_keyframes: -1
+        iteration_schedule:
+          # First refine the tracking (skipped by default)
+          - stage: 1
+            num_iterations: 50
+            fix_poses: False
+            latest_kf_only: True
+            fix_sigma_mlp: True
+            fix_rgb_mlp: True
+          # Now joint optimization
+          - stage: 3
+            num_iterations: 150
+            fix_poses: False
+            fix_sigma_mlp: False
+            fix_rgb_mlp: False
+
+    model_config: !include ./model_config/default_model_config.yaml
+  
+system:
+  single_threaded: True
+  log_dir_prefix: "~/LonerSLAM/outputs"
+  lidar_only: True
+  
+  image_scale_factor: 0.5 # Setting is put here to emphasize that it needs to influence calibration loading
+
+  synchronization: &synchronization
+    enabled: True
+    max_time_delta: *keyframe_interval
+
+  world_cube:
+    # If you don't have groundtruth, set this to False and specify a traj bounding box as demonstrated below
+    # The trajectory will be padded by ray range
+    compute_from_groundtruth: True
+    trajectory_bounding_box:
+      x: [-10, 10]
+      y: [-10, 10]
+      z: [-10, 10]
+
+  # For Ouster, timestamps start at 0, and we need to add the start time of the scan
+  lidar_timestamps_relative_to_start: True 
+  ros_names:
+    camera: "stereo/frame_left"
+    lidar: "os_cloud_node/points"
+    camera_suffix: "image_raw"
+    topic_prefix: "" 
+tracker:
+  synchronization: *synchronization
+  frame_synthesis:
+    strategy: NULL
+    sky_removal: NULL
+    frame_decimation_rate_hz: 10
+    frame_match_tolerance: 0.01
+    lidar_point_step: 10 # Only keep 1 out of this many lidar points
+  icp:
+    schedule:
+      - 
+        threshold: 1.5
+        max_iterations: 5
+        relative_fitness: 1.e-8
+        relative_rmse: 1.e-8
+      - 
+        threshold: 0.125
+        max_iterations: 20
+        relative_fitness: 1.e-8
+        relative_rmse: 1.e-8
+    downsample:
+      type: UNIFORM
+      target_uniform_point_count: 10000
+      voxel_downsample_size: 0.1
+  motion_compensation:
+    enabled: True
+    use_gpu: True
+

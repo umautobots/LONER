@@ -39,6 +39,7 @@ MAX_RANGE = 150
 parser = argparse.ArgumentParser("stereo to rgbd")
 parser.add_argument("rosbag_path", type=str)
 parser.add_argument("calib_path", type=str)
+parser.add_argument("output_path", type=str)
 parser.add_argument("--gui", action="store_true",default=False)
 parser.add_argument("--raft", action="store_true",default=False)
 parser.add_argument("--build_rosbag", action="store_true", default=False)
@@ -457,7 +458,7 @@ elif args.build_rosbag:
 
     bag_it = peekable(bag.read_messages(topics=["/stereo/frame_left/image_raw", "/stereo/frame_right/image_raw", "/os_cloud_node/points"]))
     
-    output_bag = rosbag.Bag(f"/mnt/ws-frb/projects/cloner_slam/fusion_portable/{rosbag_path.parent.name}/{rosbag_path.stem}_rgbd.bag", 'w')
+    output_bag = rosbag.Bag(args.output_path)
 
     msg_seq = 0
     lidar_seq = 0

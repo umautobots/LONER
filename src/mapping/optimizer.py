@@ -17,7 +17,8 @@ from matplotlib import pyplot as plt
 from scipy.stats import norm
 
 from common.pose_utils import WorldCube
-from common.ray_utils import CameraRayDirections, rays_to_pcd
+from common.ray_utils import CameraRayDirections, rays_to_pcd, points_to_pcd
+import open3d as o3d
 from common.settings import Settings
 from mapping.keyframe import KeyFrame
 from models.losses import (get_logits_grad, get_weights_gt, img_to_mse,
@@ -48,7 +49,7 @@ class OptimizationSettings:
 
 
 class Optimizer:
-    """ The Optimizer module is used to run iterations of the CLONeR Optimization.
+    """ The Optimizer module is used to run iterations of the Loner Optimization.
 
     The KeyFrameManager supplies the Optimizer with a window of KeyFrame objects,
     which the Optimizer then uses to draw samples and iterate the optimization
@@ -60,7 +61,8 @@ class Optimizer:
     # @param world_cube: The world cube pre-computed that is used to scale the world.
     # @param device: Which device to put the data on and run the optimizer on
     def __init__(self, settings: Settings, calibration: Settings, world_cube: WorldCube, device: int,
-                 use_gt_poses: bool = False):
+                 use_gt_poses: bool = False, lidar_only: bool = True):
+
         self._settings = settings
         self._calibration = calibration
         self._device = device
@@ -69,11 +71,7 @@ class Optimizer:
 
         self._optimization_settings = OptimizationSettings()
 
-        # We pre-create random numbers to lookup at runtime to save runtime.
-        # This kills a lot of memory, but saves a ton of runtime
-        # self._lidar_shuffled_indices = torch.randperm(MAX_POSSIBLE_LIDAR_RAYS)
-        self._rgb_shuffled_indices = torch.randperm(
-            calibration.camera_intrinsic.width * calibration.camera_intrinsic.height)
+        self._lidar_only = lidar_only
 
         self._model_config = settings.model_config
 
@@ -104,7 +102,15 @@ class Optimizer:
         self._ray_sampler = OccGridRaySampler()
         self._ray_sampler.update_occ_grid(self._occupancy_grid.detach())
 
-        self._cam_ray_directions = CameraRayDirections(calibration, device=self._data_prep_device)
+        if not self._lidar_only:
+            # We pre-create random numbers to lookup at runtime to save runtime.
+            # This kills a lot of memory, but saves a ton of runtime
+            # self._lidar_shuffled_indices = torch.randperm(MAX_POSSIBLE_LIDAR_RAYS)
+            self._rgb_shuffled_indices = torch.randperm(
+                calibration.camera_intrinsic.width * calibration.camera_intrinsic.height)
+
+            self._cam_ray_directions = CameraRayDirections(calibration, device=self._data_prep_device)
+    
         self._keyframe_count = 0
         self._global_step = 0
 
@@ -116,9 +122,11 @@ class Optimizer:
         self._num_rgb_samples = self._settings.num_samples.rgb
         self._num_lidar_samples = self._settings.num_samples.lidar
 
+        self._grad_log = []
+
     ## Run one or more iterations of the optimizer, as specified by the stored settings
     # @param keyframe_window: The set of keyframes to use in the optimization.
-    def iterate_optimizer(self, keyframe_window: List[KeyFrame]) -> float:
+    def iterate_optimizer(self, keyframe_window: List[KeyFrame], optimizer_settings: OptimizationSettings = None) -> float:
 
         # Look at the keyframe schedule and figure out which iteration schedule to use
         cumulative_kf_idx = 0
@@ -146,7 +154,7 @@ class Optimizer:
             
             prof.start()
             start_time = time.time()
-            result = self._do_iterate_optimizer(keyframe_window, iteration_schedule, prof)
+            result = self._do_iterate_optimizer(keyframe_window, iteration_schedule, prof, optimizer_settings=optimizer_settings)
             end_time = time.time()
             prof.stop()
 
@@ -154,7 +162,7 @@ class Optimizer:
 
         else:          
             start_time = time.time()
-            result = self._do_iterate_optimizer(keyframe_window, iteration_schedule)
+            result = self._do_iterate_optimizer(keyframe_window, iteration_schedule, optimizer_settings=optimizer_settings)
             end_time = time.time()
             elapsed_time = end_time - start_time
 
@@ -166,7 +174,8 @@ class Optimizer:
         self._keyframe_count += 1
         return result
 
-    def _do_iterate_optimizer(self, keyframe_window: List[KeyFrame], iteration_schedule: dict, profiler: profile = None) -> float:
+    def _do_iterate_optimizer(self, keyframe_window: List[KeyFrame], iteration_schedule: dict, 
+                              profiler: profile = None, optimizer_settings: OptimizationSettings = None) -> float:
         
         if len(keyframe_window) == 1:
             keyframe_window[0].is_anchored = True
@@ -181,18 +190,22 @@ class Optimizer:
         for iteration_config in iteration_schedule:
             losses_log.append([])
             depth_eps_log.append([])
-
-            self._optimization_settings.freeze_poses = iteration_config["fix_poses"] or self._settings.fix_poses
             
-            if "latest_kf_only" in iteration_config:
-                self._optimization_settings.latest_kf_only = iteration_config["latest_kf_only"]
-            else:
-                self._optimization_settings.latest_kf_only = False
+            if optimizer_settings is None:
+                self._optimization_settings.freeze_poses = iteration_config["fix_poses"] or self._settings.fix_poses
+                
+                if "latest_kf_only" in iteration_config:
+                    self._optimization_settings.latest_kf_only = iteration_config["latest_kf_only"]
+                else:
+                    self._optimization_settings.latest_kf_only = False
 
-            self._optimization_settings.freeze_rgb_mlp = iteration_config["fix_rgb_mlp"]
-            self._optimization_settings.freeze_sigma_mlp = iteration_config["fix_sigma_mlp"]
-            self._optimization_settings.num_iterations = iteration_config["num_iterations"]
-            self._optimization_settings.stage = iteration_config["stage"]
+                self._optimization_settings.freeze_rgb_mlp = iteration_config["fix_rgb_mlp"]
+                self._optimization_settings.freeze_sigma_mlp = iteration_config["fix_sigma_mlp"]
+                self._optimization_settings.num_iterations = iteration_config["num_iterations"]
+                self._optimization_settings.stage = 1 if self._lidar_only else iteration_config["stage"]
+            else:
+                self._optimization_settings = optimizer_settings
+                self._optimization_settings.freeze_poses = self._optimization_settings.freeze_poses or self._settings.fix_poses 
 
             self._ray_sampler.update_occ_grid(self._occupancy_grid.detach())
 
@@ -215,20 +228,22 @@ class Optimizer:
             for kf in active_keyframe_window:
                 if not kf.is_anchored:
                     kf.get_lidar_pose().set_fixed(not optimize_poses)
-
+            
             if optimize_poses:
                 optimizable_poses = [kf.get_lidar_pose().get_pose_tensor() for kf in active_keyframe_window if not kf.is_anchored]
                         
                 self._optimizer = torch.optim.Adam([{'params': self._model.get_sigma_parameters(), 'lr': self._model_config.train.lrate_sigma_mlp},
-                                                    {'params': self._model.get_rgb_mlp_parameters(), 'lr': self._model_config.train.lrate_rgb_mlp},
-                                                    {'params': self._model.get_rgb_feature_parameters(), 'lr': self._model_config.train.lrate_rgb_features},
+                                                    {'params': self._model.get_rgb_mlp_parameters(), 'lr': self._model_config.train.lrate_rgb,
+                                                        'weight_decay': self._model_config.train.rgb_weight_decay},
+                                                    {'params': self._model.get_rgb_feature_parameters(), 'lr': self._model_config.train.lrate_rgb},
                                                     {'params': optimizable_poses, 'lr': self._model_config.train.lrate_pose}])
 
             else:
                 self._optimizer = torch.optim.Adam([{'params': self._model.get_sigma_parameters(), 'lr': self._model_config.train.lrate_sigma_mlp},
-                                                    {'params': self._model.get_rgb_mlp_parameters(), 'lr': self._model_config.train.lrate_rgb_mlp},
-                                                    {'params': self._model.get_rgb_feature_parameters(), 'lr': self._model_config.train.lrate_rgb_features}])
-
+                                                    {'params': self._model.get_rgb_mlp_parameters(), 'lr': self._model_config.train.lrate_rgb,
+                                                        'weight_decay': self._model_config.train.rgb_weight_decay},
+                                                    {'params': self._model.get_rgb_feature_parameters(), 'lr': self._model_config.train.lrate_rgb}])
+                
             lrate_scheduler = torch.optim.lr_scheduler.ExponentialLR(self._optimizer, self._model_config.train.lrate_gamma)
 
             for it_idx in tqdm.tqdm(range(self._optimization_settings.num_iterations)):
@@ -301,23 +316,33 @@ class Optimizer:
 
                 loss = self.compute_loss(camera_samples, lidar_samples, it_idx)
 
-                if torch.isnan(loss):
-                    print("Warning: NaN Loss Encountered")
-                    breakpoint()
-                else:
-                    losses_log[-1].append(loss.detach().cpu().item())
+                losses_log[-1].append(loss.detach().cpu().item())
+
+                if self.should_enable_lidar():
                     depth_eps_log[-1].append(self._depth_eps)
 
-                    if self._settings.debug.draw_comp_graph:
-                        graph_dir = f"{self._settings.log_directory}/graphs"
-                        os.makedirs(graph_dir, exist_ok=True)
-                        loss_dot = torchviz.make_dot(loss)
-                        loss_dot.format = "png"
-                        loss_dot.render(directory=graph_dir, filename=f"iteration_{self._global_step}")
+                if self._settings.debug.draw_comp_graph:
+                    graph_dir = f"{self._settings.log_directory}/graphs"
+                    os.makedirs(graph_dir, exist_ok=True)
+                    loss_dot = torchviz.make_dot(loss)
+                    loss_dot.format = "png"
+                    loss_dot.render(directory=graph_dir, filename=f"iteration_{self._global_step}")
 
-                    loss.backward(retain_graph=False)
-                    self._optimizer.step()
-                    lrate_scheduler.step()
+                loss.backward(retain_graph=False)
+                
+                for kf in keyframe_window:
+                    if kf.get_lidar_pose().get_pose_tensor().grad is not None:
+                        self._grad_log.append(kf.get_lidar_pose().get_pose_tensor().grad.cpu().clone())                   
+                    if kf.get_lidar_pose().get_pose_tensor().grad is not None and not kf.get_lidar_pose().get_pose_tensor().grad.isfinite().all():
+                        raise RuntimeError("Fatal: Encountered invalid gradient in pose.")
+
+                for kf in keyframe_window:
+                    if not kf.get_lidar_pose().get_pose_tensor().isfinite().all():
+                        raise RuntimeError("Fatal: Encountered pose tensor.")
+                
+                self._optimizer.step()
+
+                lrate_scheduler.step()
 
                 self._optimizer.zero_grad(set_to_none=True)
 
@@ -352,6 +377,9 @@ class Optimizer:
 
     ## @returns whether or not the camera should be use, as indicated by the settings
     def should_enable_camera(self) -> bool:
+        if self._lidar_only:
+            return False
+
         return self._optimization_settings.stage in [2, 3] \
                 and (not self._optimization_settings.freeze_rgb_mlp \
                      or (not self._settings.detach_rgb_from_poses \
@@ -384,12 +412,11 @@ class Optimizer:
             opaque_rays = (lidar_depths > 0)[..., 0]
 
             # Rendering lidar rays. Results need to be in class for occ update to happen
-            self._results_lidar = self._model(
-                lidar_rays, self._ray_sampler, scale_factor, camera=False)
+            self._results_lidar = self._model(lidar_rays, self._ray_sampler, scale_factor, camera=False)
+
             # (N_rays, N_samples)
             # Depths along ray
-            self._lidar_depth_samples_fine = self._results_lidar['samples_fine'] * \
-                scale_factor
+            self._lidar_depth_samples_fine = self._results_lidar['samples_fine'] * scale_factor
 
             self._lidar_depths_gt = lidar_depths * scale_factor
             weights_pred_lidar = self._results_lidar['weights_fine']
@@ -419,12 +446,10 @@ class Optimizer:
                 eps_dynamic = torch.unsqueeze(eps_dynamic, dim=-1).detach()
                 self._depth_eps = float(np.average(eps_dynamic.detach().cpu().numpy()))
                 weights_gt_lidar = get_weights_gt(self._lidar_depth_samples_fine, self._lidar_depths_gt, eps=eps_dynamic) # [N_rays, N_samples]
-                
-                ##### new loss #####
-                # weights_gt_lidar[self._lidar_depth_samples_fine > self._lidar_depths_gt+3*eps_min] = 0
-                ##### new loss end #####
 
-                if self._model_config.loss.visualize_loss:
+                weights_gt_lidar[~opaque_rays, :] = 0
+
+                if self._settings.debug.visualize_loss and self._keyframe_count > 1:
                     # viz_idx = np.where(js_score.detach().cpu().numpy() == max_js_score)[0] # show rays that haven't converged
                     viz_idx = np.array([0]) # show the first ray
                     self.visualize_loss(iteration_idx, viz_idx, opaque_rays, weights_gt_lidar, weights_pred_lidar, \
@@ -439,40 +464,34 @@ class Optimizer:
                 weights_gt_lidar = get_weights_gt(
                     self._lidar_depth_samples_fine, self._lidar_depths_gt, eps=self._depth_eps)
                 
-                if self._model_config.loss.visualize_loss:
+                weights_gt_lidar[~opaque_rays, :] = 0
+                
+                if self._settings.debug.visualize_loss and self._keyframe_count > 1:
                     # viz_idx = np.where(js_score.detach().cpu().numpy() == max_js_score)[0] # show rays that haven't converged
                     viz_idx = np.array([0]) # show the first ray
                     self.visualize_loss(iteration_idx, viz_idx, opaque_rays, weights_gt_lidar, weights_pred_lidar, \
                                     mean, var, js_score, \
                                     self._lidar_depth_samples_fine, self._lidar_depths_gt, self._depth_eps)
             
-            weights_gt_lidar[~opaque_rays, :] = 0
+            if self._settings.debug.draw_samples:
+                points = self._results_lidar["points_fine"].view(-1, 3).detach().cpu()
+                weights = self._results_lidar["weights_fine"].view(-1, 1).detach().cpu().flatten()
 
-            ##### new loss2 #####
-            # eps_min = self._model_config.loss.min_depth_eps
-            # weights_pred_lidar[self._lidar_depth_samples_fine > self._lidar_depths_gt+3*eps_min] = 0
-            # weights_gt_lidar[self._lidar_depth_samples_fine > self._lidar_depths_gt+3*eps_min] = 0
-            ##### new loss2 end #####
+                points *= self._world_cube.scale_factor
+                points -= self._world_cube.shift
 
-            # if self._settings.debug.draw_samples:
-            #     points = self._results_lidar["points_fine"].view(-1, 3).detach().cpu()
-            #     weights = self._results_lidar["weights_fine"].view(-1, 1).detach().cpu().flatten()
+                points_est = points[weights > 1e-5]
+                weights_est = weights[weights > 1e-5]
 
-            #     points *= self._world_cube.scale_factor
-            #     points -= self._world_cube.shift
+                weights_gt = weights_gt_lidar.view(-1, 1).detach().cpu().flatten()
+                points_gt = points[weights_gt > 1e-5]
+                weights_gt = weights_gt[weights_gt > 1e-5]
 
-            #     points_est = points[weights > 1e-5]
-            #     weights_est = weights[weights > 1e-5]
+                samples_dir = f"{self._settings.log_directory}/samples"
+                os.makedirs(samples_dir, exist_ok=True)
+                points_to_pcd(points_est, f"{samples_dir}/samples_kf{self._keyframe_count}_it{iteration_idx}.pcd", weights_est)
+                points_to_pcd(points_gt, f"{samples_dir}/samples_kf{self._keyframe_count}_it{iteration_idx}_gt.pcd", weights_gt)
 
-            #     weights_gt = weights_gt_lidar.view(-1, 1).detach().cpu().flatten()
-            #     points_gt = points[weights_gt > 1e-5]
-            #     weights_gt = weights_gt[weights_gt > 1e-5]
-
-            #     samples_dir = f"{self._settings.log_directory}/samples"
-            #     os.makedirs(samples_dir, exist_ok=True)
-            #     points_to_pcd(points_est, f"{samples_dir}/samples_{self._global_step}.pcd", weights_est)
-            #     points_to_pcd(points_gt, f"{samples_dir}/samples_{self._global_step}_gt.pcd", weights_gt)
-            print('self._settings.debug.draw_rays_eps', self._settings.debug.draw_rays_eps)
             if self._settings.debug.draw_rays_eps:
                 rays_eps_dir = f"{self._settings.log_directory}/rays_eps"
                 os.makedirs(rays_eps_dir, exist_ok=True)
@@ -480,9 +499,7 @@ class Optimizer:
                 origins_fname = f"{rays_eps_dir}/origins_kf{self._keyframe_count}_it{iteration_idx}.pcd"
 
                 lidar_rays, lidar_depths = lidar_samples
-                print('eps_dynamic: ', torch.max(eps_dynamic), torch.min(eps_dynamic))
                 eps_dynamic_max = eps_min*(1+(alpha * self._model_config.loss.JS_loss.max_js_score)) + 1e-5
-                print('eps_dynamic_max: ', eps_dynamic_max)
                 eps_dynamic = eps_dynamic / eps_dynamic_max
                 color = eps_dynamic.repeat(1, 3)
                 rays_to_pcd(lidar_rays, lidar_depths, rays_fname, origins_fname, color)
@@ -502,9 +519,9 @@ class Optimizer:
             loss += self._model_config.loss.depthloss_lambda * depth_loss_fine
             wandb_logs['loss_depth'] = depth_loss_fine.item()
 
-            # loss_opacity_lidar = torch.abs(
-            #     self._results_lidar['opacity_fine'][opaque_rays] - 1).mean()
-            loss_opacity_lidar = torch.abs(torch.sum(weights_pred_lidar, -1)[opaque_rays] - 1).mean()
+            loss_opacity_lidar = torch.abs(
+                self._results_lidar['opacity_fine'][opaque_rays] - 1).mean()
+
             loss += loss_opacity_lidar
             wandb_logs['loss_opacity_lidar'] = loss_opacity_lidar.item()
 
@@ -535,7 +552,7 @@ class Optimizer:
                 -1, self._model_config.model.num_colors)
 
             results_cam = self._model(
-                cam_rays, self._ray_sampler, scale_factor)
+                cam_rays, self._ray_sampler, scale_factor, detach_sigma=self._settings.detach_rgb_from_sigma)
 
             psnr_fine = mse_to_psnr(
                 img_to_mse(results_cam['rgb_fine'], cam_intensities))
@@ -572,11 +589,8 @@ class Optimizer:
                 depths_weighted_var + 1e-8).mean() - (1 + 1e-8))
             loss += self._model_config.loss.std_lambda * loss_std_cam
             wandb_logs['loss_std_cam'] = loss_std_cam.item()
-
-        # wandb.log({}, commit=True)
-        if torch.isnan(loss):
-            breakpoint()
-            assert not torch.isnan(loss), "NaN Loss Encountered"
+   
+        assert not torch.isnan(loss), "NaN Loss Encountered"
             
         return loss
 
@@ -659,13 +673,13 @@ class Optimizer:
                     plt.title('Iter: %d\n mean: %1.3f std: %1.3f\n mean err: %1.3f std err: %1.3f' % (i, u, np.sqrt(variance), depth_gt_lidar[j]-u, eps_min-np.sqrt(variance)))
 
                 x_axis = np.arange(np.amin(x), np.amax(x), 0.01)
-                plt.plot(x_axis, norm.pdf(x_axis, u, np.sqrt(variance)) * (0.5/np.amax(norm.pdf(x_axis, u, np.sqrt(variance)))), '-m', linewidth=2) # np.amax(y)
+                plt.plot(x_axis, norm.pdf(x_axis, u, np.sqrt(variance)), '-m', linewidth=2) # np.amax(y)
                 #plt.plot(x_axis, norm.pdf(x_axis, depth_gt_lidar[0], depth_eps) * np.amax(y), '-g', linewidth=3)
                 plt.plot(x_axis, norm.pdf(x_axis, depth_gt_lidar[j], eps_min) * (0.5/np.amax(norm.pdf(x_axis, depth_gt_lidar[j], eps_min))), '-g', linewidth=2)
                 if self._model_config.loss.use_JS_loss:
                     plt.plot(x_axis, norm.pdf(x_axis, depth_gt_lidar[j], eps_dynamic_[j]) * (0.5/np.amax(norm.pdf(x_axis, depth_gt_lidar[j], eps_dynamic_[j]))), '-r', linewidth=2)
                 else:
-                    plt.plot(x_axis, norm.pdf(x_axis, depth_gt_lidar[j], depth_eps_) * (0.5/np.amax(norm.pdf(x_axis, depth_gt_lidar[j], depth_eps_))), '-r', linewidth=2)
+                    plt.plot(x_axis, norm.pdf(x_axis, depth_gt_lidar[j], depth_eps_), '-r', linewidth=2)
                 plt.xlabel("Dist. (m)")
                 plt.ylabel("Predicted weight")
                 plt.legend(["Sample results", "Sample gt", "Sample distribution", "Goal distribution", "Training distribution"], loc ="upper center")

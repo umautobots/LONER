@@ -13,13 +13,23 @@
       "justMyCode": true
     },
     {
-      "name": "ClonerSLAM: Fusion Portable",
+      "name": "LonerSLAM: Fusion Portable",
       "type": "python",
       "request": "launch",
-      "program": "${workspaceFolder}/examples/fusion_portable/run_fusion_portable.py",
+      "program": "${workspaceFolder}/examples/run_rosbag.py",
       "console": "integratedTerminal",
-      "args": ["${workspaceFolder}/cfg/fusion_portable/canteen.yaml"],
-      "cwd": "${workspaceFolder}/examples/fusion_portable",
+      "args": ["${workspaceFolder}/cfg/fusion_portable/canteen.yaml", "--lite"],
+      "cwd": "${workspaceFolder}/examples",
+      "subProcess": true
+    },
+    {
+      "name": "LonerSLAM: Hilti",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/examples/run_rosbag.py",
+      "console": "integratedTerminal",
+      "args": ["${workspaceFolder}/cfg/hilti_exp21.yaml", "--lite"],
+      "cwd": "${workspaceFolder}/examples",
       "subProcess": true
     },
     {
@@ -28,8 +38,29 @@
       "request": "launch",
       "program": "${workspaceFolder}/analysis/renderer.py",
       "console": "integratedTerminal",
-      "args": ["${workspaceFolder}/outputs/canteen_031023_141950", "--no_render_stills", "--render_video"],
+      "args": ["${workspaceFolder}/outputs/debug_nan_031223_155004", "--render_video"],
       "cwd": "${workspaceFolder}/analysis",
+      "subProcess": true
+    },
+    {
+      "name": "lidar_renderer",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/sandbox/lidar_renderer/renderer_lidar.py",
+      "console": "integratedTerminal",
+      "args": ["/mnt/ws-frb/projects/loner_slam/results/map_ablation_study/canteen_proposed_031323_143441/config_0/trial_0/"],
+      "cwd": "${workspaceFolder}/analysis",
+      "subProcess": true
+    },
+    {
+      "name": "Debug Crash",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/analysis/debug_crash.py",
+      "console": "integratedTerminal",
+      "args": ["${workspaceFolder}/examples/fusion_portable/saved_crash_state.tar",
+              "${workspaceFolder}/outputs/garden_031823_212408/trial_0/full_config.pkl"],
+      "cwd": "${workspaceFolder}/examples/fusion_portable",
       "subProcess": true
     }
   ]

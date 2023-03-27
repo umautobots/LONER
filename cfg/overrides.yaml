@@ -1,0 +1,8 @@
+mapper:
+  optimizer:
+    model_config:
+      loss:
+        JS_loss:
+          alpha: [2, 5, 7]
+          max_js_score: [5, 10, 20]
+      min_depth_eps: [0.05, 0.1, 0.3]

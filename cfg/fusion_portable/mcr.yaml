@@ -1,6 +1,22 @@
-baseline: fusion_portable/defaults.yaml
-dataset: /hostroot/mnt/ws-frb/projects/cloner_slam/fusion_portable/20220219_MCR_slow_01/20220219_MCR_slow_01_ref.bag
-calibration: /hostroot/mnt/ws-frb/projects/cloner_slam/fusion_portable/calibration/20220209_calib
-groundtruth_traj: /hostroot/mnt/ws-frb/projects/cloner_slam/fusion_portable/20220219_MCR_slow_01/ground_truth_traj.txt
-experiment_name: mcr_occ_size1000_lr0.001
-changes: NULL
+# baseline: fusion_portable/defaults.yaml
+# dataset: /hostroot/mnt/ws-frb/projects/cloner_slam/fusion_portable/20220219_MCR_slow_01/20220219_MCR_slow_01_ref.bag
+# calibration: /hostroot/mnt/ws-frb/projects/cloner_slam/fusion_portable/calibration/20220209_calib
+# groundtruth_traj: /hostroot/mnt/ws-frb/projects/cloner_slam/fusion_portable/20220219_MCR_slow_01/ground_truth_traj.txt
+# experiment_name: mcr_occ_size1000_lr0.001
+# changes: NULL
+
+baseline: defaults.yaml
+dataset: /mnt/ws-frb/projects/loner_slam/fusion_portable/20220219_MCR_slow_01/20220219_MCR_slow_01_ref.bag
+dataset_family: fusion_portable
+calibration: ~/data/fusion_portable/calibration/20220209_calib
+groundtruth_traj: ~/data/fusion_portable/20220219_MCR_slow_01/ground_truth_traj.txt
+experiment_name: mcr
+dataset_family: fusion_portable
+changes:
+  mapper:
+    optimizer:
+      model_config:
+        data:
+          ray_range: &ray_range [1, 35]
+        model:
+          ray_range: *ray_range

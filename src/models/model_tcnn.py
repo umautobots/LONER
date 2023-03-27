@@ -3,8 +3,9 @@ from collections import defaultdict
 import torch
 import torch.nn as nn
 
-from models.nerf_tcnn import DecoupledNeRF, NeRF
-from models.rendering_tcnn import render_rays, render_rays_cf, inference
+from models.nerf_tcnn import DecoupledNeRF
+from models.rendering_tcnn import render_rays, inference
+
 
 
 # Holding module for all trainable variables
@@ -13,9 +14,7 @@ class Model(nn.Module):
         super(Model, self).__init__()
         self.cfg = cfg
 
-        if cfg.model_type == 'nerf':
-            self.nerf_model = NeRF(cfg.nerf_config, cfg.num_colors)
-        elif cfg.model_type == 'nerf_decoupled':
+        if cfg.model_type == 'nerf_decoupled':
             self.nerf_model = DecoupledNeRF(cfg.nerf_config, cfg.num_colors)
         else:
             raise NotImplementedError()
@@ -24,18 +23,19 @@ class Model(nn.Module):
         all_params =  list(self.nerf_model._model_intensity.parameters()) + \
                list(self.nerf_model._pos_encoding.parameters()) + \
                ([] if (self.nerf_model._dir_encoding is None) else list(self.nerf_model._dir_encoding.parameters()))
-        return all_params
+        return [p for p in all_params if p.requires_grad]
 
     def get_rgb_mlp_parameters(self):
         return list(self.nerf_model._model_intensity.parameters())
 
     def get_rgb_feature_parameters(self):
-            return list(self.nerf_model._pos_encoding.parameters()) + \
+            params = list(self.nerf_model._pos_encoding.parameters()) + \
                    ([] if (self.nerf_model._dir_encoding is None) else list(self.nerf_model._dir_encoding.parameters()))
+            return [p for p in params if p.requires_grad]
 
     def get_sigma_parameters(self):
-        return list(self.nerf_model._model_sigma.parameters())
-
+        return [ p for p in list(self.nerf_model._model_sigma.parameters()) if p.requires_grad]
+        
     def freeze_sigma_head(self, should_freeze=True):
         for p in self.get_sigma_parameters():
             p.requires_grad = not should_freeze
@@ -43,8 +43,12 @@ class Model(nn.Module):
     def freeze_rgb_head(self, should_freeze=True):
         for p in self.get_rgb_parameters():
             p.requires_grad = not should_freeze
+            
+    def inference_points(self, xyz_, dir_, sigma_only):
+        out = inference(self.nerf_model, xyz_, dir_, netchunk=0, sigma_only=sigma_only) # netchunk=32768 TODO: fix the bug wheb=n setting netchunk size 
+        return out
 
-    def forward(self, rays, ray_sampler, scale_factor, testing=False, camera=True):
+    def forward(self, rays, ray_sampler, scale_factor, testing=False, camera=True, detach_sigma=True, return_variance=False):
         """Do batched inference on rays using chunk"""
 
         if testing:
@@ -71,72 +75,9 @@ class Model(nn.Module):
                             raw_noise_std=self.cfg.render.raw_noise_std,
                             netchunk=self.cfg.render.netchunk,
                             num_colors=self.cfg.num_colors,
-                            sigma_only=(not camera))
-            for k, v in rendered_ray_chunks.items():
-                results[k] += [v]
-
-        for k, v in results.items():
-            results[k] = torch.cat(v, 0)
-        return results
-
-    def inference_points(self, xyz_, dir_, sigma_only):
-        out = inference(self.nerf_model, xyz_, dir_, netchunk=0, sigma_only=sigma_only) # netchunk=32768 TODO: fix the bug wheb=n setting netchunk size 
-        return out
-
-
-# Coarse Fine Model
-class ModelCF(nn.Module):
-    def __init__(self, cfg):
-        super(ModelCF, self).__init__()
-        self.cfg = cfg
-
-        if cfg.model_type == 'nerf':
-            self.nerf_model_coarse = NeRF(cfg.nerf_config, cfg.num_colors)
-            self.nerf_model_fine = NeRF(cfg.nerf_config, cfg.num_colors)
-        elif cfg.model_type == 'nerf_decoupled':
-            self.nerf_model_coarse = DecoupledNeRF(
-                cfg.nerf_config, cfg.num_colors)
-            self.nerf_model_fine = DecoupledNeRF(
-                cfg.nerf_config, cfg.num_colors)
-        else:
-            raise NotImplementedError()
-
-    def freeze_sigma_head(self):
-        for p in self.nerf_model_coarse._model_sigma.parameters():
-            p.requires_grad = False
-        for p in self.nerf_model_fine._model_sigma.parameters():
-            p.requires_grad = False
-
-    def forward(self, rays, ray_sampler, scale_factor, testing=False, camera=True):
-        """Do batched inference on rays using chunk"""
-        # ray_sampler is not used here. But retained for function call to be agnostic to Model vs Model_CF
-
-        if testing:
-            N_samples = self.cfg.render.N_samples_test
-            perturb = 0.
-        else:
-            N_samples = self.cfg.render.N_samples_train
-            perturb = self.cfg.render.perturb
-
-        B = rays.shape[0]
-        results = defaultdict(list)
-        for i in range(0, B, self.cfg.render.chunk):
-            rays_chunk = rays[i:i+self.cfg.render.chunk, :]
-            rendered_ray_chunks = \
-                render_rays_cf(rays_chunk,
-                               self.nerf_model_coarse,
-                               self.nerf_model_fine,
-                               self.cfg.ray_range,
-                               scale_factor,
-                               N_samples=N_samples // 4,
-                               N_importance=3 * N_samples // 4,
-                               retraw=self.cfg.render.retraw,
-                               perturb=perturb,
-                               white_bkgd=self.cfg.render.white_bkgd,
-                               raw_noise_std=self.cfg.render.raw_noise_std,
-                               netchunk=self.cfg.render.netchunk,
-                               num_colors=self.cfg.num_colors,
-                               sigma_only=(not camera))
+                            sigma_only=(not camera),
+                            detach_sigma=detach_sigma,
+                            return_variance=return_variance)
             for k, v in rendered_ray_chunks.items():
                 results[k] += [v]
 

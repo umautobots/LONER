@@ -1,5 +1,5 @@
 {
-  "image": "cloner_slam:latest",
+  "image": "loner_slam:latest",
   "extensions": [
     "ms-python.python",
     "ms-python.vscode-pylance",
@@ -7,11 +7,11 @@
     "huizhou.githd"
   ],
   "mounts":[
-    "source=/home/${env:USER}/Documents/ClonerSlamData/,target=/home/${env:USER}/data,type=bind",
+    "source=/home/${env:USER}/Documents/LonerSlamData/,target=/home/${env:USER}/data,type=bind",
     "source=/mnt/,target=/mnt,type=bind"
   ],
-  "workspaceMount": "source=${localWorkspaceFolder},target=/home/${env:USER}/ClonerSLAM,type=bind",
-  "workspaceFolder": "/home/${env:USER}/ClonerSLAM",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/home/${env:USER}/LonerSLAM,type=bind",
+  "workspaceFolder": "/home/${env:USER}/LonerSLAM",
   "containerEnv": {"DISPLAY":"${env:DISPLAY}"},
   "runArgs": [
               "--privileged",

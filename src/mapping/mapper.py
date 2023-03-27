@@ -8,12 +8,12 @@ from common.frame import Frame
 from common.settings import Settings
 from common.signals import Signal, StopSignal
 from mapping.keyframe_manager import KeyFrameManager
-from mapping.optimizer import Optimizer
+from mapping.optimizer import Optimizer, OptimizationSettings
 
 
 class Mapper:
     """ Mapper is the top-level Mapping module which manages and optimizes the 
-    CLONeR Map.
+    Loner Map.
 
     It reads in data from the frame_slot, and uses that to build and update
     the optimizer.
@@ -24,10 +24,13 @@ class Mapper:
     # @param frame_signal: A Signal which the tracker emits to with completed Frame objects
     def __init__(self, settings: Settings, calibration: Settings, frame_signal: Signal,
                  keyframe_update_signal: Signal, world_cube: WorldCube) -> None:
+                 
         self._frame_slot = frame_signal.register()
         self._keyframe_update_signal = keyframe_update_signal
 
         self._settings = settings
+
+        self._lidar_only = settings.lidar_only
 
         self._world_cube = world_cube #.to('device', clone=True)
 
@@ -41,7 +44,8 @@ class Mapper:
         settings["optimizer"]["log_directory"] = settings.log_directory
         self._optimizer = Optimizer(
             settings.optimizer, calibration, self._world_cube, 0,
-            settings.debug.use_groundtruth_poses)
+            settings.debug.use_groundtruth_poses,
+            self._lidar_only)
 
         self._term_signal = mp.Value('i', 0)
         self._processed_stop_signal = mp.Value('i', 0)
@@ -67,8 +71,6 @@ class Mapper:
             
             accepted_frame = new_keyframe is not None
 
-            accepted_str = "Accepted" if accepted_frame else "Didn't accept"
-            image_ts = new_frame.image.timestamp
             # print(f"{accepted_str} frame at time {image_ts}")
         
             if self._settings.optimizer.enabled and accepted_frame:
@@ -84,7 +86,7 @@ class Mapper:
                 
                 kf_idx = self._optimizer._keyframe_count - 1
 
-                if kf_idx % 25 == 0 or self._settings.log_verbose:
+                if kf_idx % 10 == 0 or self._settings.log_verbose:
                     ckpt = {'global_step': self._optimizer._global_step,
                             'network_state_dict': self._optimizer._model.state_dict(),
                             'optimizer_state_dict': self._optimizer._optimizer.state_dict(),
@@ -127,6 +129,13 @@ class Mapper:
         print("Exiting mapping process.")
 
     def finish(self):
+
+        # Hack: Train RGB MLP
+        # print("Training RGB MLP at shutdown")
+        # optimizer_settings = OptimizationSettings(3, 10_000, True, False, True, False)
+        # kf_window = self._keyframe_manager._keyframes
+        # self._optimizer.iterate_optimizer(kf_window, optimizer_settings)
+
         pose_state = self._keyframe_manager.get_poses_state()
 
         last_ckpt = {'global_step': self._optimizer._global_step,

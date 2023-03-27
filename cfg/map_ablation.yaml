@@ -1,6 +1,5 @@
 mapper:
   optimizer:
     model_config:
-      model:
-        nerf_config:
-          enable_view_dependence: [False, True]
+      loss:
+        depth_eps_decay_steps: [50, 250]

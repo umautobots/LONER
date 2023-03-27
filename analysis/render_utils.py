@@ -4,7 +4,6 @@ import imageio
 import numpy as np
 import matplotlib.pyplot as plt
 from skimage.exposure import rescale_intensity, equalize_adapthist, equalize_hist
-from common.settings import Settings
 from matplotlib import cm
 from tqdm import tqdm
 

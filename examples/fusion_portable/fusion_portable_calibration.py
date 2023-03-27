@@ -34,6 +34,8 @@ class FusionPortableCalibration:
 
                 return mat
 
+        calibration_path = os.path.expanduser(calibration_path)
+
         # Bit hacky due to super weird format opencv dumped the data to.
         # Using OpenCV file storage would require adding yaml version tags, which causes other problems
         CvMatLoader.add_constructor(
