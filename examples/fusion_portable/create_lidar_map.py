@@ -1,3 +1,9 @@
+"""
+Uses the groundtruth trajectory and measured lidar scans to reconstruct a lidar map.
+"""
+
+
+
 from pathlib import Path
 import numpy as np 
 import argparse
@@ -14,11 +20,12 @@ from tqdm.contrib.concurrent import process_map
 
 parser = argparse.ArgumentParser("Create GT Map")
 parser.add_argument("rosbag_path", type=str)
+parser.add_argument("--voxel_size", type=float, default=0.05)
 args = parser.parse_args()
 
 bag = rosbag.Bag(args.rosbag_path)
 
-LIDAR_MIN_RANGE = 0.3 #http://www.oxts.com/wp-content/uploads/2021/01/Ouster-datasheet-revc-v2p0-os0.pdf
+LIDAR_MIN_RANGE = 0.5 #https://data.ouster.io/downloads/datasheets/datasheet-rev7-v3p0-os1.pdf
 
 # Get ground truth trajectory
 rosbag_path = Path(args.rosbag_path)
@@ -73,7 +80,7 @@ def process_cloud(bag_it):
     output_pcd = o3d.cuda.pybind.geometry.PointCloud()
     output_pcd.points.extend(compensated_points)
 
-    output_pcd = output_pcd.voxel_down_sample(voxel_size=0.01)
+    output_pcd = output_pcd.voxel_down_sample(voxel_size=args.voxel_size)
 
     return np.asarray(output_pcd.points)
 
@@ -86,7 +93,7 @@ for cloud in tqdm.tqdm(clouds):
         continue
     result_pcd.points.extend(o3d.cuda.pybind.utility.Vector3dVector(cloud))
 
-result_pcd = result_pcd.voxel_down_sample(voxel_size=0.05)
+result_pcd = result_pcd.voxel_down_sample(voxel_size=args.voxel_size)
 o3d.io.write_point_cloud("reconstructed_map.pcd", result_pcd)
     
     

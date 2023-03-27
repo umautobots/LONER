@@ -54,7 +54,7 @@ parser.add_argument("--eval", default=False, dest="eval", action="store_true")
 parser.add_argument("--ckpt_id", type=str, default=None)
 parser.add_argument("--use_gt_poses", default=False, dest="use_gt_poses", action="store_true")
 parser.add_argument("--only_last_frame", default=False, dest="only_last_frame", action="store_true")
-parser.add_argument("--norm_var_threshold", type=float, default = 1e-4, help="Threshold for variance")
+parser.add_argument("--var_threshold", type=float, default = 1e-4, help="Threshold for variance")
 parser.add_argument("--write_intermediate_clouds", default=False, action="store_true")
 
 args = parser.parse_args()
@@ -78,21 +78,11 @@ os.makedirs(render_dir, exist_ok=True)
 with open(f"{args.experiment_directory}/full_config.pkl", 'rb') as f:
     full_config = pickle.load(f)
 
-if args.debug:
-    full_config['debug'] = True
 
-
-# TODO (Seth): Manual Seed
-# seed = cfg.seed
 torch.backends.cudnn.enabled = True
-# torch.manual_seed(seed)
-# torch.cuda.manual_seed(seed)
-# np.random.seed(seed)
 
-torch.backends.cudnn.benchmark = True
-# rng = default_rng(seed)
+
 _DEVICE = torch.device(full_config.mapper.device)
-
 
 torch.set_default_tensor_type('torch.cuda.FloatTensor')
 
@@ -199,7 +189,6 @@ with torch.no_grad():
     if args.only_last_frame:
         tqdm_poses = tqdm([poses[-1]])
     else:
-        poses = poses[15:]
         tqdm_poses = tqdm(poses[::skip_step])
     for pose_idx, keyframe in enumerate(tqdm_poses):
         if args.use_gt_poses:
@@ -240,7 +229,7 @@ with torch.no_grad():
         gt_lidar = (lidar_scan.ray_directions.t() * depth_gt).cpu().numpy()
 
 
-        good_idx = variance < 1e-4
+        good_idx = variance < args.var_threshold
         good_idx = good_idx.squeeze(1).cpu()
         rendered_lidar = rendered_lidar[good_idx]
         rendered_colors = rendered_colors[good_idx]
@@ -249,13 +238,13 @@ with torch.no_grad():
         rendered_pcd.points = o3d.utility.Vector3dVector(rendered_lidar)
         rendered_pcd.colors = o3d.utility.Vector3dVector(rendered_colors)
 
-        lidar_pcd = o3d.geometry.PointCloud()
-        lidar_pcd.points = o3d.utility.Vector3dVector(gt_lidar)
-        lidar_pcd.paint_uniform_color([1, 0, 0.25])
+        gt_lidar_pcd = o3d.geometry.PointCloud()
+        gt_lidar_pcd.points = o3d.utility.Vector3dVector(gt_lidar)
+        gt_lidar_pcd.paint_uniform_color([1, 0, 0.25])
 
         pcd = merge_o3d_pc(pcd, rendered_pcd.transform(lidar_pose.get_transformation_matrix().cpu().numpy()))
 
-        
+
         if args.write_intermediate_clouds and pose_idx % 10 == 0:
             o3d.io.write_point_cloud(f"{args.experiment_directory}/lidar_renders/render_{pose_idx}.pcd", pcd)
 

@@ -100,6 +100,11 @@ def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time) -> LidarS
     dists = dists[valid_ranges].float()
     directions = (xyz / dists).float()
 
+    hyp = directions[:2].norm(dim=0)
+    z = directions[2]
+    phi = torch.atan2(z, hyp)
+    print(torch.rad2deg(phi.min()), torch.rad2deg(phi.max()))
+
     timestamps, indices = torch.sort(timestamps)
     
     dists = dists[indices]
