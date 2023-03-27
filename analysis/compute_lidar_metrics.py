@@ -241,13 +241,17 @@ if __name__ == "__main__":
                 "num_points": len(accuracy)
             }
 
-            os.makedirs("./metrics/", exist_ok=True)
-            o3d.io.write_point_cloud(f"metrics/rendered_{scan_num}_{args.var_threshold}.pcd", rendered_pcd)
+            metrics_dir = f"{args.experiment_directory}/metrics"
+            renders_dir = f"{args.experiment_directory}/lidar_renders/"
+            os.makedirs(metrics_dir, exist_ok=True)
+            os.makedirs(renders_dir, exist_ok=True
+            )
+            o3d.io.write_point_cloud(f"{renders_dir}/rendered_{scan_num}_{args.var_threshold}.pcd", rendered_pcd)
 
             if is_first:
-                o3d.io.write_point_cloud(f"metrics/gt_{scan_num}_{args.var_threshold}.pcd", gt_scan_data)
+                o3d.io.write_point_cloud(f"{renders_dir}/gt_{scan_num}_{args.var_threshold}.pcd", gt_scan_data)
 
                 is_first = False
 
-            with open(f"metrics/statistics_{scan_num}_{args.var_threshold}.yaml", 'w+') as yaml_stats_f:
+            with open(f"{metrics_dir}/statistics_{scan_num}_{args.var_threshold}.yaml", 'w+') as yaml_stats_f:
                 yaml.dump(stats, yaml_stats_f, indent = 2)
