@@ -106,24 +106,6 @@ def raw2outputs(raw, z_vals, rays_d, raw_noise_std=0, white_bkgd=False, sigma_on
     weights = alphas * torch.cumprod(alphas_shifted, -1)[:, :-1]
     # weights = weights / (weights.sum(dim=1, keepdim=True) + 1e-6)
 
-    ##### Frank Change ##### !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    # print('noise ', noise)
-    # weights = 1-torch.exp(-deltas*torch.relu(sigmas)) #!!!
-    # print(alphas[0].shape)
-    # print(alphas_shifted[0].shape)
-    # from matplotlib import pyplot as plt
-    # import numpy as np
-    # x = np.linspace(0, alphas.shape[1], num=alphas.shape[1])
-    # sigma_ = sigmas[0].cpu().detach().numpy()
-    # alphas_ = alphas[0].cpu().detach().numpy()
-    # w = weights[0].cpu().detach().numpy()
-    # alphas_s = alphas_shifted[0][:-1].cpu().detach().numpy()
-    # plt.figure(figsize=(15, 10))
-    # plt.plot(x,sigma_,'.', linewidth=0.5) 
-    # plt.plot(x,w,'.', linewidth=0.5) 
-    # plt.show()
-    ##### Frank Change End ##### !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
     opacity_map = torch.sum(weights, -1)
     # weights_sum = weights.sum(1) # (N_rays), the accumulated opacity along the rays
     # equals "1 - (1-a1)(1-a2)...(1-an)" mathematically

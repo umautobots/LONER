@@ -62,7 +62,7 @@ mapper:
       - 
         num_keyframes: 1
         iteration_schedule:
-          - num_iterations: 50
+          - num_iterations: 1000
             stage: 3
             fix_poses: True
             fix_sigma_mlp: False

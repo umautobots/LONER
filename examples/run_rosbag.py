@@ -227,10 +227,7 @@ def run_trial(config, settings, settings_description = None, config_idx = None, 
             with open(f"{logdir}/configuration.txt", 'w+') as desc_file:
                 desc_file.write(settings_description)
     
-    print('reading bag')
-    print(rosbag_path.as_posix())
     bag = rosbag.Bag(rosbag_path.as_posix(), 'r')
-    print('reading bag end')
 
     loner.start()
 

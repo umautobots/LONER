@@ -59,6 +59,7 @@ parser.add_argument("--ckpt_id", type=str, default=None)
 parser.add_argument("--use_gt_poses", default=False, dest="use_gt_poses", action="store_true")
 parser.add_argument("--no_render_stills", action="store_true", default=False)
 parser.add_argument("--render_video", action="store_true", default=False)
+parser.add_argument("--skip_step", type=int, default=15, dest="skip_step")
 parser.add_argument("--only_last_frame", action="store_true", default=False)
 
 args = parser.parse_args()
@@ -210,7 +211,7 @@ if __name__ == "__main__":
         if args.only_last_frame:
             poses_ = [poses[-1]]
         else:
-            poses_ = poses[::15]
+            poses_ = poses[::args.skip_step]
         if not args.no_render_stills:
             for kf in tqdm(poses_):
                 

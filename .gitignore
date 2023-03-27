@@ -15,7 +15,6 @@ graphs/
 *.npy
 *.tar
 ws_outputs/
-temp/
 
 test/outputs/
 sandbox/
