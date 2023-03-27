@@ -233,18 +233,18 @@ class LidarRayDirections:
         return self.lidar_scan.ray_directions.shape[1]
 
 
-    def fetch_chunk_rays(self, chunk_idx: int, pose: Pose, world_cube: WorldCube, ray_range):
+    def fetch_chunk_rays(self, chunk_idx: int, pose: Pose, world_cube: WorldCube, ray_range, device = None):
         start_idx = chunk_idx*self._chunk_size
         end_idx = min(self.lidar_scan.ray_directions.shape[1], (chunk_idx+1)*self._chunk_size)
         indices = torch.arange(start_idx, end_idx, 1)
         pose_mat = pose.get_transformation_matrix()
-        return self.build_lidar_rays(indices, ray_range, world_cube, torch.unsqueeze(pose_mat, 0))[0]
+        return self.build_lidar_rays(indices, ray_range, world_cube, pose_mat)[0]
 
     def build_lidar_rays(self,
                          lidar_indices: torch.Tensor,
                          ray_range: torch.Tensor,
                          world_cube: WorldCube,
-                         lidar_poses: torch.Tensor, # 4x4
+                         lidar_pose: torch.Tensor, # 4x4
                          ignore_world_cube: bool = False) -> torch.Tensor:
 
         lidar_scan = self.lidar_scan
@@ -253,23 +253,18 @@ class LidarRayDirections:
         directions = lidar_scan.ray_directions[:, lidar_indices]
         timestamps = lidar_scan.timestamps[lidar_indices]
 
-        ray_origins: torch.Tensor = lidar_poses[..., :3, 3]
+        ray_origins: torch.Tensor = lidar_pose[:3, 3]
         ray_origins = ray_origins + world_cube.shift
         ray_origins = ray_origins / world_cube.scale_factor
 
         ray_origins = ray_origins.tile(len(timestamps), 1)
 
-        # N x 3 x 3 (N homogenous transformation matrices)
-        lidar_rotations = lidar_poses[..., :3, :3]
+        # 3 x 3 (N homogenous transformation matrices)
+        lidar_rotations = lidar_pose[:3, :3]
         
-        # N x 3 x 1. This takes a 3xN matrix and makes it 1x3xN, then Nx3x1
-        directions_3d = directions.unsqueeze(0).swapaxes(0, 2)
-
         # rotate ray directions from sensor coordinates to world coordinates
-        ray_directions = lidar_rotations @ directions_3d
-
-        # ray_directions is now Nx3x1, we want Nx3.
-        ray_directions = ray_directions.squeeze()
+        # N x 3
+        ray_directions = (lidar_rotations @ directions).T
 
         # Note to self: don't use /= here. Breaks autograd.
         ray_directions = ray_directions / \

@@ -43,12 +43,14 @@
       "subProcess": true
     },
     {
-      "name": "lidar_renderer",
+      "name": "Lidar Metrics",
       "type": "python",
       "request": "launch",
-      "program": "${workspaceFolder}/sandbox/lidar_renderer/renderer_lidar.py",
+      "program": "${workspaceFolder}/analysis/compute_lidar_metrics.py",
       "console": "integratedTerminal",
-      "args": ["/mnt/ws-frb/projects/loner_slam/results/map_ablation_study/canteen_proposed_031323_143441/config_0/trial_0/"],
+      "args": ["/mnt/ws-frb/users/sethgi/outputs/tune_js_params_032323_184541/config_0/",
+               "/mnt/ws-frb/projects/loner_slam/fusion_portable/groundtruth/map/20220126_canteen/",
+               "/mnt/ws-frb/projects/loner_slam/fusion_portable/groundtruth/traj/20220216_canteen_day.txt"],
       "cwd": "${workspaceFolder}/analysis",
       "subProcess": true
     },
