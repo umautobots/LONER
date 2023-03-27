@@ -44,6 +44,7 @@ bridge = CvBridge()
 WARN_MOCOMP_ONCE = True
 WARN_LIDAR_TIMES_ONCE = True
 
+
 def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time) -> LidarScan:
 
     lidar_data = ros_numpy.point_cloud2.pointcloud2_to_array(
@@ -51,7 +52,7 @@ def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time) -> LidarS
 
     lidar_data = torch.from_numpy(pd.DataFrame(lidar_data).to_numpy()).cuda()
     xyz = lidar_data[:, :3]
-    
+
     dists = torch.linalg.norm(xyz, dim=1)
     valid_ranges = dists > LIDAR_MIN_RANGE
 
@@ -109,6 +110,7 @@ def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time) -> LidarS
     directions = directions[:, indices]
 
     return LidarScan(directions.float().cpu(), dists.float().cpu(), timestamps.float().cpu())
+
 
 
 def tf_to_settings(tf_msg):
@@ -221,7 +223,6 @@ def run_trial(config, settings, settings_description = None, config_idx = None, 
             with open(f"{logdir}/configuration.txt", 'w+') as desc_file:
                 desc_file.write(settings_description)
     
-
     bag = rosbag.Bag(rosbag_path.as_posix(), 'r')
 
     loner.start()

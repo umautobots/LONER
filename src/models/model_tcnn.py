@@ -45,7 +45,7 @@ class Model(nn.Module):
             p.requires_grad = not should_freeze
             
     def inference_points(self, xyz_, dir_, sigma_only):
-        out = inference(self.nerf_model, xyz_, dir_, netchunk=0, sigma_only=sigma_only) # netchunk=32768 TODO: fix the bug wheb=n setting netchunk size 
+        out = inference(self.nerf_model, xyz_, dir_, netchunk=0, sigma_only=sigma_only, meshing=True) # TODO: fix the bug when setting netchunk size 
         return out
 
     def forward(self, rays, ray_sampler, scale_factor, testing=False, camera=True, detach_sigma=True, return_variance=False):
