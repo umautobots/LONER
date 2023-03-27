@@ -66,8 +66,6 @@ if __name__ == "__main__":
     parser.add_argument("--f_score_threshold", type=float, default=0.1)
     args = parser.parse_args()
     
-    is_first = True
-
     checkpoints = os.listdir(f"{args.experiment_directory}/checkpoints")
 
     if args.ckpt_id is None:
@@ -141,6 +139,8 @@ if __name__ == "__main__":
 
     with torch.no_grad():
         for scan_num in sorted(scan_nums):
+            is_first = True
+
             T_world_lidar = scan_poses[scan_num]
             T_start_lidar = T_world_start.inverse() @ T_world_lidar
 
