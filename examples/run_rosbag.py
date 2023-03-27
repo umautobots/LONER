@@ -44,15 +44,15 @@ bridge = CvBridge()
 WARN_MOCOMP_ONCE = True
 WARN_LIDAR_TIMES_ONCE = True
 
+
 def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time) -> LidarScan:
 
     lidar_data = ros_numpy.point_cloud2.pointcloud2_to_array(
         lidar_msg)
 
     lidar_data = torch.from_numpy(pd.DataFrame(lidar_data).to_numpy()).cuda()
-    mask = torch.ones((lidar_data.shape[0])) # default to use all lidar rays
     xyz = lidar_data[:, :3]
-    
+
     dists = torch.linalg.norm(xyz, dim=1)
     valid_ranges = dists > LIDAR_MIN_RANGE
 
@@ -77,6 +77,9 @@ def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time) -> LidarS
 
         timestamps = lidar_data[valid_ranges, time_idx]
 
+        # This logic deals with the fact that some lidars report time globally, and others 
+        # use the ROS timestamp for the overall time then the timestamps in the message are just
+        # offsets. This heuristic has looked legit so far on the tested lidars (ouster and hesai).
         global WARN_LIDAR_TIMES_ONCE
         if timestamps[0] < 1e-5:
             if WARN_LIDAR_TIMES_ONCE:
@@ -101,20 +104,13 @@ def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time) -> LidarS
     dists = dists[valid_ranges].float()
     directions = (xyz / dists).float()
 
-    hyp = directions[:2].norm(dim=0)
-    z = directions[2]
-    phi = torch.atan2(z, hyp)
-    print(torch.rad2deg(phi.min()), torch.rad2deg(phi.max()))
-
     timestamps, indices = torch.sort(timestamps)
     
     dists = dists[indices]
     directions = directions[:, indices]
 
-    mask = mask[valid_ranges].float()
-    mask = mask[indices]
+    return LidarScan(directions.float().cpu(), dists.float().cpu(), timestamps.float().cpu())
 
-    return LidarScan(directions.float().cpu(), dists.float().cpu(), timestamps.float().cpu(), mask.float().cpu())
 
 
 def tf_to_settings(tf_msg):

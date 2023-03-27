@@ -14,12 +14,8 @@ graphs/
 *.ply
 *.npy
 *.tar
-ws_outputs/
 
 test/outputs/
 sandbox/
-
-examples/fusion_portable/feature_index/
-*.npy
 
 docker/.etc*

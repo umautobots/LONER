@@ -127,20 +127,3 @@ for i, kf in enumerate(poses):
     plt.imsave(f"{render_img_color_path}"+"/{:05d}.png".format(i),np.asarray(image_color), dpi = 1)
     plt.imsave(f"{render_img_path}"+"/{:05d}.png".format(i),np.asarray(image), dpi = 1)
     vis.remove_geometry(mesh, reset_bounding_box=True,)
-
-# origin_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=3, origin=[0,0,0])
-# o3d.visualization.draw_geometries([mesh, origin_frame], mesh_show_back_face=True, mesh_show_wireframe=False)
-
-
-# vis = o3d.visualization.Visualizer()
-# vis.create_window()
-# ctr = vis.get_view_control()
-# pcd = o3d.io.read_point_cloud("/hostroot/mnt/ws-frb/projects/cloner_slam/fusion_portable/20220216_canteen_day/000000.pcd")
-# vis.add_geometry(pcd)
-# vis.run() # user changes the view and press "q" to terminate
-# param = ctr.convert_to_pinhole_camera_parameters()
-# trajectory = o3d.camera.PinholeCameraTrajectory()
-# trajectory.intrinsic = param[0]
-# trajectory.extrinsic = o3d.utility.Matrix4dVector([param[1]])
-# o3d.camera.write_pinhole_camera_trajectory("test.json", trajectory)
-# vis.destroy_window()

@@ -61,13 +61,11 @@ class LidarScan:
     def __init__(self,
                  ray_directions: torch.Tensor = torch.Tensor(),
                  distances: torch.Tensor = torch.Tensor(),
-                 timestamps: torch.Tensor = torch.Tensor(),
-                 mask: torch.Tensor = torch.Tensor()) -> None:
+                 timestamps: torch.Tensor = torch.Tensor()) -> None:
 
         self.ray_directions = ray_directions
         self.distances = distances
         self.timestamps = timestamps
-        self.mask = mask
 
     ## @returns the number of points in the scan
     def __len__(self) -> int:
@@ -86,7 +84,6 @@ class LidarScan:
         self.ray_directions = torch.Tensor()
         self.distances = torch.Tensor()
         self.timestamps = torch.Tensor()
-        self.mask = torch.Tensor()
         return self
 
     ## @returns a deep copy of the current scan
@@ -100,7 +97,6 @@ class LidarScan:
         self.ray_directions = self.ray_directions[..., num_points:]
         self.distances = self.distances[num_points:]
         self.timestamps = self.timestamps[num_points:]
-        self.mask = self.mask[num_points:]
 
         return self
 
@@ -108,8 +104,7 @@ class LidarScan:
     def merge(self, other: "LidarScan") -> "LidarScan":
         self.add_points(other.ray_directions,
                         other.distances,
-                        other.timestamps,
-                        other.mask)
+                        other.timestamps)
         return self
 
     ## Moves all items in the LidarScan to the specified device, in-place.
@@ -125,20 +120,17 @@ class LidarScan:
     def add_points(self,
                    ray_directions: torch.Tensor,
                    distances: torch.Tensor,
-                   timestamps: torch.Tensor,
-                   mask: torch.Tensor) -> "LidarScan":
+                   timestamps: torch.Tensor) -> "LidarScan":
 
         if self.ray_directions.shape[0] == 0:
             self.distances = distances
             self.ray_directions = ray_directions
             self.timestamps = timestamps
-            self.mask = mask
         else:
             self.ray_directions = torch.hstack(
                 (self.ray_directions, ray_directions))
             self.timestamps = torch.hstack((self.timestamps, timestamps))
             self.distances = torch.hstack((self.distances, distances))
-            self.mask = torch.hstack((self.mask, mask))
 
         return self
 

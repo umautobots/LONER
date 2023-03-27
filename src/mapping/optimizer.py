@@ -263,7 +263,7 @@ class Optimizer:
                             mask_index_map = kf.get_lidar_scan().mask.nonzero(as_tuple=True)[0]
                             mask_indices = torch.randint(len(mask_index_map), (self._num_lidar_samples,))
                             lidar_indices = mask_index_map[mask_indices]
-                        elif self._settings.rays_selection.strategy == 'FIX':
+                        elif self._settings.rays_selection.strategy == 'FIXED':
                             lidar_indices = torch.arange(self._num_lidar_samples)
 
                         new_rays, new_depths = kf.build_lidar_rays(lidar_indices, self._ray_range, self._world_cube, self._use_gt_poses)
@@ -429,7 +429,7 @@ class Optimizer:
             eps_min = self._model_config.loss.min_depth_eps
             js_score = self.calculate_JS_divergence(self._lidar_depths_gt, eps_min, mean, eps).squeeze()
 
-            if self._model_config.loss.use_JS_loss:
+            if self._model_config.JS_loss.enable:
                 min_js_score = self._model_config.loss.JS_loss.min_js_score
                 max_js_score = self._model_config.loss.JS_loss.max_js_score
                 alpha = self._model_config.loss.JS_loss.alpha
@@ -651,26 +651,31 @@ class Optimizer:
 
                 depth_gt_lidar = np.array(np.squeeze(depth_gt_lidar)).reshape((-1))
                 eps_min = self._model_config.loss.min_depth_eps
-                if self._model_config.loss.use_JS_loss:
+                if self._model_config.loss.JS_loss.enable:
                     eps_dynamic_ = eps_
                     print("u_gt:", depth_gt_lidar[j], "eps: ", eps_dynamic_[j])
                 else:
                     depth_eps_ = eps_
                     print("u_gt:", depth_gt_lidar[j], "eps: ", depth_eps_)
-                if self._model_config.loss.use_JS_loss:
+                if self._model_config.loss.JS_loss.enable:
                     if js_score.ndim>0:
-                        plt.title('Iter: %d\n mean: %1.3f std: %1.3f\n JS(P||Q) = %1.3f' % (iteration_idx, u, np.sqrt(variance), js_score[j]))
+                        plt.title('Iter: %d\n mean: %1.3f std: %1.3f\n JS(P||Q) = %1.3f'
+                                   % (iteration_idx, u, np.sqrt(variance), js_score[j]))
                     else:
-                        plt.title('Iter: %d\n mean: %1.3f std: %1.3f\n JS(P||Q) = %1.3f' % (iteration_idx, u, np.sqrt(variance), js_score))
+                        plt.title('Iter: %d\n mean: %1.3f std: %1.3f\n JS(P||Q) = %1.3f'
+                                   % (iteration_idx, u, np.sqrt(variance), js_score))
                 else:
-                    plt.title('Iter: %d\n mean: %1.3f std: %1.3f\n mean err: %1.3f std err: %1.3f' % (iteration_idx, u, np.sqrt(variance), depth_gt_lidar[j]-u, eps_min-np.sqrt(variance)))
+                    plt.title('Iter: %d\n mean: %1.3f std: %1.3f\n mean err: %1.3f std err: %1.3f'
+                                  % (iteration_idx, u, np.sqrt(variance), depth_gt_lidar[j]-u, eps_min-np.sqrt(variance)))
 
                 x_axis = np.arange(np.amin(x), np.amax(x), 0.01)
                 plt.plot(x_axis, norm.pdf(x_axis, u, np.sqrt(variance)), '-m', linewidth=2) # np.amax(y)
                 #plt.plot(x_axis, norm.pdf(x_axis, depth_gt_lidar[0], depth_eps) * np.amax(y), '-g', linewidth=3)
-                plt.plot(x_axis, norm.pdf(x_axis, depth_gt_lidar[j], eps_min) * (0.5/np.amax(norm.pdf(x_axis, depth_gt_lidar[j], eps_min))), '-g', linewidth=2)
-                if self._model_config.loss.use_JS_loss:
-                    plt.plot(x_axis, norm.pdf(x_axis, depth_gt_lidar[j], eps_dynamic_[j]) * (0.5/np.amax(norm.pdf(x_axis, depth_gt_lidar[j], eps_dynamic_[j]))), '-r', linewidth=2)
+                plt.plot(x_axis, norm.pdf(x_axis, depth_gt_lidar[j], eps_min) 
+                         * (0.5/np.amax(norm.pdf(x_axis, depth_gt_lidar[j], eps_min))), '-g', linewidth=2)
+                if self._model_config.loss.JS_loss.enable:
+                    plt.plot(x_axis, norm.pdf(x_axis, depth_gt_lidar[j], eps_dynamic_[j])
+                              * (0.5/np.amax(norm.pdf(x_axis, depth_gt_lidar[j], eps_dynamic_[j]))), '-r', linewidth=2)
                 else:
                     plt.plot(x_axis, norm.pdf(x_axis, depth_gt_lidar[j], depth_eps_), '-r', linewidth=2)
                 plt.xlabel("Dist. (m)")

@@ -44,10 +44,13 @@ from src.common.lidar_ray_utils import LidarRayDirections, get_far_val
 from analysis.mesher import Mesher
 
 assert torch.cuda.is_available(), 'Unable to find GPU'
+import yaml
+from pathlib import Path
 
 parser = argparse.ArgumentParser(description="Render ground truth maps using trained nerf models")
 parser.add_argument("experiment_directory", type=str, help="folder in outputs with all results")
-parser.add_argument("sequence", type=str, default="canteen", help="sequence name. Used to decide meshing bound [canteen | mcr]")
+parser.add_argument("configuration_path")
+# parser.add_argument("sequence", type=str, default="canteen", help="sequence name. Used to decide meshing bound [canteen | mcr]")
 parser.add_argument("--debug", default=False, dest="debug", action="store_true")
 parser.add_argument("--ckpt_id", type=str, default=None)
 parser.add_argument("--resolution", type=float, default=0.1, help="grid resolution (m)")
@@ -68,17 +71,14 @@ parser.add_argument("--color_render_from_ray", default=False, dest="color_render
 args = parser.parse_args()
 checkpoints = os.listdir(f"{args.experiment_directory}/checkpoints")
 
-if args.sequence=='canteen':
-    meshing_bound = [[-35,25], [-30,45], [-3,15]] # canteen
-    rosbag_path = '/mnt/ws-frb/projects/loner_slam/fusion_portable/20220216_canteen_day/20220216_canteen_day_ref.bag'
-elif args.sequence=='mcr':
-    meshing_bound = [[-18,10], [-20,20], [-4,4]] # mcr
-    rosbag_path = '/mnt/ws-frb/projects/loner_slam/fusion_portable/20220219_MCR_slow_01/20220219_MCR_slow_01_ref.bag'
-elif args.sequence=='large_checkboard':
-    meshing_bound = [[0,10], [-4,4], [-4,7]] # large_checkboard
-    rosbag_path = '/mnt/ws-frb/projects/loner_slam/fusion_portable/calibration_sequences/Recalib_LargeCheckerboard.bag'
-else:
-    print('Please provide sequence name')
+with open(args.configuration_path) as config_file:
+    config = yaml.full_load(config_file)
+rosbag_path = Path(os.path.expanduser(config["dataset"]))
+
+x_min, x_max = config['meshing_bounding_box']['x']
+y_min, y_max = config['meshing_bounding_box']['y']
+z_min, z_max = config['meshing_bounding_box']['z']
+meshing_bound = [[x_min, x_max], [y_min, y_max], [z_min, z_max]]
 
 resolution = args.resolution
 sigma_only = not args.color
@@ -146,7 +146,7 @@ ray_sampler.update_occ_grid(occupancy_grid.detach())
 model.load_state_dict(ckpt['network_state_dict']) 
 
 # rosbag_path = full_config.dataset_path
-lidar_topic = '/os_cloud_node/points'
+lidar_topic = full_config.ros_names.lidar
 ray_range = full_config.mapper.optimizer.model_config.data.ray_range
 mesher = Mesher(model, ckpt, world_cube, rosbag_path=rosbag_path, lidar_topic=lidar_topic,  resolution=resolution, marching_cubes_bound=meshing_bound, points_batch_size=500000)
 mesh_o3d, mesh_lidar_frames = mesher.get_mesh(_DEVICE, ray_sampler, occupancy_grid, occ_voxel_size=occ_model_config.voxel_size, sigma_only=sigma_only, threshold=threshold, 
@@ -161,6 +161,6 @@ if args.viz:
                                     mesh_show_back_face=True, mesh_show_wireframe=False)
 
 if args.save:
-    print('mesh store at: ', mesh_out_file)
+    print('store mesh at: ', mesh_out_file)
     o3d.io.write_triangle_mesh(mesh_out_file, mesh_o3d, compressed=False, write_vertex_colors=True, 
                             write_triangle_uvs=False, print_progress=True)

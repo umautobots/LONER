@@ -57,7 +57,7 @@ mapper:
       rgb: 1024
       lidar: 1024
     rays_selection:
-      strategy: RANDOM # FIX, MASK     
+      strategy: RANDOM # FIXED     
     keyframe_schedule:
       - 
         num_keyframes: 1
