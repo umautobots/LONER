@@ -48,7 +48,7 @@ mapper:
   optimizer:
     fix_poses: False # Overrides all other related settings and disables poses
     data_prep_on_cpu: *data_prep_on_cpu
-    enabled: False
+    enabled: True
     detach_rgb_from_poses: True
     detach_rgb_from_sigma: True
     skip_pose_refinement: True # If set, skips the tracking refinement part of the optimization

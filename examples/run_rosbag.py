@@ -76,6 +76,9 @@ def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time) -> LidarS
 
         timestamps = lidar_data[valid_ranges, time_idx]
 
+        # This logic deals with the fact that some lidars report time globally, and others 
+        # use the ROS timestamp for the overall time then the timestamps in the message are just
+        # offsets. This heuristic has looked legit so far on the tested lidars (ouster and hesai).
         global WARN_LIDAR_TIMES_ONCE
         if timestamps[0] < 1e-5:
             if WARN_LIDAR_TIMES_ONCE:
@@ -99,11 +102,6 @@ def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time) -> LidarS
 
     dists = dists[valid_ranges].float()
     directions = (xyz / dists).float()
-
-    hyp = directions[:2].norm(dim=0)
-    z = directions[2]
-    phi = torch.atan2(z, hyp)
-    print(torch.rad2deg(phi.min()), torch.rad2deg(phi.max()))
 
     timestamps, indices = torch.sort(timestamps)
     
