@@ -63,6 +63,7 @@ if __name__ == "__main__":
     parser.add_argument("groundtruth_trajectory", type=str, help="file with ground truth trajectory")
     parser.add_argument("--ckpt_id", type=str, default=None)
     parser.add_argument("--var_threshold", type=float, default = 1e-5, help="Threshold for variance")
+    parser.add_argument("--write_pointclouds", default=False, action="store_true")
     parser.add_argument("--f_score_threshold", type=float, default=0.1)
     args = parser.parse_args()
     
@@ -138,7 +139,7 @@ if __name__ == "__main__":
     ray_sampler.update_occ_grid(occupancy_grid.detach())
 
     with torch.no_grad():
-        for scan_num in sorted(scan_nums):
+        for scan_num in sorted(scan_nums)[0:1]:
             is_first = True
 
             T_world_lidar = scan_poses[scan_num]
@@ -244,14 +245,16 @@ if __name__ == "__main__":
             metrics_dir = f"{args.experiment_directory}/metrics"
             renders_dir = f"{args.experiment_directory}/lidar_renders/"
             os.makedirs(metrics_dir, exist_ok=True)
-            os.makedirs(renders_dir, exist_ok=True
-            )
-            o3d.io.write_point_cloud(f"{renders_dir}/rendered_{scan_num}_{args.var_threshold}.pcd", rendered_pcd)
 
-            if is_first:
-                o3d.io.write_point_cloud(f"{renders_dir}/gt_{scan_num}_{args.var_threshold}.pcd", gt_scan_data)
+            if args.write_pointclouds:
+                os.makedirs(renders_dir, exist_ok=True
+                )
+                o3d.io.write_point_cloud(f"{renders_dir}/rendered_{scan_num}_{args.var_threshold}.pcd", rendered_pcd)
 
-                is_first = False
+                if is_first:
+                    o3d.io.write_point_cloud(f"{renders_dir}/gt_{scan_num}.pcd", gt_scan_data)
+
+                    is_first = False
 
             with open(f"{metrics_dir}/statistics_{scan_num}_{args.var_threshold}.yaml", 'w+') as yaml_stats_f:
                 yaml.dump(stats, yaml_stats_f, indent = 2)
