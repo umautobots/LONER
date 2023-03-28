@@ -390,7 +390,7 @@ if __name__ == "__main__":
         if args.lite:
             settings_options[0].augment(lite_mode_changes)
 
-    if args.overrides is not None or args.num_repeats > 1:
+    if len(settings_options) > 1 or args.num_repeats > 1:
         now = datetime.datetime.now()
         now_str = now.strftime("%m%d%y_%H%M%S")
         config["experiment_name"] += f"_{now_str}"
