@@ -12,7 +12,7 @@ import tqdm
 import pickle
 import yaml
 import pathlib
-
+import torch.multiprocessing as mp
 
 CHUNK_SIZE=2**15
 
@@ -50,24 +50,8 @@ def load_scan_poses(yaml_path, scan_nums):
 
     return result
 
-def compare_clouds(gt_cloud, depths, variances, variance_threshold):
-    good_idx = variances < variance_threshold
-
-    
-
-if __name__ == "__main__":
-
-    parser = argparse.ArgumentParser(description="Analyze KeyFrame Poses")
-    parser.add_argument("experiment_directory", type=str, help="folder in outputs with all results")
-    parser.add_argument("groundtruth_map_directory", type=str, help="folder with ground truth map")
-    parser.add_argument("groundtruth_trajectory", type=str, help="file with ground truth trajectory")
-    parser.add_argument("--ckpt_id", type=str, default=None)
-    parser.add_argument("--var_threshold", type=float, default = 1e-5, help="Threshold for variance")
-    parser.add_argument("--write_pointclouds", default=False, action="store_true")
-    parser.add_argument("--f_score_threshold", type=float, default=0.1)
-    args = parser.parse_args()
-    
-    checkpoints = os.listdir(f"{args.experiment_directory}/checkpoints")
+def process_sequence(args, experiment_directory, var_threshold):
+    checkpoints = os.listdir(f"{experiment_directory}/checkpoints")
 
     if args.ckpt_id is None:
         #https://stackoverflow.com/a/2669120
@@ -77,7 +61,7 @@ if __name__ == "__main__":
     else:
         checkpoint = f"ckpt_{args.ckpt_id}.tar"
 
-    checkpoint_path = pathlib.Path(f"{args.experiment_directory}/checkpoints/{checkpoint}")
+    checkpoint_path = pathlib.Path(f"{experiment_directory}/checkpoints/{checkpoint}")
 
     scan_names = os.listdir(f"{args.groundtruth_map_directory}/scan")
     scan_nums = [s[:-4] for s in scan_names]
@@ -95,7 +79,7 @@ if __name__ == "__main__":
     start_pose = np.vstack((start_pose, [0,0,0,1]))
     T_world_start = torch.from_numpy(start_pose)
 
-    with open(f"{args.experiment_directory}/full_config.pkl", 'rb') as f:
+    with open(f"{experiment_directory}/full_config.pkl", 'rb') as f:
         full_config = pickle.load(f)
 
     _DEVICE = torch.device(full_config.mapper.device)
@@ -184,18 +168,21 @@ if __name__ == "__main__":
                 est_depth = results['depth_fine'] * scale_factor
 
                 depth[chunk_idx * CHUNK_SIZE: (chunk_idx+1) * CHUNK_SIZE] = est_depth.detach().cpu().clone()
-                variance[chunk_idx * CHUNK_SIZE: (chunk_idx+1)*CHUNK_SIZE] = est_variance.detach().cpu().clone()
 
-                good_idx = est_variance < args.var_threshold
+                good_idx = est_variance < var_threshold
                 num_excl = (~good_idx).sum()
                 good_idx = torch.logical_and(good_idx, est_depth < ray_range[1])
                 rendered_lidar[num_points:num_points+good_idx.sum()] = (scan.ray_directions[:,good_idx] * est_depth[good_idx]).cpu().T
+                variance[num_points:num_points+good_idx.sum()] = est_variance[good_idx].detach().cpu().clone()
 
                 num_points += good_idx.sum()
 
             rendered_lidar = rendered_lidar[:num_points]
+            variance = variance[:num_points].tile(3, 1).T
+            breakpoint()
             rendered_pcd = o3d.geometry.PointCloud()
             rendered_pcd.points = o3d.utility.Vector3dVector(rendered_lidar.numpy())
+            rendered_pcd.colors = o3d.utility.Vector3dVector(torch.clip(variance, 0, 1).numpy())
 
             print("Estimating point cloud normals")
             rendered_pcd.estimate_normals()
@@ -242,19 +229,63 @@ if __name__ == "__main__":
                 "num_points": len(accuracy)
             }
 
-            metrics_dir = f"{args.experiment_directory}/metrics"
-            renders_dir = f"{args.experiment_directory}/lidar_renders/"
+            metrics_dir = f"{experiment_directory}/metrics"
+            renders_dir = f"{experiment_directory}/lidar_renders/"
             os.makedirs(metrics_dir, exist_ok=True)
 
             if args.write_pointclouds:
                 os.makedirs(renders_dir, exist_ok=True
                 )
-                o3d.io.write_point_cloud(f"{renders_dir}/rendered_{scan_num}_{args.var_threshold}.pcd", rendered_pcd)
+                o3d.io.write_point_cloud(f"{renders_dir}/rendered_{scan_num}_{var_threshold}.pcd", rendered_pcd)
 
                 if is_first:
                     o3d.io.write_point_cloud(f"{renders_dir}/gt_{scan_num}.pcd", gt_scan_data)
 
                     is_first = False
 
-            with open(f"{metrics_dir}/statistics_{scan_num}_{args.var_threshold}.yaml", 'w+') as yaml_stats_f:
+            with open(f"{metrics_dir}/statistics_{scan_num}_{var_threshold}.yaml", 'w+') as yaml_stats_f:
                 yaml.dump(stats, yaml_stats_f, indent = 2)
+
+
+def _gpu_worker(job_queue: mp.Queue, args, total):
+    while not job_queue.empty():
+        data = job_queue.get()
+        if data is None:
+            break
+        i, exp_dir, var_th = data
+        process_sequence(args, exp_dir, var_th)
+        print(f"Processed sequence {i+1} of {total}")
+
+if __name__ == "__main__":
+    mp.set_start_method('spawn')
+
+    parser = argparse.ArgumentParser(description="Analyze KeyFrame Poses")
+    parser.add_argument("experiment_directories", nargs='+', type=str, help="folder in outputs with all results")
+    parser.add_argument("groundtruth_map_directory", type=str, help="folder with ground truth map")
+    parser.add_argument("groundtruth_trajectory", type=str, help="file with ground truth trajectory")
+    parser.add_argument("--ckpt_id", type=str, default=None)
+    parser.add_argument("--var_threshold", type=float, default = [1e-5], nargs='+', help="Threshold(s) for variance")
+    parser.add_argument("--write_pointclouds", default=False, action="store_true")
+    parser.add_argument("--f_score_threshold", type=float, default=0.1)
+    args = parser.parse_args()
+
+    job_queue = mp.Queue()
+
+    num_jobs = 0
+    for exp_dir in args.experiment_directories:
+        for var_th in args.var_threshold:
+            job_queue.put((num_jobs, exp_dir, var_th,))
+            num_jobs += 1
+
+    for _ in range(torch.cuda.device_count()):
+        job_queue.put(None)
+
+    gpu_worker_processes = []
+    for gpu_id in range(torch.cuda.device_count()):
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
+        gpu_worker_processes.append(mp.Process(target = _gpu_worker, args=(job_queue, args, num_jobs)))
+        gpu_worker_processes[-1].start()
+
+    # Sync
+    for process in gpu_worker_processes:
+        process.join()
