@@ -1,8 +1,5 @@
 mapper:
-  optimizer:
-    model_config:
-      loss:
-        JS_loss:
-          alpha: [2, 5]
-          max_js_score: [20, 40]
-        min_depth_eps: [0.1, 0.3]
+  keyframe_manager:
+    window_selection:
+      hybrid_settings:
+        num_recent_frames: [2, 4, 6, 8]

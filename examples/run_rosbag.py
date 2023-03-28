@@ -215,7 +215,7 @@ def run_trial(config, settings, settings_description = None, config_idx = None, 
 
     logdir = loner._log_directory
 
-    if settings_description is not None:
+    if settings_description is not None and config_idx is not None:
         if trial_idx == 0:
             with open(f"{logdir}/../configuration.txt", 'w+') as desc_file:
                 desc_file.write(settings_description)
@@ -397,8 +397,13 @@ if __name__ == "__main__":
 
     if len(args.gpu_ids) > 1:
         mp.set_start_method('spawn')
+        
+        if len(settings_descriptions) > 1:
+            config_idxs = range(len(settings_descriptions))
+        else:
+            config_idxs = [None]
 
-        job_queue_data = zip(settings_options, settings_descriptions, range(len(settings_descriptions)))
+        job_queue_data = zip(settings_options, settings_descriptions, config_idxs)
 
         job_queue = mp.Queue()
         for element in job_queue_data:

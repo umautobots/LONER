@@ -19,7 +19,6 @@ import matplotlib.pyplot as plt
 from matplotlib.offsetbox import AnchoredText
 import torch
 
-PUB_ROS = False
 
 PROJECT_ROOT = os.path.abspath(os.path.join(
     os.path.dirname(__file__),
