@@ -1,5 +1,6 @@
 mapper:
-  keyframe_manager:
-    window_selection:
-      hybrid_settings:
-        num_recent_frames: [2, 4, 6, 8]
+  optimizer:
+    model_config:
+      loss:
+        JS_loss:
+          max_js_score: [10, 20, 50]
