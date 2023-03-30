@@ -120,6 +120,8 @@ tracker:
     sky_removal: NULL
     frame_decimation_rate_hz: 10
     frame_match_tolerance: 0.01
+    frame_delta_t_sec_tolerance: 0.02
+    decimate_on_load: False
     lidar_point_step: 10 # Only keep 1 out of this many lidar points
   icp:
     schedule:

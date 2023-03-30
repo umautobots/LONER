@@ -47,40 +47,38 @@ WARN_LIDAR_TIMES_ONCE = True
 
 def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time) -> LidarScan:
 
-    lidar_data = ros_numpy.point_cloud2.pointcloud2_to_array(
-        lidar_msg)
+    lidar_data = ros_numpy.point_cloud2.pointcloud2_to_array(lidar_msg).copy()
 
-    if len(lidar_data.shape) == 1:
-        lidar_data = pd.DataFrame(lidar_data).to_numpy()
-    else:
-        lidar_data = pd.concat(list(map(pd.DataFrame, lidar_data))).to_numpy()
+    fields = [f.name for f in lidar_msg.fields]
     
-    lidar_data = torch.from_numpy(lidar_data)
-    xyz = lidar_data[:, :3]
+    time_key = None
+    for f in fields:
+        if "time" in f or f == "t":
+            time_key = f
+            break
+    
+    num_points = lidar_msg.width * lidar_msg.height
+
+    xyz = torch.zeros((num_points, 3,), dtype=torch.float32)
+    xyz[:,0] = torch.from_numpy(lidar_data['x'].reshape(-1,))
+    xyz[:,1] = torch.from_numpy(lidar_data['y'].reshape(-1,))
+    xyz[:,2] = torch.from_numpy(lidar_data['z'].reshape(-1,))
 
     dists = xyz.norm(dim=1)
     valid_ranges = dists > LIDAR_MIN_RANGE
 
     xyz = xyz[valid_ranges].T
-
-    fields = [f.name for f in lidar_msg.fields]
-    time_idx = None
-    for f_idx, f in enumerate(fields):
-        if "time" in f or f == "t":
-            time_idx = f_idx
-            break
-
     
     global WARN_MOCOMP_ONCE
 
-    if time_idx is None:
+    if time_key is None:
         if WARN_MOCOMP_ONCE:
             print("Warning: LiDAR Data has No Associated Timestamps. Motion compensation is useless.")
             WARN_MOCOMP_ONCE = False
         timestamps = torch.full_like(xyz[0], timestamp.to_sec()).float()
     else:
 
-        timestamps = lidar_data[valid_ranges, time_idx]
+        timestamps = torch.from_numpy(lidar_data[time_key].astype(np.float32)).reshape(-1,)[valid_ranges]
 
         # This logic deals with the fact that some lidars report time globally, and others 
         # use the ROS timestamp for the overall time then the timestamps in the message are just
@@ -246,6 +244,10 @@ def run_trial(config, settings, settings_description = None, config_idx = None, 
     warned_skip_once = False
 
     topics = [lidar_topic] if lidar_only else [lidar_topic, image_topic]
+
+    prev_scan_time = float('-inf')
+    frame_delta_t = 1/settings.tracker.frame_synthesis.frame_decimation_rate_hz - \
+                    settings.tracker.frame_synthesis.frame_delta_t_sec_tolerance
     
     for topic, msg, timestamp in bag.read_messages(topics=topics):        
         # Wait for lidar to init
@@ -266,6 +268,11 @@ def run_trial(config, settings, settings_description = None, config_idx = None, 
             image = build_image_from_msg(msg, timestamp, im_scale_factor)
             loner.process_rgb(image)
         elif topic == lidar_topic:
+            if settings.tracker.frame_synthesis.decimate_on_load and timestamp.to_sec() - prev_scan_time < frame_delta_t:
+                continue
+
+            prev_scan_time = timestamp.to_sec()
+             
             if tf_buffer is not None:
                 try:
                     lidar_tf = tf_buffer.lookup_transform_core('map', "lidar", timestamp + start_time)

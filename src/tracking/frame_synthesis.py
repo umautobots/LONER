@@ -9,8 +9,6 @@ from common.pose_utils import WorldCube
 from common.sensors import Image, LidarScan
 from common.settings import Settings
 
-FRAME_TOLERANCE = 0.02
-
 class FrameSynthesis:
     """ FrameSynthesis class to process streams of data and create frames.
     """
@@ -42,12 +40,15 @@ class FrameSynthesis:
         self._lidar_scans = []
         self._lidar_scan_timestamps = torch.Tensor()
 
+        self._decimate_on_load = self._settings.decimate_on_load
+
     ## Reads data from the @p lidar_scan and adds the points to the appropriate frame(s)
     # @param lidar_scan: Set of lidar points to add to the in-progress frames(s)
     def process_lidar(self, lidar_scan: LidarScan, gt_pose: Pose) -> List[int]:
         if self._lidar_only:
             scan_time = lidar_scan.get_start_time()
-            if scan_time - self._prev_accepted_timestamp >= self._frame_delta_t_sec - FRAME_TOLERANCE:
+            dt = self._frame_delta_t_sec - self._settings.frame_delta_t_sec_tolerance
+            if self._decimate_on_load or scan_time - self._prev_accepted_timestamp >= dt:
                 new_frame = Frame(None, lidar_scan, self._t_lidar_to_camera)
                 new_frame._gt_lidar_pose = gt_pose
                 self._completed_frames.append(new_frame.clone())
@@ -61,7 +62,7 @@ class FrameSynthesis:
     # Enqueues image from @p image.
     # @precond incoming images are in monotonically increasing order (in timestamp)
     def process_image(self, image: Image) -> None:
-        if image.timestamp - self._prev_accepted_timestamp >= self._frame_delta_t_sec - FRAME_TOLERANCE:
+        if image.timestamp - self._prev_accepted_timestamp >= self._frame_delta_t_sec - self._settings.frame_delta_t_sec_tolerance:
             self._prev_accepted_timestamp = image.timestamp
             new_frame = Frame(image=image, T_lidar_to_camera=self._t_lidar_to_camera)
 
