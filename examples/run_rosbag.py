@@ -50,10 +50,15 @@ def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time) -> LidarS
     lidar_data = ros_numpy.point_cloud2.pointcloud2_to_array(
         lidar_msg)
 
-    lidar_data = torch.from_numpy(pd.DataFrame(lidar_data).to_numpy()).cuda()
+    if len(lidar_data.shape) == 1:
+        lidar_data = pd.DataFrame(lidar_data).to_numpy()
+    else:
+        lidar_data = pd.concat(list(map(pd.DataFrame, lidar_data))).to_numpy()
+    
+    lidar_data = torch.from_numpy(lidar_data)
     xyz = lidar_data[:, :3]
 
-    dists = torch.linalg.norm(xyz, dim=1)
+    dists = xyz.norm(dim=1)
     valid_ranges = dists > LIDAR_MIN_RANGE
 
     xyz = xyz[valid_ranges].T
@@ -61,7 +66,7 @@ def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time) -> LidarS
     fields = [f.name for f in lidar_msg.fields]
     time_idx = None
     for f_idx, f in enumerate(fields):
-        if "time" in f:
+        if "time" in f or f == "t":
             time_idx = f_idx
             break
 
@@ -81,6 +86,11 @@ def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time) -> LidarS
         # use the ROS timestamp for the overall time then the timestamps in the message are just
         # offsets. This heuristic has looked legit so far on the tested lidars (ouster and hesai).
         global WARN_LIDAR_TIMES_ONCE
+        if timestamps[-1] > 1e-7:
+            if WARN_LIDAR_TIMES_ONCE:
+                print("Timestamnps look to be in nanoseconds. Scaling")
+            timestamps *= 1e-9
+
         if timestamps[0] < 1e-5:
             if WARN_LIDAR_TIMES_ONCE:
                 print("Assuming LiDAR timestamps within a scan are local, and start at 0")
@@ -215,7 +225,7 @@ def run_trial(config, settings, settings_description = None, config_idx = None, 
 
     logdir = loner._log_directory
 
-    if settings_description is not None:
+    if settings_description is not None and config_idx is not None:
         if trial_idx == 0:
             with open(f"{logdir}/../configuration.txt", 'w+') as desc_file:
                 desc_file.write(settings_description)
@@ -390,15 +400,20 @@ if __name__ == "__main__":
         if args.lite:
             settings_options[0].augment(lite_mode_changes)
 
-    if args.overrides is not None or args.num_repeats > 1:
+    if len(settings_options) > 1 or args.num_repeats > 1:
         now = datetime.datetime.now()
         now_str = now.strftime("%m%d%y_%H%M%S")
         config["experiment_name"] += f"_{now_str}"
 
     if len(args.gpu_ids) > 1:
         mp.set_start_method('spawn')
+        
+        if len(settings_descriptions) > 1:
+            config_idxs = range(len(settings_descriptions))
+        else:
+            config_idxs = [None]
 
-        job_queue_data = zip(settings_options, settings_descriptions, range(len(settings_descriptions)))
+        job_queue_data = zip(settings_options, settings_descriptions, config_idxs)
 
         job_queue = mp.Queue()
         for element in job_queue_data:

@@ -1,0 +1,17 @@
+baseline: defaults.yaml
+dataset: ~/data/newer_college/quad/2021-07-01-10-37-38-quad-easy-002.bag
+calibration: NULL
+groundtruth_traj: ~/data/newer_college/quad/gt-nc-quad-easy.csv
+experiment_name: quad
+dataset_family: newer_college
+changes:
+  system:
+    world_cube:
+      compute_from_groundtruth: True
+  mapper:
+    optimizer:
+      model_config:
+        data:
+          ray_range: &ray_range [1, 80]
+        model:
+          ray_range: *ray_range

@@ -13,9 +13,6 @@ import tqdm
 import rosbag
 import rospy
 
-# autopep8: off
-# Linting needs to be disabled here or it'll try to move includes before path.
-PUB_ROS = False
 
 PROJECT_ROOT = os.path.abspath(os.path.join(
     os.path.dirname(__file__),
@@ -34,7 +31,6 @@ from src.models.losses import *
 from src.models.model_tcnn import Model, OccupancyGridModel
 from src.models.ray_sampling import OccGridRaySampler
 
-# autopep8: on
 
 from src.common.sensors import Image, LidarScan
 from sensor_msgs.msg import Image, PointCloud2
