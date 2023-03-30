@@ -21,3 +21,8 @@ changes:
           ray_range: *ray_range
           render:
             N_samples_train: 512
+ 
+meshing_bounding_box:
+  x: [-40, 40]
+  y: [-40,40]
+  z: [-3,15]
