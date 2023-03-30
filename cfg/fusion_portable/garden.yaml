@@ -19,8 +19,6 @@ changes:
           ray_range: &ray_range [1, 50]
         model:
           ray_range: *ray_range
-          render:
-            N_samples_train: 512
  
 meshing_bounding_box:
   x: [-40, 40]

@@ -25,5 +25,3 @@ changes:
           ray_range: &ray_range [1, 150]
         model:
           ray_range: *ray_range
-          render:
-            N_samples_train: 512
