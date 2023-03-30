@@ -50,10 +50,15 @@ def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time) -> LidarS
     lidar_data = ros_numpy.point_cloud2.pointcloud2_to_array(
         lidar_msg)
 
-    lidar_data = torch.from_numpy(pd.DataFrame(lidar_data).to_numpy()).cuda()
+    if len(lidar_data.shape) == 1:
+        lidar_data = pd.DataFrame(lidar_data).to_numpy()
+    else:
+        lidar_data = pd.concat(list(map(pd.DataFrame, lidar_data))).to_numpy()
+    
+    lidar_data = torch.from_numpy(lidar_data)
     xyz = lidar_data[:, :3]
 
-    dists = torch.linalg.norm(xyz, dim=1)
+    dists = xyz.norm(dim=1)
     valid_ranges = dists > LIDAR_MIN_RANGE
 
     xyz = xyz[valid_ranges].T
@@ -61,7 +66,7 @@ def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time) -> LidarS
     fields = [f.name for f in lidar_msg.fields]
     time_idx = None
     for f_idx, f in enumerate(fields):
-        if "time" in f:
+        if "time" in f or f == "t":
             time_idx = f_idx
             break
 
@@ -81,6 +86,11 @@ def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time) -> LidarS
         # use the ROS timestamp for the overall time then the timestamps in the message are just
         # offsets. This heuristic has looked legit so far on the tested lidars (ouster and hesai).
         global WARN_LIDAR_TIMES_ONCE
+        if timestamps[-1] > 1e-7:
+            if WARN_LIDAR_TIMES_ONCE:
+                print("Timestamnps look to be in nanoseconds. Scaling")
+            timestamps *= 1e-9
+
         if timestamps[0] < 1e-5:
             if WARN_LIDAR_TIMES_ONCE:
                 print("Assuming LiDAR timestamps within a scan are local, and start at 0")

@@ -28,7 +28,17 @@
       "request": "launch",
       "program": "${workspaceFolder}/examples/run_rosbag.py",
       "console": "integratedTerminal",
-      "args": ["${workspaceFolder}/cfg/hilti_exp21.yaml", "--lite"],
+      "args": ["${workspaceFolder}/cfg/hilit/hilti_exp21.yaml", "--lite"],
+      "cwd": "${workspaceFolder}/examples",
+      "subProcess": true
+    },
+    {
+      "name": "LonerSLAM: Newer College",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/examples/run_rosbag.py",
+      "console": "integratedTerminal",
+      "args": ["${workspaceFolder}/cfg/newer_college/quad.yaml", "--lite"],
       "cwd": "${workspaceFolder}/examples",
       "subProcess": true
     },
@@ -39,6 +49,16 @@
       "program": "${workspaceFolder}/analysis/renderer.py",
       "console": "integratedTerminal",
       "args": ["${workspaceFolder}/outputs/debug_nan_031223_155004", "--render_video"],
+      "cwd": "${workspaceFolder}/analysis",
+      "subProcess": true
+    },
+    {
+      "name": "Lidar Renderer",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/analysis/renderer_lidar.py",
+      "console": "integratedTerminal",
+      "args": ["/mnt/ws-frb/projects/loner_slam/evaluation/full/canteen_032923_012304/config_0/trial_0/"],
       "cwd": "${workspaceFolder}/analysis",
       "subProcess": true
     },

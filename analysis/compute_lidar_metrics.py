@@ -29,6 +29,8 @@ from src.models.model_tcnn import Model, OccupancyGridModel
 from src.models.ray_sampling import OccGridRaySampler
 from src.common.pose_utils import WorldCube
 
+from analysis.evaluate_lidar_map import compare_point_clouds
+
 def load_scan_poses(yaml_path, scan_nums):
     transform_data = cv2.FileStorage(yaml_path, cv2.FileStorage_READ)
 
@@ -179,73 +181,16 @@ def process_sequence(args, experiment_directory, var_threshold):
 
             rendered_lidar = rendered_lidar[:num_points]
             variance = variance[:num_points].tile(3, 1).T
-            breakpoint()
+
             rendered_pcd = o3d.geometry.PointCloud()
             rendered_pcd.points = o3d.utility.Vector3dVector(rendered_lidar.numpy())
-            rendered_pcd.colors = o3d.utility.Vector3dVector(torch.clip(variance, 0, 1).numpy())
 
-            print("Estimating point cloud normals")
-            rendered_pcd.estimate_normals()
-            gt_scan_data.estimate_normals()
+            id_str = f"{args.scan_num}_{args.var_threshold}"
 
-            convergence_criteria = (
-                o3d.cuda.pybind.pipelines.registration.ICPConvergenceCriteria(
-                    1e-12,
-                    1e-12,
-                    10))
-            
-            print("Refining alignment")
-            registration = o3d.pipelines.registration.registration_icp(
-                rendered_pcd, gt_scan_data, 0.125, np.eye(4),
-                o3d.pipelines.registration.TransformationEstimationPointToPlane(),
-                criteria=convergence_criteria)
-            
-            registration_result = registration.transformation.copy()
-            
-            rendered_pcd.transform(registration_result)
-
-            print("Computing metrics")
-            accuracy = np.asarray(rendered_pcd.compute_point_cloud_distance(gt_scan_data))
-            completion = np.asarray(gt_scan_data.compute_point_cloud_distance(rendered_pcd))
-            chamfer_distance = accuracy.mean() + completion.mean()
-
-            # https://github.com/NVIDIAGameWorks/kaolin/blob/master/kaolin/metrics/pointcloud.py
-            false_negatives = (completion > args.f_score_threshold).sum().item()
-            false_positives = (accuracy > args.f_score_threshold).sum().item()
-            true_positives = (len(accuracy) - false_positives)
-
-            precision = true_positives / (true_positives + false_positives)
-            recall = true_positives / (true_positives + false_negatives)
-
-            f_score = 2 * (precision * recall) / (precision + recall + 1e-8)
-
-            stats = {
-                "accuracy": accuracy.mean().item(),
-                "completion": completion.mean().item(),
-                "chamfer_distance": chamfer_distance.item(),
-                "recall": recall,
-                "precision": precision,
-                "f-score": f_score,
-                "num_points": len(accuracy)
-            }
-
-            metrics_dir = f"{experiment_directory}/metrics"
-            renders_dir = f"{experiment_directory}/lidar_renders/"
-            os.makedirs(metrics_dir, exist_ok=True)
-
-            if args.write_pointclouds:
-                os.makedirs(renders_dir, exist_ok=True
-                )
-                o3d.io.write_point_cloud(f"{renders_dir}/rendered_{scan_num}_{var_threshold}.pcd", rendered_pcd)
-
-                if is_first:
-                    o3d.io.write_point_cloud(f"{renders_dir}/gt_{scan_num}.pcd", gt_scan_data)
-
-                    is_first = False
-
-            with open(f"{metrics_dir}/statistics_{scan_num}_{var_threshold}.yaml", 'w+') as yaml_stats_f:
-                yaml.dump(stats, yaml_stats_f, indent = 2)
-
+            write_gt_cloud = is_first and args.write_pointclouds
+            is_first = False
+            compare_point_clouds(rendered_pcd, gt_scan_data, args.experiment_directory, 
+                                 args.f_score_threshold, args.write_pointclouds, write_gt_cloud, id_str)
 
 def _gpu_worker(job_queue: mp.Queue, args, total):
     while not job_queue.empty():

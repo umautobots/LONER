@@ -1,5 +1,16 @@
-mapper:
-  optimizer:
-    model_config:
-      loss:
-        depth_eps_decay_steps: [50, 250]
+-
+  mapper:
+    optimizer:
+      model_config:
+        loss:
+          depthloss_lambda: 1.0
+          depth_lambda: 0.0
+-
+  mapper:
+    optimizer:
+      model_config:
+        loss:
+          JS_loss:
+            enable: False
+          depth_eps_decay_rate: [0.85, 0.95, 0.99]
+          depth_eps_decay_steps: 1
