@@ -36,7 +36,6 @@ from src.common.sensors import Image, LidarScan
 from sensor_msgs.msg import Image, PointCloud2
 import pandas as pd
 import ros_numpy
-from src.common.lidar_ray_utils import LidarRayDirections, get_far_val
 from analysis.mesher import Mesher
 
 assert torch.cuda.is_available(), 'Unable to find GPU'
@@ -142,7 +141,7 @@ ray_sampler.update_occ_grid(occupancy_grid.detach())
 model.load_state_dict(ckpt['network_state_dict']) 
 
 # rosbag_path = full_config.dataset_path
-lidar_topic = full_config.ros_names.lidar
+lidar_topic = full_config.system.ros_names.lidar
 ray_range = full_config.mapper.optimizer.model_config.data.ray_range
 mesher = Mesher(model, ckpt, world_cube, rosbag_path=rosbag_path, lidar_topic=lidar_topic,  resolution=resolution, marching_cubes_bound=meshing_bound, points_batch_size=500000)
 mesh_o3d, mesh_lidar_frames = mesher.get_mesh(_DEVICE, ray_sampler, occupancy_grid, occ_voxel_size=occ_model_config.voxel_size, sigma_only=sigma_only, threshold=threshold, 

@@ -10,7 +10,7 @@ from common.sensors import Image
 from common.settings import Settings
 from common.pose_utils import WorldCube
 from common.sensors import Image, LidarScan
-from common.lidar_ray_utils import LidarRayDirections
+from common.ray_utils import LidarRayDirections
 
 from sensor_msgs.msg import Image, PointCloud2
 import pandas as pd
