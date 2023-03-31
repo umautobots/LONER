@@ -85,7 +85,7 @@ def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time) -> LidarS
         # use the ROS timestamp for the overall time then the timestamps in the message are just
         # offsets. This heuristic has looked legit so far on the tested lidars (ouster and hesai).
         global WARN_LIDAR_TIMES_ONCE
-        if timestamps[-1] > 1e-7:
+        if timestamps[-1] > 1e7:
             if WARN_LIDAR_TIMES_ONCE:
                 print("Timestamnps look to be in nanoseconds. Scaling")
             timestamps *= 1e-9
