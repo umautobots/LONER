@@ -8,6 +8,7 @@ import pickle
 import re
 import sys
 import torch
+import pandas as pd
 import tqdm
 import rosbag
 import torch.multiprocessing as mp
@@ -24,7 +25,7 @@ import open3d as o3d
 from render_utils import *
 
 from src.common.pose import Pose
-from src.common.pose_utils import WorldCube
+from src.common.pose_utils import WorldCube, build_poses_from_df
 from src.models.losses import *
 from src.models.model_tcnn import Model, OccupancyGridModel
 from src.models.ray_sampling import OccGridRaySampler
@@ -77,44 +78,62 @@ def merge_o3d_pc(pcd1, pcd2):
     return pcd
 
 
-def render_scan(lidar_pose, ray_directions):
+def render_scan(lidar_pose, ray_directions, render_color: bool = False):
     with torch.no_grad():
         size = ray_directions.lidar_scan.ray_directions.shape[1]
-        rgb_fine = torch.zeros((size,3), dtype=torch.float32).view(-1, 3)
+
+        if render_color:
+            rgb_fine = torch.zeros((size,3), dtype=torch.float32).view(-1, 3)
+
         depth_fine = torch.zeros((size,1), dtype=torch.float32).view(-1, 1)
         variance = torch.zeros((size,1), dtype=torch.float32).view(-1, 1)
 
         for chunk_idx in range(ray_directions.num_chunks):
             eval_rays = ray_directions.fetch_chunk_rays(chunk_idx, lidar_pose, world_cube, ray_range)
             eval_rays = eval_rays.to(_DEVICE)
-            results = model(eval_rays, ray_sampler, scale_factor, testing=True, return_variance=True)
+            results = model(eval_rays, ray_sampler, scale_factor, testing=True, return_variance=True, camera=render_color)
 
-            rgb_fine[chunk_idx * CHUNK_SIZE: (chunk_idx+1) * CHUNK_SIZE, :] = results['rgb_fine']
+            if render_color:
+                rgb_fine[chunk_idx * CHUNK_SIZE: (chunk_idx+1) * CHUNK_SIZE, :] = results['rgb_fine']
             depth_fine[chunk_idx * CHUNK_SIZE: (chunk_idx+1) * CHUNK_SIZE, :] = results['depth_fine'].unsqueeze(1)  * scale_factor
             variance[chunk_idx * CHUNK_SIZE: (chunk_idx+1) * CHUNK_SIZE, :] = results['variance'].unsqueeze(1)
 
         rendered_lidar = (ray_directions.lidar_scan.ray_directions.t() * depth_fine).cpu().numpy()
-        rendered_colors = rgb_fine.cpu().numpy()
+        
+
 
         good_idx = variance < args.var_threshold
         good_idx = good_idx.squeeze(1).cpu()
         rendered_lidar = rendered_lidar[good_idx]
-        rendered_colors = rendered_colors[good_idx]
 
-    return rendered_lidar, rendered_colors
+        if render_color:
+            rendered_colors = rgb_fine.cpu().numpy()
+            rendered_colors = rendered_colors[good_idx]
 
+            return rendered_lidar, rendered_colors
+        
+        return rendered_lidar
 
 ## Sketchily keeping these outside main guard for multiprocessing reasons
 parser = argparse.ArgumentParser(description="Render ground truth maps using trained nerf models")
 parser.add_argument("experiment_directory", type=str, help="folder in outputs with all results")
 
+parser.add_argument("--use_traj_est", default=False, action="store_true", help="If set, interpolates the estimated traj instead of using KF poses")
 parser.add_argument("--single_threaded", default=False, action="store_true")
 parser.add_argument("--ckpt_id", type=str, default=None)
 parser.add_argument("--use_gt_poses", default=False, dest="use_gt_poses", action="store_true")
 
-parser.add_argument("--skip_step", type=int, default=10, dest="skip_step")
+parser.add_argument("--traj_interpolation", type=float, default=3., 
+                        help="how often to create a render. Only applies if --use_traj_est is set")
+parser.add_argument("--skip_step", type=int, default=10,
+                        help="skip_step in poses. Only applies if --use_traj_est is not set")
+
 parser.add_argument("--only_last_frame", default=False, dest="only_last_frame", action="store_true")
 parser.add_argument("--var_threshold", type=float, default = 5e-4, help="Threshold for variance")
+parser.add_argument("--stack_heights", type=float, nargs="+", required=False, default=None,
+    help="If provided, will render extra copies of the trajectories at these heights.")
+parser.add_argument("--translation_noise", type=float, default=0, help="std dev of noise to apply to pose tranlsations")
+parser.add_argument("--voxel_size", type=float, default=None, required=False)
 
 args = parser.parse_args()
 
@@ -190,9 +209,9 @@ def _gpu_worker(job_queue, result_queue, ray_directions):
         
         _, pose = data
 
-        rendered_lidar, rendered_colors = render_scan(pose, ray_directions)
+        rendered_lidar = render_scan(pose, ray_directions, False)
 
-        result_queue.put((rendered_lidar, rendered_colors, pose.clone(),))
+        result_queue.put((rendered_lidar, pose.clone(),))
     while True:
         continue
 
@@ -201,16 +220,50 @@ if __name__ == "__main__":
    
     os.makedirs(f"{args.experiment_directory}/lidar_renders", exist_ok=True)
 
+    if args.use_traj_est:
+        pose_df = pd.read_csv(f"{args.experiment_directory}/trajectory/estimated_trajectory.txt", delimiter=' ', header=None)
+        all_poses, _ = build_poses_from_df(pose_df)
 
+        translations = all_poses[:, :3, 3]
 
-    poses = ckpt["poses"]    
-    all_poses = []
-    skip_step = args.skip_step
-    
-    if args.only_last_frame:
-        lidar_poses = [poses[-1]]
+        current_reference_idx = 0
+
+        render_idxs = []
+        for pose_idx in range(len(translations)):
+            ref_trans = translations[current_reference_idx]
+            current_trans = translations[pose_idx]
+
+            if (current_trans - ref_trans).norm() >= args.traj_interpolation:
+                render_idxs.append(pose_idx)
+                current_reference_idx = pose_idx
+
+        lidar_poses = all_poses[render_idxs]
+
+        if args.stack_heights is not None:
+            all_lidar_poses = []
+
+            stack_heights = list(set([0] + args.stack_heights))
+
+            for height in stack_heights:
+                stack = lidar_poses.clone()
+                stack[:, 2, 3] += height
+
+                all_lidar_poses.append(stack)
+
+            lidar_poses = torch.cat(all_lidar_poses)
     else:
-        lidar_poses = poses[::skip_step]
+        poses = ckpt["poses"]    
+        all_poses = []
+        skip_step = args.skip_step
+        
+        if args.only_last_frame:
+            lidar_poses = [poses[-1]]
+        else:
+            lidar_poses = poses[::skip_step]
+
+    if args.translation_noise != 0:
+        for pose in lidar_poses:
+            pose[:3, 3] += torch.normal(torch.zeros_like(pose[:3,3]), args.translation_noise)
 
 
     lidar_scan = build_lidar_scan(lidar_intrinsics)
@@ -218,26 +271,32 @@ if __name__ == "__main__":
 
     jobs = []
     for pose_idx, pose_state in enumerate(lidar_poses):
-        if args.use_gt_poses:
-            pose_key = "gt_lidar_pose"
+
+        if isinstance(pose_state, dict):
+            if args.use_gt_poses:
+                pose_key = "gt_lidar_pose"
+            else:
+                pose_key = "lidar_pose"
+
+            kf_timestamp = pose_state["timestamp"].numpy()
+
+            lidar_pose = Pose(pose_tensor=pose_state[pose_key]).to(_DEVICE)
         else:
-            pose_key = "lidar_pose"
-
-        kf_timestamp = pose_state["timestamp"].numpy()
-
-        lidar_pose = Pose(pose_tensor=pose_state[pose_key]).to(_DEVICE)
-
+            lidar_pose = Pose(pose_state).to(_DEVICE)
+            
         jobs.append((pose_idx, lidar_pose,))
 
     output_cloud = o3d.geometry.PointCloud()
 
     if args.single_threaded:
         for _, lidar_pose in tqdm(jobs):
-            rendered_lidar, rendered_colors = render_scan(lidar_pose, ray_directions)
+            rendered_lidar = render_scan(lidar_pose, ray_directions, False)
 
             rendered_pcd = o3d.geometry.PointCloud()
             rendered_pcd.points = o3d.utility.Vector3dVector(rendered_lidar)
-            rendered_pcd.colors = o3d.utility.Vector3dVector(rendered_colors)
+
+            if args.voxel_size is not None:
+                rendered_pcd = rendered_pcd.voxel_down_sample(args.voxel_size)
 
             output_cloud = merge_o3d_pc(output_cloud, rendered_pcd.transform(lidar_pose.get_transformation_matrix().cpu().numpy()))
     else:
@@ -268,11 +327,13 @@ if __name__ == "__main__":
             
             pbar.update(1)
 
-            rendered_lidar, rendered_colors, lidar_pose = result
+            rendered_lidar, lidar_pose = result
 
             rendered_pcd = o3d.geometry.PointCloud()
             rendered_pcd.points = o3d.utility.Vector3dVector(rendered_lidar)
-            rendered_pcd.colors = o3d.utility.Vector3dVector(rendered_colors)
+            
+            if args.voxel_size is not None:
+                rendered_pcd = rendered_pcd.voxel_down_sample(args.voxel_size)
 
             output_cloud = merge_o3d_pc(output_cloud, rendered_pcd.transform(lidar_pose.get_transformation_matrix().cpu().numpy()))
         

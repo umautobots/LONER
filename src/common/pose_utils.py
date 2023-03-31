@@ -4,6 +4,8 @@ from dataclasses import dataclass
 import numpy as np
 import pytorch3d.transforms
 import torch
+import pandas as pd
+from scipy.spatial.transform import Rotation
 
 
 @dataclass
@@ -300,3 +302,27 @@ def dump_trajectory_to_tum(transformation_matrices: torch.Tensor,
     data = torch.hstack([timestamps.reshape(-1,1), translations, rotations])
     data = data.detach().cpu().numpy()
     np.savetxt(output_file, data, delimiter=" ", fmt="%.10f")
+
+
+def build_poses_from_df(df: pd.DataFrame):
+    data = torch.from_numpy(df.to_numpy(dtype=np.float64))
+
+    ts = data[:,0]
+    xyz = data[:,1:4]
+    quat = data[:,4:]
+
+    rots = torch.from_numpy(Rotation.from_quat(quat).as_matrix())
+    
+    poses = torch.cat((rots, xyz.unsqueeze(2)), dim=2)
+
+    homog = torch.Tensor([0,0,0,1]).tile((poses.shape[0], 1, 1)).to(poses.device)
+
+    poses = torch.cat((poses, homog), dim=1)
+
+    rot_inv = poses[0,:3,:3].T
+    t_inv = -rot_inv @ poses[0,:3,3]
+    start_inv = torch.hstack((rot_inv, t_inv.reshape(-1, 1)))
+    start_inv = torch.vstack((start_inv, torch.tensor([0,0,0,1.0], device=start_inv.device)))
+    poses = start_inv.unsqueeze(0) @ poses
+
+    return poses.float(), ts

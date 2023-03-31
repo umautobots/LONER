@@ -34,6 +34,7 @@ from src.loner import Loner
 from src.common.pose import Pose
 from src.common.sensors import Image, LidarScan
 from src.common.settings import Settings
+from src.common.pose_utils import build_poses_from_df
 
 from utils import *
 

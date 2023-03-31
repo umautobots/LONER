@@ -1,4 +1,3 @@
-import pandas as pd
 import rospy
 import tf2_py
 import numpy as np
@@ -8,31 +7,16 @@ import torch
 import pytorch3d.transforms
 
 import geometry_msgs.msg
+import os, sys
 
-from fusion_portable.fusion_portable_calibration import FusionPortableCalibration
+PROJECT_ROOT = os.path.abspath(os.path.join(
+    os.path.dirname(__file__),
+    os.pardir))
 
-def build_poses_from_df(df: pd.DataFrame):
-    data = torch.from_numpy(df.to_numpy(dtype=np.float64))
+sys.path.append(PROJECT_ROOT)
 
-    ts = data[:,0]
-    xyz = data[:,1:4]
-    quat = data[:,4:]
+from examples.fusion_portable.fusion_portable_calibration import FusionPortableCalibration
 
-    rots = torch.from_numpy(Rotation.from_quat(quat).as_matrix())
-    
-    poses = torch.cat((rots, xyz.unsqueeze(2)), dim=2)
-
-    homog = torch.Tensor([0,0,0,1]).tile((poses.shape[0], 1, 1))
-
-    poses = torch.cat((poses, homog), dim=1)
-
-    rot_inv = poses[0,:3,:3].T
-    t_inv = -rot_inv @ poses[0,:3,3]
-    start_inv = torch.hstack((rot_inv, t_inv.reshape(-1, 1)))
-    start_inv = torch.vstack((start_inv, torch.tensor([0,0,0,1.0])))
-    poses = start_inv.unsqueeze(0) @ poses
-
-    return poses.float(), ts
 
 def build_buffer_from_poses(poses, gt_timestamps):
     tf_buffer = tf2_py.BufferCore(rospy.Duration(10000))
