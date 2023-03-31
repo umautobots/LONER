@@ -121,11 +121,35 @@ class DefaultLogger:
             # Which kf each pose is closest (temporally) to
             pose_kf_indices = torch.bucketize(self._timestamps, keyframe_timestamps, right=False).long() - 1
             pose_kf_indices[pose_kf_indices < 0] = 0
-        
+
+
+            kf_traj, kf_times = keyframe_trajectory, keyframe_timestamps
+            tracked_traj, tracked_times = self._icp_only, self._timestamps
+
+            kf_frame_indices = torch.where(tracked_times[:, None] == kf_times)[0]
+
+            assert len(kf_frame_indices) == len(kf_times)
+
+            reconstructed_traj = []
+
+            for pose_idx, pose in enumerate(tracked_traj):
+                reference_kf_idx = torch.argmin((kf_frame_indices <= pose_idx).float()) - 1
+                reference_kf_pose = kf_traj[reference_kf_idx]
+
+                reference_frame_idx = kf_frame_indices[reference_kf_idx]
+                reference_frame_pose = tracked_traj[reference_frame_idx]
+
+                T_ref_p = reference_frame_pose.inverse() @ pose
+                opt_pose = reference_kf_pose @ T_ref_p
+                reconstructed_traj.append(opt_pose)
+
+            reconstructed_traj = torch.stack(reconstructed_traj)
+
         # Dump it all to TUM format
         os.makedirs(f"{self._log_directory}/trajectory", exist_ok=True)
         dump_trajectory_to_tum(self._icp_only, self._timestamps, f"{self._log_directory}/trajectory/tracking_only.txt")
-        dump_trajectory_to_tum(self._frame_log, self._timestamps, f"{self._log_directory}/trajectory/estimated_trajectory.txt")
+        dump_trajectory_to_tum(self._frame_log, self._timestamps, f"{self._log_directory}/trajectory/online_estimates.txt")
     
         if self._last_recv_keyframe_state is not None:
             dump_trajectory_to_tum(keyframe_trajectory, keyframe_timestamps, f"{self._log_directory}/trajectory/keyframe_trajectory.txt")
+            dump_trajectory_to_tum(reconstructed_traj, self._timestamps, f"{self._log_directory}/trajectory/estimated_trajectory.txt")
