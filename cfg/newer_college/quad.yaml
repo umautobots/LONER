@@ -7,7 +7,11 @@ dataset_family: newer_college
 changes:
   system:
     world_cube:
-      compute_from_groundtruth: True
+      compute_from_groundtruth: False
+      trajectory_bounding_box:
+        x: [-5, 50]
+        y: [-25, 15]
+        z: [-3, 10]
   mapper:
     optimizer:
       model_config:

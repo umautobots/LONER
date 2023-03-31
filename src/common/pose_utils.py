@@ -151,6 +151,7 @@ def compute_world_cube(camera_to_lidar, intrinsic_mats, image_sizes, lidar_poses
     assert lidar_poses is not None or traj_bounding_box is not None
 
     if lidar_poses is None:
+        print("Computing world cube using supplied trajectory bounding box")
         x_min, x_max = traj_bounding_box['x']
         y_min, y_max = traj_bounding_box['y']
         z_min, z_max = traj_bounding_box['z']
@@ -165,6 +166,7 @@ def compute_world_cube(camera_to_lidar, intrinsic_mats, image_sizes, lidar_poses
         
         lidar_poses[:,:3,3:4] = all_combos
     else:
+        print("Computing world cube with groundtruth poses")
         lidar_poses = lidar_poses @ lidar_poses[0,:,:].inverse()
 
     if camera_to_lidar is None:
