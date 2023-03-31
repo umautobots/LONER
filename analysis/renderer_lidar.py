@@ -103,6 +103,7 @@ def render_scan(lidar_pose, ray_directions, render_color: bool = False):
 
 
         good_idx = variance < args.var_threshold
+        good_idx = torch.logical_and(good_idx, depth_fine < ray_range[1] - 0.25)
         good_idx = good_idx.squeeze(1).cpu()
         rendered_lidar = rendered_lidar[good_idx]
 
@@ -159,6 +160,7 @@ with open(f"{args.experiment_directory}/full_config.pkl", 'rb') as f:
     full_config = pickle.load(f)
 
 cfg = full_config.mapper.optimizer.model_config
+
 ray_range = cfg.data.ray_range
 
 
@@ -222,7 +224,7 @@ if __name__ == "__main__":
 
     if args.use_traj_est:
         pose_df = pd.read_csv(f"{args.experiment_directory}/trajectory/estimated_trajectory.txt", delimiter=' ', header=None)
-        all_poses, _ = build_poses_from_df(pose_df)
+        all_poses, _ = build_poses_from_df(pose_df, False)
 
         translations = all_poses[:, :3, 3]
 
@@ -341,4 +343,6 @@ if __name__ == "__main__":
         for process in gpu_worker_processes:
             process.terminate()
 
+    print("Downsampling output")
+    output_cloud = output_cloud.voxel_down_sample(args.voxel_size)
     o3d.io.write_point_cloud(f"{args.experiment_directory}/lidar_renders/render_full.pcd", output_cloud)

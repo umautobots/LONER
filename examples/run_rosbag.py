@@ -199,7 +199,7 @@ def run_trial(config, settings, settings_description = None, config_idx = None, 
     if config["groundtruth_traj"] is not None:
         ground_truth_file = os.path.expanduser(config["groundtruth_traj"])
         ground_truth_df = pd.read_csv(ground_truth_file, names=["timestamp","x","y","z","q_x","q_y","q_z","q_w"], delimiter=" ")
-        lidar_poses, timestamps = build_poses_from_df(ground_truth_df)
+        lidar_poses, timestamps = build_poses_from_df(ground_truth_df, True)
         tf_buffer, timestamps = build_buffer_from_poses(lidar_poses, timestamps)
     else:
         tf_buffer = None

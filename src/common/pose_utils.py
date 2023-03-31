@@ -304,7 +304,7 @@ def dump_trajectory_to_tum(transformation_matrices: torch.Tensor,
     np.savetxt(output_file, data, delimiter=" ", fmt="%.10f")
 
 
-def build_poses_from_df(df: pd.DataFrame):
+def build_poses_from_df(df: pd.DataFrame, zero_origin=False):
     data = torch.from_numpy(df.to_numpy(dtype=np.float64))
 
     ts = data[:,0]
@@ -319,10 +319,11 @@ def build_poses_from_df(df: pd.DataFrame):
 
     poses = torch.cat((poses, homog), dim=1)
 
-    rot_inv = poses[0,:3,:3].T
-    t_inv = -rot_inv @ poses[0,:3,3]
-    start_inv = torch.hstack((rot_inv, t_inv.reshape(-1, 1)))
-    start_inv = torch.vstack((start_inv, torch.tensor([0,0,0,1.0], device=start_inv.device)))
-    poses = start_inv.unsqueeze(0) @ poses
+    if zero_origin:
+        rot_inv = poses[0,:3,:3].T
+        t_inv = -rot_inv @ poses[0,:3,3]
+        start_inv = torch.hstack((rot_inv, t_inv.reshape(-1, 1)))
+        start_inv = torch.vstack((start_inv, torch.tensor([0,0,0,1.0], device=start_inv.device)))
+        poses = start_inv.unsqueeze(0) @ poses
 
     return poses.float(), ts

@@ -24,8 +24,8 @@ if __name__ == "__main__":
     kf_df = pd.read_csv(args.keyframe_trajectory, delimiter=' ', header=None)
     tracked_df = pd.read_csv(args.tracked_trajectory, delimiter=' ', header=None)
 
-    kf_traj, kf_times = build_poses_from_df(kf_df)
-    tracked_traj, tracked_times = build_poses_from_df(tracked_df)
+    kf_traj, kf_times = build_poses_from_df(kf_df, False)
+    tracked_traj, tracked_times = build_poses_from_df(tracked_df, False)
 
     # Entry (i,j) indicates whether frame i and keyframe j are at the same time
     kf_frame_indices = torch.where(tracked_times[:, None] == kf_times)[0]

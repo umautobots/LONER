@@ -47,6 +47,8 @@ class DefaultLogger:
         self._t_world_to_kf = torch.eye(4)
         self._t_kf_to_frame = torch.eye(4)
 
+        self._last_recv_keyframe_state = None
+
     def update(self):        
         if self._frame_done:
             while self._frame_slot.has_value():
@@ -112,16 +114,18 @@ class DefaultLogger:
     def finish(self):
         self.update()
 
-        keyframe_timestamps = torch.tensor([kf["timestamp"] for kf in self._last_recv_keyframe_state])
+        if self._last_recv_keyframe_state is not None:
+            keyframe_timestamps = torch.tensor([kf["timestamp"] for kf in self._last_recv_keyframe_state])
+            keyframe_trajectory = torch.stack([Pose(pose_tensor=kf["lidar_pose"]).get_transformation_matrix() for kf in self._last_recv_keyframe_state])
 
-        keyframe_trajectory = torch.stack([Pose(pose_tensor=kf["lidar_pose"]).get_transformation_matrix() for kf in self._last_recv_keyframe_state])
-
-        # Which kf each pose is closest (temporally) to
-        pose_kf_indices = torch.bucketize(self._timestamps, keyframe_timestamps, right=False).long() - 1
-        pose_kf_indices[pose_kf_indices < 0] = 0
+            # Which kf each pose is closest (temporally) to
+            pose_kf_indices = torch.bucketize(self._timestamps, keyframe_timestamps, right=False).long() - 1
+            pose_kf_indices[pose_kf_indices < 0] = 0
         
         # Dump it all to TUM format
         os.makedirs(f"{self._log_directory}/trajectory", exist_ok=True)
         dump_trajectory_to_tum(self._icp_only, self._timestamps, f"{self._log_directory}/trajectory/tracking_only.txt")
         dump_trajectory_to_tum(self._frame_log, self._timestamps, f"{self._log_directory}/trajectory/estimated_trajectory.txt")
-        dump_trajectory_to_tum(keyframe_trajectory, keyframe_timestamps, f"{self._log_directory}/trajectory/keyframe_trajectory.txt")
+    
+        if self._last_recv_keyframe_state is not None:
+            dump_trajectory_to_tum(keyframe_trajectory, keyframe_timestamps, f"{self._log_directory}/trajectory/keyframe_trajectory.txt")

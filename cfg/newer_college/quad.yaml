@@ -12,6 +12,8 @@ changes:
     optimizer:
       model_config:
         data:
-          ray_range: &ray_range [1, 80]
+          ray_range: &ray_range [1, 50]
         model:
           ray_range: *ray_range
+        train:
+          lrate_pose: 0.005

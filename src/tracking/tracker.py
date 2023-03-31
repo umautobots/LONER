@@ -226,5 +226,4 @@ class Tracker:
         self._reference_time = new_reference_time
         self._reference_pose = Pose(tracked_position, fixed=True)
         self._reference_point_cloud = frame_point_cloud
-        
         return True
