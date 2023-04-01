@@ -447,7 +447,8 @@ if __name__ == "__main__":
         
                 
     else:
-        os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu_ids[0])
+        gpu_id = str(args.gpu_ids[0])
+        os.environ["CUDA_VISIBLE_DEVICES"] = gpu_id
         for config_idx, (settings, description) in enumerate(zip(settings_options, settings_descriptions)):
             if len(settings_options) == 1:
                 config_idx = None
