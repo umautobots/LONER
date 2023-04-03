@@ -33,8 +33,7 @@ from src.models.model_tcnn import Model, OccupancyGridModel
 from src.models.ray_sampling import OccGridRaySampler
 from src.common.pose_utils import WorldCube
 
-FOV_DEG = [-22.5, 22.5]
-DIST_THRESHOLD = 0.1 #10cm
+DIST_THRESHOLD = 0.25 #10cm
 
 def load_scan_poses(yaml_path, scan_nums):
     transform_data = cv2.FileStorage(yaml_path, cv2.FileStorage_READ)
@@ -62,7 +61,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Analyze KeyFrame Poses")
     parser.add_argument("groundtruth_map_dir", type=str, help="folder with ground truth map")
     parser.add_argument("reconstructed_map", type=str, help="file created with create_lidar_map.py")
-    parser.add_argument("output_dir", type=str, help="file created with create_lidar_map.py")
+    parser.add_argument("output_dir", type=str)
+    parser.add_argument("--merged_transform", type=float, nargs=16, help="if supplied, transforms the reconstructed map by this before masking.")
     args = parser.parse_args()
 
     os.makedirs(f"{args.output_dir}/scan", exist_ok=True)
@@ -73,6 +73,18 @@ if __name__ == "__main__":
     scan_poses = load_scan_poses(f"{args.groundtruth_map_dir}/transformation.yaml", scan_nums)
 
     reconstructed_map = o3d.io.read_point_cloud(args.reconstructed_map)
+
+    if args.merged_transform is not None:
+        tf = np.array(args.merged_transform).reshape(4,4)
+        reconstructed_map.transform(tf)
+        
+    print("Masking merged scan")
+    full_scan = o3d.io.read_point_cloud(f"{args.groundtruth_map_dir}/merged_scan.pcd")
+    distances = full_scan.compute_point_cloud_distance(reconstructed_map)
+    good_distances = np.asarray(distances) < DIST_THRESHOLD
+    good_gt_scan_points = np.asarray(full_scan.points)[good_distances]
+    full_scan.points = o3d.utility.Vector3dVector(good_gt_scan_points)
+    o3d.io.write_point_cloud(f"{args.output_dir}/merged_scan.pcd", full_scan)
 
     for scan in sorted(scan_nums):
         print("Masking scan", scan)
@@ -94,13 +106,5 @@ if __name__ == "__main__":
         gt_scan.transform(T_world_lidar.inverse()) # back to original frame
 
         o3d.io.write_point_cloud(f"{args.output_dir}/scan/{scan}.pcd", gt_scan)
-    
-    print("Masking merged scan")
-    full_scan = o3d.io.read_point_cloud(f"{args.groundtruth_map_dir}/merged_scan.pcd")
-    distances = full_scan.compute_point_cloud_distance(reconstructed_map)
-    good_distances = np.asarray(distances) < DIST_THRESHOLD
-    good_gt_scan_points = np.asarray(full_scan.points)[good_distances]
-    full_scan.points = o3d.utility.Vector3dVector(good_gt_scan_points)
-    o3d.io.write_point_cloud(f"{args.output_dir}/merged_scan.pcd", full_scan)
 
     print("Wrote results to", args.output_dir)

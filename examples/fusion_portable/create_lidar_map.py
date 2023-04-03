@@ -21,6 +21,7 @@ from tqdm.contrib.concurrent import process_map
 parser = argparse.ArgumentParser("Create GT Map")
 parser.add_argument("rosbag_path", type=str)
 parser.add_argument("--voxel_size", type=float, default=0.05)
+parser.add_argument("--run_outlier_filter", action="store_true", default=False)
 args = parser.parse_args()
 
 bag = rosbag.Bag(args.rosbag_path)
@@ -93,7 +94,14 @@ for cloud in tqdm.tqdm(clouds):
         continue
     result_pcd.points.extend(o3d.cuda.pybind.utility.Vector3dVector(cloud))
 
+print("Downsampling")
 result_pcd = result_pcd.voxel_down_sample(voxel_size=args.voxel_size)
+
+if args.run_outlier_filter:
+    print("Running SOR filter")
+    _, ind = result_pcd.remove_statistical_outlier(nb_neighbors=20, std_ratio=1.5)
+    result_pcd = result_pcd.select_by_index(ind)
+
 o3d.io.write_point_cloud("reconstructed_map.pcd", result_pcd)
     
     

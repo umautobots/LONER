@@ -4,6 +4,7 @@ import os, sys
 import yaml
 import argparse
 import pandas as pd
+import torch
 
 PROJECT_ROOT = os.path.abspath(os.path.join(
     os.path.dirname(__file__),
@@ -22,6 +23,7 @@ def compare_point_clouds(est_scan, gt_scan, output_dir, f_score_threshold, voxel
     input_est_size = len(est_scan.points)
     input_gt_size = len(gt_scan.points)
 
+    gt_downsample_skip, est_downsample_skip = 1,1
     if input_est_size > 1_000_000:
         est_downsample_skip = int(input_est_size / 1_000_000)
     if input_gt_size > 1_000_000:
@@ -49,6 +51,9 @@ def compare_point_clouds(est_scan, gt_scan, output_dir, f_score_threshold, voxel
     registration_result = registration.transformation.copy()
     
     est_scan.transform(registration_result)
+
+    o3d.io.write_point_cloud("est_align.pcd", est_scan)
+    o3d.io.write_point_cloud("gt_align.pcd", gt_scan)
 
     print("Computing metrics")
     accuracy = np.asarray(est_scan.compute_point_cloud_distance(gt_scan))
@@ -98,13 +103,14 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Analyze KeyFrame Poses")
     parser.add_argument("experiment_directory", type=str)
     parser.add_argument("gt_map", type=str, help="file with ground truth map")
-    parser.add_argument("--gt_trajectory", type=str, 
+    parser.add_argument("--gt_trajectory", type=str, default=None, required=False,
         help="If provided, is used to rough align the pointclouds (recommended)")
     parser.add_argument("--estimated_map", default=None, type=str, 
         help="path to estimated map. Defaults to experiment_directory/lidar_renders/render_full.pcd")
     parser.add_argument("--var_threshold", type=float, default = [1e-5], nargs='+', help="Threshold(s) for variance")
     parser.add_argument("--f_score_threshold", type=float, default=0.1)
     parser.add_argument("--voxel_size", type=float, default=0.05)
+    parser.add_argument("--initial_transform", default=None, type=float, nargs=16, required=False, help="Initial guess of alignment")
     args = parser.parse_args()
 
     if args.estimated_map is None:
@@ -112,17 +118,18 @@ if __name__ == "__main__":
     else:
         est_map_path = args.estimated_map
 
-    if args.gt_trajectory is None:
+    if args.gt_trajectory is None and args.initial_transform is None:
         print("Warning: No GT trajectory provided. Can't rough align maps")
+        start_pose = np.eye(4)
+    elif args.initial_transform is not None:
+        print("Using supplied initial guess to rough-align clouds")
+        start_pose = torch.tensor(args.initial_transform).reshape(4,4)
     else:
         df = pd.read_csv(args.gt_trajectory, delimiter=' ' , header=None)
         start_pose = build_poses_from_df(df, False)[0][0]
 
     est_map = o3d.io.read_point_cloud(est_map_path)
     gt_map = o3d.io.read_point_cloud(args.gt_map)
-    gt_map.transform(start_pose.inverse().cpu().numpy())
-
-    o3d.io.write_point_cloud("transformed_gt.pcd", gt_map)
-    
+    gt_map.transform(start_pose.inverse().cpu().numpy())    
 
     compare_point_clouds(est_map, gt_map, args.experiment_directory, args.f_score_threshold, args.voxel_size)

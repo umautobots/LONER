@@ -132,7 +132,8 @@ parser.add_argument("--var_threshold", type=float, default = 1e-2, help="Thresho
 parser.add_argument("--stack_heights", type=float, nargs="+", required=False, default=None,
     help="If provided, will render extra copies of the trajectories at these heights.")
 parser.add_argument("--translation_noise", type=float, default=0, help="std dev of noise to apply to pose tranlsations")
-parser.add_argument("--voxel_size", type=float, default=None, required=False)
+parser.add_argument("--voxel_size", type=float, default=None, required=True)
+parser.add_argument("--max_range", type=float, default=None)
 
 args = parser.parse_args()
 
@@ -160,10 +161,10 @@ with open(f"{args.experiment_directory}/full_config.pkl", 'rb') as f:
 cfg = full_config.mapper.optimizer.model_config
 
 ray_range = cfg.data.ray_range
-
+if args.max_range is not None:
+    ray_range = (ray_range[0], args.max_range)
 
 torch.backends.cudnn.enabled = True
-
 
 _DEVICE = torch.device(full_config.mapper.device)
 
@@ -341,6 +342,6 @@ if __name__ == "__main__":
         for process in gpu_worker_processes:
             process.terminate()
 
-    print("Downsampling output")
-    output_cloud = output_cloud.voxel_down_sample(args.voxel_size)
+    if args.voxel_size is not None:
+        output_cloud = output_cloud.voxel_down_sample(args.voxel_size)
     o3d.io.write_point_cloud(f"{args.experiment_directory}/lidar_renders/render_full.pcd", output_cloud)
