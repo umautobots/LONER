@@ -249,7 +249,7 @@ def run_trial(config, settings, settings_description = None, config_idx = None, 
     frame_delta_t = 1/settings.tracker.frame_synthesis.frame_decimation_rate_hz - \
                     settings.tracker.frame_synthesis.frame_delta_t_sec_tolerance
     
-    for topic, msg, timestamp in bag.read_messages(topics=topics):        
+    for topic, msg, timestamp in bag.read_messages(topics=topics): 
         # Wait for lidar to init
         if topic == lidar_topic and (not init) and timestamp.to_sec() and (tf_buffer is None or timestamp >= timestamps[0]):
             init = True
