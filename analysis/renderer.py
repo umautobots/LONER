@@ -43,7 +43,7 @@ from src.common.pose_utils import WorldCube
 from src.common.ray_utils import CameraRayDirections
 from src.models.losses import *
 from src.models.model_tcnn import Model, OccupancyGridModel
-from src.models.ray_sampling import OccGridRaySampler
+from src.models.ray_sampling import UniformRaySampler, OccGridRaySampler
 
 
 assert torch.cuda.is_available(), 'Unable to find GPU'
@@ -61,6 +61,8 @@ parser.add_argument("--no_render_stills", action="store_true", default=False)
 parser.add_argument("--render_video", action="store_true", default=False)
 parser.add_argument("--skip_step", type=int, default=15, dest="skip_step")
 parser.add_argument("--only_last_frame", action="store_true", default=False)
+parser.add_argument("--sep_ckpt_result", action="store_true", default=False)
+parser.add_argument("--start_frame", type=int, default=0, dest="start_frame")
 
 args = parser.parse_args()
 
@@ -79,7 +81,10 @@ else:
 
 checkpoint_path = pathlib.Path(f"{args.experiment_directory}/checkpoints/{checkpoint}")
 
-render_dir = pathlib.Path(f"{args.experiment_directory}/renders")
+if args.sep_ckpt_result:
+    render_dir = pathlib.Path(f"{args.experiment_directory}/renders/{checkpoint}_start{args.start_frame}_step{args.skip_step}")
+else:
+    render_dir = pathlib.Path(f"{args.experiment_directory}/renders")
 os.makedirs(render_dir, exist_ok=True)
 
 # override any params loaded from yaml
@@ -120,37 +125,36 @@ if not checkpoint_path.exists():
     print(f'Checkpoint {checkpoint_path} does not exist. Quitting.')
     exit()
 
-occ_model_config = full_config.mapper.optimizer.model_config.model.occ_model
-assert isinstance(occ_model_config, dict), f"OGM enabled but model.occ_model is empty"
-
 scale_factor = full_config.world_cube.scale_factor.to(_DEVICE)
 shift = full_config.world_cube.shift
 world_cube = WorldCube(scale_factor, shift).to(_DEVICE)
 
 ray_directions = CameraRayDirections(full_config.calibration, chunk_size=CHUNK_SIZE, device=_DEVICE)
 
-# Returns the 3D logits as a 5D tensor
-occ_model = OccupancyGridModel(occ_model_config).to(_DEVICE)
-
-ray_sampler = OccGridRaySampler()
-
 # use single fine MLP when using OGM
 model_config = full_config.mapper.optimizer.model_config.model
 model = Model(model_config).to(_DEVICE)
-
 
 print(f'Loading checkpoint from: {checkpoint_path}')
 ckpt = torch.load(str(checkpoint_path))
 model.load_state_dict(ckpt['network_state_dict'])
 
+if full_config.mapper.optimizer.samples_selection.strategy == 'OGM':
+    occ_model_config = full_config.mapper.optimizer.model_config.model.occ_model
+    assert isinstance(occ_model_config, dict), f"OGM enabled but model.occ_model is empty"
+    # Returns the 3D logits as a 5D tensor
+    occ_model = OccupancyGridModel(occ_model_config).to(_DEVICE)
+    ray_sampler = OccGridRaySampler()
+    occ_model.load_state_dict(ckpt['occ_model_state_dict'])
+    # initialize occ_sigma
+    occupancy_grid = occ_model()
+    ray_sampler.update_occ_grid(occupancy_grid.detach())
+else:
+    ray_sampler = UniformRaySampler()
+
 cfg = full_config.mapper.optimizer.model_config
 ray_range = cfg.data.ray_range
 
-
-occ_model.load_state_dict(ckpt['occ_model_state_dict'])
-# initialize occ_sigma
-occupancy_grid = occ_model()
-ray_sampler.update_occ_grid(occupancy_grid.detach())
 
 def render_dataset_frame(pose: Pose):
     with torch.no_grad():
@@ -211,7 +215,8 @@ if __name__ == "__main__":
         if args.only_last_frame:
             poses_ = [poses[-1]]
         else:
-            poses_ = poses[::args.skip_step]
+            poses_ = poses[args.start_frame:]
+            poses_ = poses_[::args.skip_step]
         if not args.no_render_stills:
             for kf in tqdm(poses_):
                 

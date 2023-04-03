@@ -24,7 +24,7 @@ from mapping.keyframe import KeyFrame
 from models.losses import (get_logits_grad, get_weights_gt, img_to_mse,
                            mse_to_psnr)
 from models.model_tcnn import Model, OccupancyGridModel
-from models.ray_sampling import OccGridRaySampler
+from models.ray_sampling import UniformRaySampler, OccGridRaySampler
 
 # Used for pre-creating random indices
 MAX_POSSIBLE_LIDAR_RAYS = int(1e7)
@@ -88,19 +88,25 @@ class Optimizer:
         # Main Model
         self._model = Model(self._model_config.model)
 
-        # Occupancy grid
-        self._occupancy_grid_model = OccupancyGridModel(
-            self._model_config.model.occ_model).to(self._device)
+        if self._settings.samples_selection.strategy == 'OGM':
+            # Occupancy grid
+            self._occupancy_grid_model = OccupancyGridModel(
+                self._model_config.model.occ_model).to(self._device)
 
-        self._occupancy_grid = self._occupancy_grid_model()
+            self._occupancy_grid = self._occupancy_grid_model()
 
-        occ_grid_parameters = [
-            p for p in self._occupancy_grid_model.parameters() if p.requires_grad]
-        self._occupancy_grid_optimizer = torch.optim.SGD(
-            occ_grid_parameters, lr=self._model_config.model.occ_model.lr)
+            occ_grid_parameters = [
+                p for p in self._occupancy_grid_model.parameters() if p.requires_grad]
+            self._occupancy_grid_optimizer = torch.optim.SGD(
+                occ_grid_parameters, lr=self._model_config.model.occ_model.lr)
 
-        self._ray_sampler = OccGridRaySampler()
-        self._ray_sampler.update_occ_grid(self._occupancy_grid.detach())
+            self._ray_sampler = OccGridRaySampler()
+            self._ray_sampler.update_occ_grid(self._occupancy_grid.detach())
+        elif self._settings.samples_selection.strategy == 'UNIFORM':
+            self._ray_sampler = UniformRaySampler()
+        else:
+            raise RuntimeError(
+                f"Can't find samples_selection strategy: {self._settings.samples_selection.strategy}")
 
         if not self._lidar_only:
             # We pre-create random numbers to lookup at runtime to save runtime.
@@ -206,8 +212,8 @@ class Optimizer:
             else:
                 self._optimization_settings = optimizer_settings
                 self._optimization_settings.freeze_poses = self._optimization_settings.freeze_poses or self._settings.fix_poses 
-
-            self._ray_sampler.update_occ_grid(self._occupancy_grid.detach())
+            if self._settings.samples_selection.strategy == 'OGM':
+                self._ray_sampler.update_occ_grid(self._occupancy_grid.detach())
 
             self._model.freeze_sigma_head(self._optimization_settings.freeze_sigma_mlp)
             self._model.freeze_rgb_head(self._optimization_settings.freeze_rgb_mlp)
@@ -265,6 +271,9 @@ class Optimizer:
                             lidar_indices = mask_index_map[mask_indices]
                         elif self._settings.rays_selection.strategy == 'FIXED':
                             lidar_indices = torch.arange(self._num_lidar_samples)
+                        else:
+                            raise RuntimeError(
+                                f"Can't find rays_selection strategy: {self._settings.rays_selection.strategy}")
 
                         new_rays, new_depths = kf.build_lidar_rays(lidar_indices, self._ray_range, self._world_cube, self._use_gt_poses)
 
@@ -346,7 +355,7 @@ class Optimizer:
 
                 self._optimizer.zero_grad(set_to_none=True)
 
-                if self.should_enable_lidar() and \
+                if self.should_enable_lidar() and self._settings.samples_selection.strategy == 'OGM' and \
                         self._global_step % self._model_config.model.occ_model.N_iters_acc == 0:
                     self._step_occupancy_grid()
                 self._global_step += 1

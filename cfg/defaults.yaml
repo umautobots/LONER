@@ -57,7 +57,9 @@ mapper:
       rgb: 1024
       lidar: 1024
     rays_selection:
-      strategy: RANDOM # FIXED     
+      strategy: RANDOM # FIXED
+    samples_selection:
+      strategy: OGM # UNIFORM
     keyframe_schedule:
       - 
         num_keyframes: 1
@@ -79,7 +81,7 @@ mapper:
             fix_rgb_mlp: True
           # Now joint optimization
           - stage: 3
-            num_iterations: 150
+            num_iterations: 150 #150
             fix_poses: False
             fix_sigma_mlp: False
             fix_rgb_mlp: False
@@ -126,12 +128,12 @@ tracker:
   icp:
     schedule:
       - 
-        threshold: 1.5
-        max_iterations: 5
+        threshold: 4. # 1.5
+        max_iterations: 10 # 5
         relative_fitness: 1.e-8
         relative_rmse: 1.e-8
       - 
-        threshold: 0.125
+        threshold: 0.25 # 0.125
         max_iterations: 20
         relative_fitness: 1.e-8
         relative_rmse: 1.e-8

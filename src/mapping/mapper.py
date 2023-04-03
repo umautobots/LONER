@@ -87,12 +87,18 @@ class Mapper:
                 kf_idx = self._optimizer._keyframe_count - 1
 
                 if kf_idx % 10 == 0 or self._settings.log_verbose:
-                    ckpt = {'global_step': self._optimizer._global_step,
-                            'network_state_dict': self._optimizer._model.state_dict(),
-                            'optimizer_state_dict': self._optimizer._optimizer.state_dict(),
-                            'poses': pose_state,
-                            'occ_model_state_dict': self._optimizer._occupancy_grid_model.state_dict(),
-                            'occ_optimizer_state_dict': self._optimizer._occupancy_grid_optimizer.state_dict()}
+                    if self._settings.optimizer.samples_selection.strategy == 'OGM':
+                        ckpt = {'global_step': self._optimizer._global_step,
+                                'network_state_dict': self._optimizer._model.state_dict(),
+                                'optimizer_state_dict': self._optimizer._optimizer.state_dict(),
+                                'poses': pose_state,
+                                'occ_model_state_dict': self._optimizer._occupancy_grid_model.state_dict(),
+                                'occ_optimizer_state_dict': self._optimizer._occupancy_grid_optimizer.state_dict()}
+                    else:
+                        ckpt = {'global_step': self._optimizer._global_step,
+                                'network_state_dict': self._optimizer._model.state_dict(),
+                                'optimizer_state_dict': self._optimizer._optimizer.state_dict(),
+                                'poses': pose_state}
                 else:
                     ckpt = {'global_step': self._optimizer._global_step,
                             'poses': pose_state}
@@ -138,12 +144,18 @@ class Mapper:
 
         pose_state = self._keyframe_manager.get_poses_state()
 
-        last_ckpt = {'global_step': self._optimizer._global_step,
-                     'network_state_dict': self._optimizer._model.state_dict(),
-                     'optimizer_state_dict': self._optimizer._optimizer.state_dict(),
-                     'poses': pose_state,
-                     'occ_model_state_dict': self._optimizer._occupancy_grid_model.state_dict(),
-                     'occ_optimizer_state_dict': self._optimizer._occupancy_grid_optimizer.state_dict()}
+        if self._settings.optimizer.samples_selection.strategy == 'OGM':
+            last_ckpt = {'global_step': self._optimizer._global_step,
+                    'network_state_dict': self._optimizer._model.state_dict(),
+                    'optimizer_state_dict': self._optimizer._optimizer.state_dict(),
+                    'poses': pose_state,
+                    'occ_model_state_dict': self._optimizer._occupancy_grid_model.state_dict(),
+                    'occ_optimizer_state_dict': self._optimizer._occupancy_grid_optimizer.state_dict()}
+        else:
+            last_ckpt = {'global_step': self._optimizer._global_step,
+                    'network_state_dict': self._optimizer._model.state_dict(),
+                    'optimizer_state_dict': self._optimizer._optimizer.state_dict(),
+                    'poses': pose_state}
 
         print("Saving Last Checkpoint to", f"{self._settings.log_directory}/checkpoints/final.tar")
         torch.save(last_ckpt, f"{self._settings.log_directory}/checkpoints/final.tar")
