@@ -16,10 +16,10 @@ from src.common.pose_utils import build_poses_from_df
 def compare_point_clouds(est_scan, gt_scan, output_dir, f_score_threshold, voxel_size = 0.05,
                          write_pointclouds = False, write_gt_cloud = False, id_str = None):
     
+    print("Downsampling clouds to voxel size", voxel_size)
     est_scan = est_scan.voxel_down_sample(voxel_size)
     gt_scan = gt_scan.voxel_down_sample(voxel_size)
 
-    print("Downsampling clouds for alignment")
     input_est_size = len(est_scan.points)
     input_gt_size = len(gt_scan.points)
 
@@ -111,6 +111,7 @@ if __name__ == "__main__":
     parser.add_argument("--f_score_threshold", type=float, default=0.1)
     parser.add_argument("--voxel_size", type=float, default=0.05)
     parser.add_argument("--initial_transform", default=None, type=float, nargs=16, required=False, help="Initial guess of alignment")
+    parser.add_argument("--est_traj", default=None)
     args = parser.parse_args()
 
     if args.estimated_map is None:
@@ -118,18 +119,30 @@ if __name__ == "__main__":
     else:
         est_map_path = args.estimated_map
 
+
+
     if args.gt_trajectory is None and args.initial_transform is None:
         print("Warning: No GT trajectory provided. Can't rough align maps")
-        start_pose = np.eye(4)
+        start_pose = torch.eye(4)
     elif args.initial_transform is not None:
         print("Using supplied initial guess to rough-align clouds")
         start_pose = torch.tensor(args.initial_transform).reshape(4,4)
     else:
+        print("Using GT Trajectory to rough-align clouds")
         df = pd.read_csv(args.gt_trajectory, delimiter=' ' , header=None)
         start_pose = build_poses_from_df(df, False)[0][0]
 
     est_map = o3d.io.read_point_cloud(est_map_path)
     gt_map = o3d.io.read_point_cloud(args.gt_map)
+
+    if args.est_traj is not None:
+        df = pd.read_csv(args.est_traj, delimiter=' ' , header=None)
+        start_est_pose = build_poses_from_df(df, False)[0][0]
+
+        est_map.transform(start_est_pose.inverse().cpu().numpy())
+
     gt_map.transform(start_pose.inverse().cpu().numpy())    
 
-    compare_point_clouds(est_map, gt_map, args.experiment_directory, args.f_score_threshold, args.voxel_size)
+
+    trial_num = est_map_path[-18:].split("_")[1][0]
+    compare_point_clouds(est_map, gt_map, args.experiment_directory, args.f_score_threshold, args.voxel_size)#, id_str = trial_num)

@@ -14,12 +14,22 @@ import ros_numpy
 import pandas as pd
 from scipy.spatial.transform import Rotation, Slerp
 from scipy.interpolate import interp1d
-from utils import *
 from torchvision.models.optical_flow import Raft_Large_Weights
 from torchvision.models.optical_flow import raft_large
 import torch
 from more_itertools import peekable
-import numpy.lib.recfunctions as rf 
+import numpy.lib.recfunctions as rf
+
+import os,sys
+PROJECT_ROOT = os.path.abspath(os.path.join(
+    os.path.dirname(__file__),
+    os.pardir, os.pardir))
+
+sys.path.append(PROJECT_ROOT)
+sys.path.append(PROJECT_ROOT + "/src")
+
+from examples.utils import *
+from src.common.pose_utils import build_poses_from_df
 
 MIN_DISPARITY = 0
 NUM_DISPARITIES = 3
@@ -35,6 +45,9 @@ MODE_HH = True
 
 MAX_RANGE = 150
 
+LEFT_CAM_TOPIC = "/stereo/frame_left/image_raw"
+RIGHT_CAM_TOPIC = "/stereo/frame_right/image_raw"
+LIDAR_TOPIC = "/os_cloud_node/points"
 
 parser = argparse.ArgumentParser("stereo to rgbd")
 parser.add_argument("rosbag_path", type=str)
@@ -92,7 +105,8 @@ raft_transforms = weights.transforms()
 rosbag_path = Path(args.rosbag_path)
 ground_truth_file = rosbag_path.parent / "ground_truth_traj.txt"
 ground_truth_df = pd.read_csv(ground_truth_file, names=["timestamp","x","y","z","q_x","q_y","q_z","q_w"], delimiter=" ")
-tf_buffer, _ = build_buffer_from_df(ground_truth_df)
+lidar_poses, timestamps = build_poses_from_df(ground_truth_df, True)
+tf_buffer, timestamps = build_buffer_from_poses(lidar_poses, timestamps)
 
 if args.raft:
     calibration.stereo_disp_to_depth_matrix[3,2] *= -1
@@ -102,7 +116,7 @@ if args.gui:
     ### Extract data from rosbag
     bag = rosbag.Bag(args.rosbag_path)
 
-    bag_it = bag.read_messages(topics=["/os_cloud_node/points"])
+    bag_it = bag.read_messages(topics=[LIDAR_TOPIC])
 
     ## Pass 1: Get all the lidar timestamps in the bag
     lidar_timestamps = []
@@ -110,7 +124,7 @@ if args.gui:
         lidar_timestamps.append(ts.to_sec())
     lidar_timestamps = np.stack(lidar_timestamps)
 
-    bag_it = bag.read_messages(topics=["/stereo/frame_left/image_raw", "/stereo/frame_right/image_raw"])
+    bag_it = bag.read_messages(topics=[LEFT_CAM_TOPIC, RIGHT_CAM_TOPIC])
 
     ## Pass 2: Get left/right image pairs, once every 3 seconds
     images = []
@@ -154,7 +168,7 @@ if args.gui:
     lidar_scans = []
     actual_lidar_timestamps = []
     ts_idx = 0
-    for _,msg,timestamp in bag.read_messages(topics=["/os_cloud_node/points"]):
+    for _,msg,timestamp in bag.read_messages(topics=[LIDAR_TOPIC]):
         if abs(timestamp.to_sec() - kept_lidar_timestamps[ts_idx]) < 0.05:
             try:
                 lidar_pose_msg = tf_buffer.lookup_transform_core("map", "lidar", timestamp)
@@ -456,7 +470,7 @@ elif args.build_rosbag:
     cam_info_msg.P = proj_left.flatten().tolist()
     
 
-    bag_it = peekable(bag.read_messages(topics=["/stereo/frame_left/image_raw", "/stereo/frame_right/image_raw", "/os_cloud_node/points"]))
+    bag_it = peekable(bag.read_messages(topics=[, RIGHT_CAM_TOPIC, LIDAR_TOPIC]))
     
     output_bag = rosbag.Bag(args.output_path)
 
@@ -464,27 +478,27 @@ elif args.build_rosbag:
     lidar_seq = 0
     wrote_current_lidar_msg = False
     
-    for idx in tqdm.trange(bag.get_message_count(["/stereo/frame_left/image_raw", "/stereo/frame_right/image_raw"])//2):
+    for idx in tqdm.trange(bag.get_message_count([LEFT_CAM_TOPIC, RIGHT_CAM_TOPIC])//2):
         # if idx > 100:
         #     break
         try:
             # This relies on the fact the the bags are very well-ordered: 1 lidar, then 4 cameras, forever.
             
-            while bag_it.peek()[0] == "/os_cloud_node/points":
+            while bag_it.peek()[0] == LIDAR_TOPIC:
                 lidar_topic, lidar_msg, lidar_ts = next(bag_it)
                 lidar_msg.header.frame_id = "lidar"
                 wrote_current_lidar_msg = False
             
             topic1, msg1, timestamp1 = next(bag_it)
 
-            while bag_it.peek()[0] == "/os_cloud_node/points":
+            while bag_it.peek()[0] == LIDAR_TOPIC:
                 lidar_topic, lidar_msg, lidar_ts = next(bag_it)
                 lidar_msg.header.frame_id = "lidar"
                 wrote_current_lidar_msg = False
             
             _, msg2, timestamp2 = next(bag_it)
 
-            if bag_it.peek()[0] == "/os_cloud_node/points":
+            if bag_it.peek()[0] == LIDAR_TOPIC:
                 lidar_topic, lidar_msg, lidar_ts = next(bag_it)
                 lidar_msg.header.frame_id = "lidar"
                 wrote_current_lidar_msg = False

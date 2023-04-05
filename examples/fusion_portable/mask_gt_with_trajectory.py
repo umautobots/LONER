@@ -33,7 +33,7 @@ from src.models.model_tcnn import Model, OccupancyGridModel
 from src.models.ray_sampling import OccGridRaySampler
 from src.common.pose_utils import WorldCube
 
-DIST_THRESHOLD = 0.25 #10cm
+DIST_THRESHOLD = 0.1 #10cm
 
 def load_scan_poses(yaml_path, scan_nums):
     transform_data = cv2.FileStorage(yaml_path, cv2.FileStorage_READ)
@@ -86,25 +86,25 @@ if __name__ == "__main__":
     full_scan.points = o3d.utility.Vector3dVector(good_gt_scan_points)
     o3d.io.write_point_cloud(f"{args.output_dir}/merged_scan.pcd", full_scan)
 
-    for scan in sorted(scan_nums):
-        print("Masking scan", scan)
-        T_world_lidar = scan_poses[scan]
+    # for scan in sorted(scan_nums):
+    #     print("Masking scan", scan)
+    #     T_world_lidar = scan_poses[scan]
 
-        gt_scan = o3d.io.read_point_cloud(f"{args.groundtruth_map_dir}/scan/{scan}.pcd")
+    #     gt_scan = o3d.io.read_point_cloud(f"{args.groundtruth_map_dir}/scan/{scan}.pcd")
 
-        gt_scan = gt_scan.transform(T_world_lidar) # put it in the world frame
+    #     gt_scan = gt_scan.transform(T_world_lidar) # put it in the world frame
 
-        # dist from each point in GT to each point in reconstruction
-        distances = gt_scan.compute_point_cloud_distance(reconstructed_map) 
+    #     # dist from each point in GT to each point in reconstruction
+    #     distances = gt_scan.compute_point_cloud_distance(reconstructed_map) 
 
-        good_distances = np.asarray(distances) < DIST_THRESHOLD
+    #     good_distances = np.asarray(distances) < DIST_THRESHOLD
 
-        good_gt_scan_points = np.asarray(gt_scan.points)[good_distances]
+    #     good_gt_scan_points = np.asarray(gt_scan.points)[good_distances]
 
-        gt_scan.points = o3d.utility.Vector3dVector(good_gt_scan_points)
+    #     gt_scan.points = o3d.utility.Vector3dVector(good_gt_scan_points)
 
-        gt_scan.transform(T_world_lidar.inverse()) # back to original frame
+    #     gt_scan.transform(T_world_lidar.inverse()) # back to original frame
 
-        o3d.io.write_point_cloud(f"{args.output_dir}/scan/{scan}.pcd", gt_scan)
+    #     o3d.io.write_point_cloud(f"{args.output_dir}/scan/{scan}.pcd", gt_scan)
 
     print("Wrote results to", args.output_dir)

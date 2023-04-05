@@ -344,4 +344,4 @@ if __name__ == "__main__":
 
     if args.voxel_size is not None:
         output_cloud = output_cloud.voxel_down_sample(args.voxel_size)
-    o3d.io.write_point_cloud(f"{args.experiment_directory}/lidar_renders/render_full.pcd", output_cloud)
+    o3d.io.write_point_cloud(f"{args.experiment_directory}/lidar_renders/render_full_{args.voxel_size}.pcd", output_cloud)

@@ -36,7 +36,7 @@ from src.common.sensors import Image, LidarScan
 from src.common.settings import Settings
 from src.common.pose_utils import build_poses_from_df
 
-from utils import *
+from examples.utils import *
 
 LIDAR_MIN_RANGE = 0.3 #http://www.oxts.com/wp-content/uploads/2021/01/Ouster-datasheet-revc-v2p0-os0.pdf
 

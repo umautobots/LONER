@@ -21,7 +21,9 @@ from tqdm.contrib.concurrent import process_map
 parser = argparse.ArgumentParser("Create GT Map")
 parser.add_argument("rosbag_path", type=str)
 parser.add_argument("--voxel_size", type=float, default=0.05)
+parser.add_argument("--groundtruth_traj", type=str, default=None)
 parser.add_argument("--run_outlier_filter", action="store_true", default=False)
+parser.add_argument("--output_path", type=str, default="reconstructed_map.pcd")
 args = parser.parse_args()
 
 bag = rosbag.Bag(args.rosbag_path)
@@ -30,7 +32,11 @@ LIDAR_MIN_RANGE = 0.5 #https://data.ouster.io/downloads/datasheets/datasheet-rev
 
 # Get ground truth trajectory
 rosbag_path = Path(args.rosbag_path)
-ground_truth_file = rosbag_path.parent / "ground_truth_traj.txt"
+
+if args.groundtruth_traj is None:
+    ground_truth_file = rosbag_path.parent / "ground_truth_traj.txt"
+else:
+    ground_truth_file = args.groundtruth_traj
 ground_truth_df = pd.read_csv(ground_truth_file, names=["timestamp","x","y","z","q_x","q_y","q_z","q_w"], delimiter=" ")
 
 ground_truth_data = ground_truth_df.to_numpy(dtype=np.float128)
@@ -51,13 +57,14 @@ def process_cloud(bag_it):
         return None
 
     lidar_data = ros_numpy.point_cloud2.pointcloud2_to_array(msg)
-    
-    if len(lidar_data.shape) == 1:
-        lidar_data = pd.DataFrame(lidar_data).to_numpy()
-    else:
-        lidar_data = pd.concat(list(map(pd.DataFrame, lidar_data))).to_numpy()
 
-    xyz = lidar_data[:, :3]
+    num_points = msg.width * msg.height
+    xyz = np.zeros((num_points, 3,), dtype=np.float64)
+    xyz[:,0] = lidar_data['x'].reshape(-1,)
+    xyz[:,1] = lidar_data['y'].reshape(-1,)
+    xyz[:,2] = lidar_data['z'].reshape(-1,)
+
+
     dists = np.linalg.norm(xyz, axis=1)
     
     valid_ranges = dists > LIDAR_MIN_RANGE
@@ -65,9 +72,25 @@ def process_cloud(bag_it):
 
     xyz_homog = np.hstack((xyz, np.ones_like(xyz[:,0:1]))).reshape(-1, 4, 1)
     
-    timestamps = lidar_data[valid_ranges, -1].astype(np.float128) + timestamp.to_sec()
 
-    if timestamps[-1] > gt_timestamps[-1]:
+    fields = [f.name for f in msg.fields]
+
+    time_key = None
+    for f in fields:
+        if "time" in f or f == "t":
+            time_key = f
+            break
+
+    timestamps = lidar_data[time_key].reshape(-1,).astype(np.float128)[valid_ranges]
+
+    if timestamps[-1] > 1e7:
+        timestamps *= 1e-9
+    if timestamps[0] < 1e-2:
+        timestamps += timestamp.to_sec()
+    else:
+        timestamps = timestamps - timestamps[0] + timestamp.to_sec()
+
+    if timestamps.max() > gt_timestamps[-1]:
         return None
     
     rotations = slerp(timestamps).as_matrix()
@@ -102,6 +125,6 @@ if args.run_outlier_filter:
     _, ind = result_pcd.remove_statistical_outlier(nb_neighbors=20, std_ratio=1.5)
     result_pcd = result_pcd.select_by_index(ind)
 
-o3d.io.write_point_cloud("reconstructed_map.pcd", result_pcd)
+o3d.io.write_point_cloud(args.output_path, result_pcd)
     
     
