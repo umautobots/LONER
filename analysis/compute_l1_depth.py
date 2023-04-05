@@ -71,7 +71,7 @@ parser.add_argument("experiment_directory", type=str, help="folder in outputs wi
 
 parser.add_argument("--single_threaded", default=False, action="store_true")
 parser.add_argument("--ckpt_id", type=str, default=None)
-parser.add_argument("--num_frames", type=int, default=10)
+parser.add_argument("--num_frames", type=int, default=25)
 
 
 args = parser.parse_args()
@@ -146,7 +146,6 @@ def _gpu_worker(job_queue, result_queue):
         _, pose, ray_directions = data
 
         l1 = compute_l1_depth(pose, ray_directions, False)
-        print(l1)
 
         result_queue.put((l1, pose.clone(),))
     while True:
@@ -217,7 +216,6 @@ if __name__ == "__main__":
     if args.single_threaded:
         for _, lidar_pose, ray_directions in tqdm(jobs):
             l1 = compute_l1_depth(lidar_pose, ray_directions, False)
-            print(l1)
             l1s.append(l1)
     else:
         job_queue = mp.Queue()
@@ -244,9 +242,16 @@ if __name__ == "__main__":
             if result is None:
                 stop_recv += 1
                 continue
-            l1s.append(result)
+            l1s.append(result[0])
             pbar.update(1)
 
         # Sync
         for process in gpu_worker_processes:
             process.terminate()
+    
+    l1s = torch.hstack(l1s)
+
+    results_dir = f"{args.experiment_directory}/metrics/"
+    os.makedirs(results_dir, exist_ok=True)
+    with open(f"{results_dir}/l1.yaml", 'w+') as f:
+        f.write(f"min: {l1s.min()}\nmax: {l1s.max()}\nmean: {l1s.mean()}\nrmse: {torch.sqrt(torch.mean(l1s**2))}")
