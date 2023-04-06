@@ -418,7 +418,11 @@ class Optimizer:
             lidar_rays = lidar_rays.reshape(-1, lidar_rays.shape[-1])
             lidar_depths = lidar_depths.reshape(-1, 1)
 
-            opaque_rays = (lidar_depths > 0)[..., 0]
+
+            far = lidar_rays[:,-1]
+            transparent_rays = (lidar_depths.view(-1,1) > far)[...,0]
+            
+            opaque_rays = torch.logical_and((lidar_depths > 0)[..., 0], ~transparent_rays)
 
             # Rendering lidar rays. Results need to be in class for occ update to happen
             self._results_lidar = self._model(lidar_rays, self._ray_sampler, scale_factor, camera=False)
@@ -524,6 +528,7 @@ class Optimizer:
             loss_opacity_lidar = torch.abs(
                 self._results_lidar['opacity_fine'][opaque_rays] - 1).mean()
 
+            print((~opaque_rays).sum())
             loss += loss_opacity_lidar
             wandb_logs['loss_opacity_lidar'] = loss_opacity_lidar.item()
 

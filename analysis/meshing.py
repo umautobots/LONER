@@ -26,11 +26,12 @@ from render_utils import *
 
 from src.common.pose import Pose
 from src.common.pose_utils import WorldCube
-from src.common.ray_utils import CameraRayDirections
+from src.common.ray_utils import CameraRayDirections, LidarRayDirections
 from src.models.losses import *
 from src.models.model_tcnn import Model, OccupancyGridModel
-from src.models.ray_sampling import OccGridRaySampler
+from src.models.ray_sampling import OccGridRaySampler, UniformRaySampler
 
+CHUNK_SIZE = 512
 
 from src.common.sensors import Image, LidarScan
 from sensor_msgs.msg import Image, PointCloud2
@@ -41,6 +42,30 @@ from analysis.mesher import Mesher
 assert torch.cuda.is_available(), 'Unable to find GPU'
 import yaml
 from pathlib import Path
+
+
+def build_lidar_scan(lidar_intrinsics):
+    vert_fov = lidar_intrinsics["vertical_fov"]
+    vert_res = lidar_intrinsics["vertical_resolution"]
+    hor_res = lidar_intrinsics["horizontal_resolution"]
+
+    phi = torch.arange(vert_fov[0], vert_fov[1], vert_res).deg2rad()
+    theta = torch.arange(0, 360, hor_res).deg2rad()
+
+    phi_grid, theta_grid = torch.meshgrid(phi, theta)
+
+    phi_grid = torch.pi/2 - phi_grid.reshape(-1, 1)
+    theta_grid = theta_grid.reshape(-1, 1)
+
+    x = torch.cos(theta_grid) * torch.sin(phi_grid)
+    y = torch.sin(theta_grid) * torch.sin(phi_grid)
+    z = torch.cos(phi_grid)
+
+    xyz = torch.hstack((x,y,z))
+
+    scan = LidarScan(xyz.T, torch.ones_like(x).flatten(), torch.zeros_like(x).flatten()).to(0)
+
+    return scan 
 
 parser = argparse.ArgumentParser(description="Render ground truth maps using trained nerf models")
 parser.add_argument("experiment_directory", type=str, help="folder in outputs with all results")
@@ -60,11 +85,20 @@ parser.add_argument("--use_lidar_fov_mask", default=False, dest="use_lidar_fov_m
 parser.add_argument("--use_convex_hull_mask", default=False, dest="use_convex_hull_mask", action="store_true")
 parser.add_argument("--use_lidar_pointcloud_mask", default=False, dest="use_lidar_pointcloud_mask", action="store_true")
 parser.add_argument("--use_occ_mask", default=False, dest="use_occ_mask", action="store_true")
+parser.add_argument("--retrain_occ", default=False, action="store_true")
+parser.add_argument("--max_range", type=float, default=None)
+parser.add_argument("--use_weights", default=False, action="store_true")
+parser.add_argument("--level", type=float, default=0)
+
 
 parser.add_argument("--color_render_from_ray", default=False, dest="color_render_from_ray", action="store_true")
 
+
 args = parser.parse_args()
 checkpoints = os.listdir(f"{args.experiment_directory}/checkpoints")
+
+if not (args.viz or args.save):
+    raise RuntimeError("Either visualize or save.")
 
 with open(args.configuration_path) as config_file:
     config = yaml.full_load(config_file)
@@ -125,28 +159,127 @@ scale_factor = full_config.world_cube.scale_factor.to(_DEVICE)
 shift = full_config.world_cube.shift
 world_cube = WorldCube(scale_factor, shift).to(_DEVICE)
 
-# use single fine MLP when using OGM
-model_config = full_config.mapper.optimizer.model_config.model
-model = Model(model_config).to(_DEVICE)
+cfg = full_config.mapper.optimizer.model_config
+ray_range = cfg.data.ray_range
+if args.max_range is not None:
+    ray_range = (ray_range[0], args.max_range)
 
 print(f'Loading checkpoint from: {checkpoint_path}') 
 ckpt = torch.load(str(checkpoint_path))
 
-occ_model = OccupancyGridModel(occ_model_config).to(_DEVICE)
-occ_model.load_state_dict(ckpt['occ_model_state_dict'])
-occupancy_grid = occ_model()
-ray_sampler = OccGridRaySampler()
-ray_sampler.update_occ_grid(occupancy_grid.detach())
-
+model_config = full_config.mapper.optimizer.model_config.model
+model = Model(model_config).to(_DEVICE)
 model.load_state_dict(ckpt['network_state_dict']) 
+
+
+
+def write_pcd(occ_grid, fname):
+    occ_sigma_np = occ_grid.squeeze().cpu().detach().numpy()
+    if occ_sigma_np.sum() > 1:
+        occ_probs = 1. / (1 + np.exp(-occ_sigma_np))
+        occ_probs = (510 *  (occ_probs.clip(0.5, 1.0) - 0.5)).astype(np.uint8).reshape(-1)
+        nonzero_indices = occ_probs.nonzero()
+        x_ = np.arange(cfg.model.occ_model.voxel_size)
+        x, y, z = np.meshgrid(x_, x_, x_, indexing='ij')
+        X = np.stack([x.reshape(-1)[nonzero_indices], y.reshape(-1)[nonzero_indices], -z.reshape(-1)[nonzero_indices], occ_probs[nonzero_indices]], axis=1)
+
+    with open(fname, 'w') as f:
+        if X.shape[0] <= 4:
+            X = X.T
+            assert X.shape[0] > 4, f"Too few points or wrong shape of pcd file."
+        f.write("# .PCD v0.7 - Point Cloud Data file format\n")
+        f.write("VERSION 0.7\n")
+        f.write("FIELDS x y z intensity\n")
+        f.write("SIZE 4 4 4 1\n")
+        f.write("TYPE F F F U\n")
+        f.write("COUNT 1 1 1 1\n")
+        f.write(f"WIDTH {X.shape[0]}\n")
+        f.write("HEIGHT 1\n")
+        f.write("VIEWPOINT 0 0 0 1 0 0 0\n")
+        f.write(f"POINTS {X.shape[0]}\n")
+        f.write("DATA ascii\n")
+        for pt in X:
+            f.write(f"{pt[0]} {pt[1]} {pt[2]} {pt[3]}\n")
+
+if args.retrain_occ:
+    print("Re-training occupancy grid")
+
+    cfg["model"]["occ_model"]["voxel_size"] = 1000
+    occ_model_config = full_config.mapper.optimizer.model_config.model.occ_model
+    occ_model = OccupancyGridModel(occ_model_config).to(_DEVICE)
+
+    occupancy_grid = occ_model()
+    ray_sampler = OccGridRaySampler()
+    ray_sampler.update_occ_grid(occupancy_grid.detach())
+
+    lidar_intrinsics = {
+        "vertical_fov": [-22.5, 22.5],
+        "vertical_resolution": 0.5,
+        "horizontal_resolution": 0.5
+    }
+
+    scan = build_lidar_scan(lidar_intrinsics)
+
+    ray_directions = LidarRayDirections(scan, CHUNK_SIZE)
+
+    poses = ckpt["poses"]    
+    lidar_poses = poses[::15]
+
+    occ_grid_parameters = [p for p in occ_model.parameters() if p.requires_grad]
+
+    occupancy_grid_optimizer = torch.optim.SGD(
+        occ_grid_parameters, lr=occ_model_config.lr)
+    for pose_state in tqdm(lidar_poses):
+        pose_key = "lidar_pose"
+        kf_timestamp = pose_state["timestamp"].numpy()
+        lidar_pose = Pose(pose_tensor=pose_state[pose_key]).to(_DEVICE)
+
+        size = ray_directions.lidar_scan.ray_directions.shape[1]
+
+        variance = torch.zeros((size,1), dtype=torch.float32).view(-1, 1)
+        for chunk_idx in range(ray_directions.num_chunks):
+            eval_rays = ray_directions.fetch_chunk_rays(chunk_idx, lidar_pose, world_cube, ray_range)
+            eval_rays = eval_rays.to(_DEVICE)
+            results = model(eval_rays, ray_sampler, scale_factor, testing=True, return_variance=True)
+
+            points = results["points_fine"].detach()
+            depths = results["depth_fine"].detach() * scale_factor
+            variance = results['variance'].detach() * scale_factor
+            samples = results['samples_fine'].detach() * scale_factor
+            point_logits = OccupancyGridModel.interpolate(occupancy_grid, points)
+
+            good_idx = variance < 0.01
+            good_idx = torch.logical_and(good_idx, depths.flatten() < ray_range[1] - 0.25)
+
+            lidar_points = points[good_idx]
+            samples = samples[good_idx]
+            depths = depths[good_idx]
+            point_logits = point_logits[good_idx]
+
+            point_logits_grad = get_logits_grad(samples*scale_factor, depths.view(-1,1)*scale_factor)
+            point_logits.backward(gradient=point_logits_grad, retain_graph=True)
+            occupancy_grid_optimizer.step()
+            occupancy_grid = occ_model()
+            ray_sampler.update_occ_grid(occupancy_grid.detach())
+            occupancy_grid_optimizer.zero_grad()
+else:
+    occ_model = OccupancyGridModel(occ_model_config).to(_DEVICE)
+
+    occupancy_grid = occ_model()
+    ray_sampler = OccGridRaySampler()
+    ray_sampler.update_occ_grid(occupancy_grid.detach())
+    occ_model.load_state_dict(ckpt['occ_model_state_dict'])
+
+ray_sampler = UniformRaySampler()
 
 # rosbag_path = full_config.dataset_path
 lidar_topic = full_config.system.ros_names.lidar
 ray_range = full_config.mapper.optimizer.model_config.data.ray_range
-mesher = Mesher(model, ckpt, world_cube, rosbag_path=rosbag_path, lidar_topic=lidar_topic,  resolution=resolution, marching_cubes_bound=meshing_bound, points_batch_size=500000)
+mesher = Mesher(model, ckpt, world_cube, ray_range, rosbag_path=rosbag_path, lidar_topic=lidar_topic,  level_set=args.level, resolution=resolution, marching_cubes_bound=meshing_bound, points_batch_size=500000)
 mesh_o3d, mesh_lidar_frames = mesher.get_mesh(_DEVICE, ray_sampler, occupancy_grid, occ_voxel_size=occ_model_config.voxel_size, sigma_only=sigma_only, threshold=threshold, 
                                                             use_lidar_fov_mask=use_lidar_fov_mask, use_convex_hull_mask=use_convex_hull_mask,use_lidar_pointcloud_mask=use_lidar_pointcloud_mask, use_occ_mask=use_occ_mask,
-                                                            color_mesh_extraction_method=color_mesh_extraction_method)
+                                                            color_mesh_extraction_method=color_mesh_extraction_method,
+                                                            use_weights = args.use_weights)
 mesh_o3d.compute_vertex_normals()
 
 if args.viz:

@@ -53,12 +53,24 @@
       "subProcess": true
     },
     {
+      "name": "Mesher",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/analysis/meshing.py",
+      "console": "integratedTerminal",
+      "args": ["/mnt/ws-frb/projects/loner_slam/evaluation_v2/full/traj/canteen_033123_225623/proposed/trial_3/", 
+                "../cfg/fusion_portable/canteen.yaml",
+                "--use_weights", "--save"],
+      "cwd": "${workspaceFolder}/analysis",
+      "subProcess": true
+    },
+    {
       "name": "Lidar Renderer",
       "type": "python",
       "request": "launch",
       "program": "${workspaceFolder}/analysis/renderer_lidar.py",
       "console": "integratedTerminal",
-      "args": ["/mnt/ws-frb/projects/loner_slam/evaluation/full/canteen_032923_012304/config_0/trial_0/"],
+      "args": ["/mnt/ws-frb/projects/loner_slam/evaluation_v2/lite/map/quad_040123_040726/los_slow/trial_1"],
       "cwd": "${workspaceFolder}/analysis",
       "subProcess": true
     },

@@ -10,6 +10,7 @@ from common.signals import Signal, StopSignal
 from mapping.keyframe_manager import KeyFrameManager
 from mapping.optimizer import Optimizer, OptimizationSettings
 
+import time
 
 class Mapper:
     """ Mapper is the top-level Mapping module which manages and optimizes the 
@@ -57,9 +58,12 @@ class Mapper:
     ## A single iteration of mapper: Checks if a new frame is available. If so,
     # decides if it's a keyframe, then if so performs optimization
     def update(self) -> None:
+        tic = time.time()
         if self._processed_stop_signal.value:
             print("Not updating mapper: Mapping already done.")
-            
+        
+        did_map_frame = False
+
         if self._frame_slot.has_value():
             new_frame = self._frame_slot.get_value()
 
@@ -70,7 +74,7 @@ class Mapper:
             new_keyframe = self._keyframe_manager.process_frame(new_frame)
             
             accepted_frame = new_keyframe is not None
-
+ 
             # print(f"{accepted_str} frame at time {image_ts}")
         
             if self._settings.optimizer.enabled and accepted_frame:
@@ -104,6 +108,7 @@ class Mapper:
                             'poses': pose_state}
                 
                 self._keyframe_update_signal.emit(pose_state)
+                did_map_frame = True
                 
                 torch.save(ckpt, f"{self._settings.log_directory}/checkpoints/ckpt_{kf_idx}.tar")
                 
@@ -113,6 +118,12 @@ class Mapper:
                     ckpt = {'poses': pose_state}
                     torch.save(ckpt, f"{self._settings.log_directory}/checkpoints/ckpt_{self._optimizer._keyframe_count}.tar")
                 self._optimizer._global_step += 1
+
+        toc = time.time()
+
+        if did_map_frame and self._settings.debug.log_times:
+            with open(f"{self._settings.log_directory}/map_times.csv", "a+") as time_f:
+                time_f.write(f"{toc - tic}\n")
 
     ## Spins by reading frames from the @m frame_slot as inputs.
     def run(self, last_mapped_frame_time) -> None:

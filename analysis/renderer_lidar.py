@@ -96,11 +96,9 @@ def render_scan(lidar_pose, ray_directions, render_color: bool = False):
             if render_color:
                 rgb_fine[chunk_idx * CHUNK_SIZE: (chunk_idx+1) * CHUNK_SIZE, :] = results['rgb_fine']
             depth_fine[chunk_idx * CHUNK_SIZE: (chunk_idx+1) * CHUNK_SIZE, :] = results['depth_fine'].unsqueeze(1)  * scale_factor
-            variance[chunk_idx * CHUNK_SIZE: (chunk_idx+1) * CHUNK_SIZE, :] = results['variance'].unsqueeze(1)
+            variance[chunk_idx * CHUNK_SIZE: (chunk_idx+1) * CHUNK_SIZE, :] = results['variance'].unsqueeze(1) * scale_factor
 
         rendered_lidar = (ray_directions.lidar_scan.ray_directions.t() * depth_fine).cpu().numpy()
-        
-
 
         good_idx = variance < args.var_threshold
         good_idx = torch.logical_and(good_idx, depth_fine < ray_range[1] - 0.25)
@@ -130,11 +128,12 @@ parser.add_argument("--skip_step", type=int, default=10,
                         help="skip_step in poses. Only applies if --use_traj_est is not set")
 
 parser.add_argument("--only_last_frame", default=False, dest="only_last_frame", action="store_true")
-parser.add_argument("--var_threshold", type=float, default = 5e-4, help="Threshold for variance")
+parser.add_argument("--var_threshold", type=float, default = 1e-2, help="Threshold for variance")
 parser.add_argument("--stack_heights", type=float, nargs="+", required=False, default=None,
     help="If provided, will render extra copies of the trajectories at these heights.")
 parser.add_argument("--translation_noise", type=float, default=0, help="std dev of noise to apply to pose tranlsations")
-parser.add_argument("--voxel_size", type=float, default=None, required=False)
+parser.add_argument("--voxel_size", type=float, default=None, required=True)
+parser.add_argument("--max_range", type=float, default=None)
 
 args = parser.parse_args()
 
@@ -162,10 +161,10 @@ with open(f"{args.experiment_directory}/full_config.pkl", 'rb') as f:
 cfg = full_config.mapper.optimizer.model_config
 
 ray_range = cfg.data.ray_range
-
+if args.max_range is not None:
+    ray_range = (ray_range[0], args.max_range)
 
 torch.backends.cudnn.enabled = True
-
 
 _DEVICE = torch.device(full_config.mapper.device)
 
@@ -343,6 +342,6 @@ if __name__ == "__main__":
         for process in gpu_worker_processes:
             process.terminate()
 
-    print("Downsampling output")
-    output_cloud = output_cloud.voxel_down_sample(args.voxel_size)
-    o3d.io.write_point_cloud(f"{args.experiment_directory}/lidar_renders/render_full.pcd", output_cloud)
+    if args.voxel_size is not None:
+        output_cloud = output_cloud.voxel_down_sample(args.voxel_size)
+    o3d.io.write_point_cloud(f"{args.experiment_directory}/lidar_renders/render_full_{args.voxel_size}.pcd", output_cloud)

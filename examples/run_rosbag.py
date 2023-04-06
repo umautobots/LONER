@@ -36,7 +36,7 @@ from src.common.sensors import Image, LidarScan
 from src.common.settings import Settings
 from src.common.pose_utils import build_poses_from_df
 
-from utils import *
+from examples.utils import *
 
 LIDAR_MIN_RANGE = 0.3 #http://www.oxts.com/wp-content/uploads/2021/01/Ouster-datasheet-revc-v2p0-os0.pdf
 
@@ -80,7 +80,6 @@ def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time) -> LidarS
     else:
 
         timestamps = torch.from_numpy(lidar_data[time_key].astype(np.float32)).reshape(-1,)[valid_ranges]
-
         # This logic deals with the fact that some lidars report time globally, and others 
         # use the ROS timestamp for the overall time then the timestamps in the message are just
         # offsets. This heuristic has looked legit so far on the tested lidars (ouster and hesai).
@@ -90,7 +89,7 @@ def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time) -> LidarS
                 print("Timestamnps look to be in nanoseconds. Scaling")
             timestamps *= 1e-9
 
-        if timestamps[0] < 1e-5:
+        if timestamps[0] < 1e-2:
             if WARN_LIDAR_TIMES_ONCE:
                 print("Assuming LiDAR timestamps within a scan are local, and start at 0")
             timestamps += timestamp.to_sec()
@@ -255,6 +254,7 @@ def run_trial(config, settings, settings_description = None, config_idx = None, 
         if topic == lidar_topic and (not init) and timestamp.to_sec() and (tf_buffer is None or timestamp >= timestamps[0]):
             init = True
             start_time = timestamp
+            start_clock = time.time()
         
         if not init:
             continue
@@ -299,17 +299,13 @@ def run_trial(config, settings, settings_description = None, config_idx = None, 
         else:
             raise Exception("Should be unreachable")
 
-        if start_clock is None:
-            start_clock = time.time()
 
     loner.stop()
     end_clock = time.time()
 
-
     with open(f"{loner._log_directory}/runtime.txt", 'w+') as runtime_f:
         runtime_f.write(f"Execution Time (With Overhead): {end_clock - init_clock}\n")
         runtime_f.write(f"Execution Time (Without Overhead): {end_clock - start_clock}\n")
-
 
     checkpoints = os.listdir(f"{logdir}/checkpoints")
     if len(checkpoints) == 0:
@@ -447,7 +443,8 @@ if __name__ == "__main__":
         
                 
     else:
-        os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu_ids[0])
+        gpu_id = str(args.gpu_ids[0])
+        os.environ["CUDA_VISIBLE_DEVICES"] = gpu_id
         for config_idx, (settings, description) in enumerate(zip(settings_options, settings_descriptions)):
             if len(settings_options) == 1:
                 config_idx = None
