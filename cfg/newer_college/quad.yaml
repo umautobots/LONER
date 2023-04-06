@@ -19,3 +19,7 @@ changes:
           ray_range: &ray_range [1, 75]
         model:
           ray_range: *ray_range
+meshing_bounding_box:
+  x: [-10, 65]
+  y: [-30,25]
+  z: [-3,25]
