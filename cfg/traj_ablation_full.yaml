@@ -4,7 +4,4 @@ mapper:
   keyframe_manager:
     window_selection:
       hybrid_settings:
-        num_recent_frames: [1, 10]
-tracker:
-  motion_compensation:
-    enabled: [False, True]
+        num_recent_frames: [1, 5, 10]

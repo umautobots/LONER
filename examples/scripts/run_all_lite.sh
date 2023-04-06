@@ -7,6 +7,6 @@ for s in ${sequences[@]}; do
     --gpu_ids 0 1 --lite --run_all_combos
     
   python3 run_rosbag.py $s \
-    --overrides ../cfg/traj_ablation.yaml  \
+    --overrides ../cfg/traj_ablation_lite.yaml  \
     --num_repeats 5 --gpu_ids 0 1 --lite
 done
