@@ -53,6 +53,18 @@
       "subProcess": true
     },
     {
+      "name": "Mesher",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/analysis/meshing.py",
+      "console": "integratedTerminal",
+      "args": ["/mnt/ws-frb/projects/loner_slam/evaluation_v2/full/traj/canteen_033123_225623/proposed/trial_3/", 
+                "../cfg/fusion_portable/canteen.yaml",
+                "--use_weights"],
+      "cwd": "${workspaceFolder}/analysis",
+      "subProcess": true
+    },
+    {
       "name": "Lidar Renderer",
       "type": "python",
       "request": "launch",

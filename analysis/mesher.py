@@ -3,6 +3,7 @@ import struct
 import numpy as np
 import torch
 import open3d as o3d
+from tqdm import tqdm
 from kornia.geometry.calibration import undistort_points
 
 from common.pose import Pose
@@ -23,8 +24,32 @@ from packaging import version
 import skimage
 from models.model_tcnn import Model, OccupancyGridModel
 
+
+def build_lidar_scan(lidar_intrinsics):
+    vert_fov = lidar_intrinsics["vertical_fov"]
+    vert_res = lidar_intrinsics["vertical_resolution"]
+    hor_res = lidar_intrinsics["horizontal_resolution"]
+
+    phi = torch.arange(vert_fov[0], vert_fov[1], vert_res).deg2rad()
+    theta = torch.arange(0, 360, hor_res).deg2rad()
+
+    phi_grid, theta_grid = torch.meshgrid(phi, theta)
+
+    phi_grid = torch.pi/2 - phi_grid.reshape(-1, 1)
+    theta_grid = theta_grid.reshape(-1, 1)
+
+    x = torch.cos(theta_grid) * torch.sin(phi_grid)
+    y = torch.sin(theta_grid) * torch.sin(phi_grid)
+    z = torch.cos(phi_grid)
+
+    xyz = torch.hstack((x,y,z))
+
+    scan = LidarScan(xyz.T, torch.ones_like(x).flatten(), torch.zeros_like(x).flatten()).to(0)
+
+    return scan 
+
 class Mesher(object):
-    def __init__(self, model, ckpt, world_cube, rosbag_path=None, lidar_topic=None,
+    def __init__(self, model, ckpt, world_cube, ray_range, rosbag_path=None, lidar_topic=None,
                        resolution = 0.2, marching_cubes_bound = [[-40,20], [0,20], [-3,15]], level_set=10,
                        points_batch_size=5000000):
 
@@ -42,6 +67,8 @@ class Mesher(object):
         self.rosbag_path = rosbag_path
         self.lidar_topic = lidar_topic
         self.clean_mesh_bound_scale = 1.05
+
+        self.ray_range = ray_range
 
     def lidar_ts_to_seq(self, bag, lidar_topic):
         init_ts = -1
@@ -225,20 +252,92 @@ class Mesher(object):
         return out
 
     def get_mesh(self, device, ray_sampler, occupancy_grid, occ_voxel_size, sigma_only=True, threshold=0, 
-                 use_lidar_fov_mask=False, use_convex_hull_mask=False, use_lidar_pointcloud_mask=False, use_occ_mask=False, color_mesh_extraction_method='direct_point_query'):
+                 use_lidar_fov_mask=False, use_convex_hull_mask=False, use_lidar_pointcloud_mask=False, use_occ_mask=False, \
+                    color_mesh_extraction_method='direct_point_query', use_weights = False):
+
+        if use_weights:
+            mask_val = 0
+        else:
+            mask_val = -1000
         with torch.no_grad():
             grid = self.get_grid_uniform(self.resolution)
             points = grid['grid_points']
             points = points.to(device)
             print("points.shape: ", points.shape)
             
-            # inference points
-            print('inferring grid points...')
-            results = []
-            for i, pnts in enumerate(torch.split(points, self.points_batch_size, dim=0)):
-                results.append(self.model.inference_points(pnts, dir_=None, sigma_only=True).cpu().numpy()[:, -1])
-            results = np.concatenate(results, axis=0)
-            # results = np.ones_like(results) * 1000
+            if use_weights:
+                if use_weights:
+                    lidar_intrinsics = {
+                        "vertical_fov": [-22.5, 22.5],
+                        "vertical_resolution": 0.25,
+                        "horizontal_resolution": 0.5
+                    }
+
+                    scan = build_lidar_scan(lidar_intrinsics)
+
+                    ray_directions = LidarRayDirections(scan)
+
+                    poses = self.ckpt["poses"]    
+                    lidar_poses = poses[::5]
+
+                    bound = torch.from_numpy((np.array(self.marching_cubes_bound) + np.expand_dims(self.world_cube_shift,1)) / self.world_cube_scale_factor)
+                    
+                    x_boundaries = torch.from_numpy(grid["xyz"][0]).to(device)
+                    y_boundaries = torch.from_numpy(grid["xyz"][1]).to(device)
+                    z_boundaries = torch.from_numpy(grid["xyz"][2]).to(device)
+
+                    grid_pts = grid["grid_points"]
+
+                    results = torch.full(len(points), 0.5, dtype=float, device=device)
+                    print(points.shape)
+
+                    for pose_state in tqdm(lidar_poses):
+                        pose_key = "lidar_pose"
+                        lidar_pose = Pose(pose_tensor=pose_state[pose_key]).to(device)
+
+                        size = ray_directions.lidar_scan.ray_directions.shape[1]
+
+                        samples = torch.zeros((0,2), device=device, dtype=torch.float32)
+                        for chunk_idx in range(ray_directions.num_chunks):
+                            eval_rays = ray_directions.fetch_chunk_rays(chunk_idx, lidar_pose, self.world_cube, self.ray_range)
+                            eval_rays = eval_rays.to(device)
+                            model_result = self.model(eval_rays, ray_sampler, self.world_cube_scale_factor, testing=True, return_variance=True)
+
+                            spoints = model_result["points_fine"].detach().view(-1, 3)
+                            weights = model_result["weights_fine"].detach().view(-1, 1)
+
+                            good_idx = torch.ones_like(weights.flatten())
+                            for i in range(3):
+                                good_dim = torch.logical_and(spoints[:,i] >= bound[i][0], spoints[:,i] <= bound[i][1])
+                                good_idx = torch.logical_and(good_dim, good_idx)
+
+                            spoints = spoints[good_idx]
+
+                            x = spoints[:,0]
+                            y = spoints[:,1]
+                            z = spoints[:,2]
+
+                            x_buck = torch.bucketize(x, x_boundaries)
+                            y_buck = torch.bucketize(y, y_boundaries)
+                            z_buck = torch.bucketize(z, z_boundaries)
+
+                            bucket_idx = x_buck*len(z_boundaries) + y_buck * len(x_boundaries)*len(z_boundaries) + z_buck
+                            weights = weights[good_idx]
+
+                            good_weights = weights.flatten() != 0
+                            weights = weights[good_weights]
+                            bucket_idx = bucket_idx[good_weights]
+                            
+                            results[bucket_idx] = torch.max(results[bucket_idx], weights.flatten())
+                results = results.cpu().numpy()
+            else:
+                # inference points
+                print('inferring grid points...')
+                results = []
+                for i, pnts in enumerate(torch.split(points, self.points_batch_size, dim=0)):
+                    results.append(self.model.inference_points(pnts, dir_=None, sigma_only=True).cpu().numpy()[:, -1])
+                results = np.concatenate(results, axis=0)
+                # results = np.ones_like(results) * 1000
 
             mesh_lidar_frames = o3d.geometry.TriangleMesh.create_coordinate_frame(size=1, origin=(0,0,0))
             if use_lidar_fov_mask:
@@ -248,7 +347,7 @@ class Mesher(object):
                 for i, pnts in enumerate(torch.split(points, self.points_batch_size, dim=0)):
                     lidar_fov_mask.append(self.mask_with_fov(pnts.cpu().numpy(), lidar_positions_list))
                 lidar_fov_mask = np.concatenate(lidar_fov_mask, axis=0)
-                results[~lidar_fov_mask] = -1000
+                results[~lidar_fov_mask] = mask_val
             
             if use_convex_hull_mask:
                 self.bag = rosbag.Bag(self.rosbag_path, 'r')
@@ -259,7 +358,7 @@ class Mesher(object):
                 for i, pnts in enumerate(torch.split(points, self.points_batch_size, dim=0)):
                     convex_hull_mask.append(mesh_bound.contains(pnts.cpu().numpy()))
                 convex_hull_mask = np.concatenate(convex_hull_mask, axis=0)
-                results[~convex_hull_mask] = -1000
+                results[~convex_hull_mask] = mask_val
 
             lidar_map = o3d.geometry.PointCloud()
             if use_lidar_pointcloud_mask:
@@ -275,7 +374,7 @@ class Mesher(object):
                 for i, pnts in enumerate(torch.split(points, self.points_batch_size, dim=0)):
                     lidar_map_mask.append(self.mask_with_pc((pnts.cpu().numpy()*self.world_cube_scale_factor - self.world_cube_shift), lidar_map_kd_tree))
                 lidar_map_mask = np.concatenate(lidar_map_mask, axis=0)
-                results[~lidar_map_mask] = -1000
+                results[~lidar_map_mask] = mask_val
 
             if use_occ_mask:
                 print('Masking with OCC...')
@@ -304,10 +403,10 @@ class Mesher(object):
                         point_logits = torch.squeeze(point_logits)
                         occ_mask.append((point_logits > 0).cpu().detach().numpy())
                     occ_mask = np.concatenate(occ_mask, axis=0)
-                    results[~occ_mask] = -1000
+                    results[~occ_mask] = mask_val
 
             results = results.astype(np.float32)
-            results[results<threshold]=-1000
+            results[results<threshold]=mask_val
             volume = np.copy(results.reshape(grid['xyz'][1].shape[0], grid['xyz'][0].shape[0],
                         grid['xyz'][2].shape[0]).transpose([1, 0, 2]))
             print('volume.shape: ', volume.shape)

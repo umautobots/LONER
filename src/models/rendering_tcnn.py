@@ -111,25 +111,18 @@ def raw2outputs(raw, z_vals, rays_d, raw_noise_std=0, white_bkgd=False, sigma_on
     # equals "1 - (1-a1)(1-a2)...(1-an)" mathematically
 
     # compute final weighted outputs
-    # depth_map = torch.sum(weights*z_vals, -1) / (weights_sum + 1e-6) # (N_rays)
-    # for datasets with infinite depth/sky, set large depth if weight_sum is small
-    #depth_out = torch.sum(weights * xyz_BS3HW[:, :, 2:, :, :], dim=1, keepdim=False) + (1 - weights_sum) * 1000
     if far is not None:
         z_vals_appended = torch.cat([z_vals, far], dim=-1)
         weights_appended = torch.cat(
             [weights, 1-weights.sum(dim=1, keepdim=True)], dim=1)
-        # + (1 - weights_sum) * 100
         depths = torch.sum(weights_appended*z_vals_appended, -1)
     else:
-        depths = torch.sum(weights*z_vals, -1)  # + (1 - weights_sum) * 100
-
-    # disp_map = 1./torch.max(1e-10 * torch.ones_like(depth_map), depth_map)
+        depths = torch.sum(weights*z_vals, -1) 
 
     if sigma_only:
         rgb_map = torch.tensor([-1.])
     else:
         # weights_normed = weights / (weights.sum(1, keepdim=True) + 1e-6)
-        # rgb_map = torch.sum(weights_normed.unsqueeze(-1)*rgbs, -2) # (N_rays, 3)
         rgb_map = torch.sum(weights.unsqueeze(-1)*rgbs, -2)  # (N_rays, 3)
 
         if white_bkgd:

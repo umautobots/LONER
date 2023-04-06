@@ -31,6 +31,7 @@ debug:
     profile: False
     draw_samples: False
     visualize_loss: False
+    log_times: True
     
 mapper:
   device: 0 # don't change this, use CUDA_VISIBLE_DEVICES
@@ -88,7 +89,7 @@ mapper:
   
 system:
   single_threaded: True
-  log_dir_prefix: "~/LonerSLAM/outputs"
+  log_dir_prefix: "/mnt/ws-frb/projects/loner_slam/timing_evaluation/"
   lidar_only: True
   
   image_scale_factor: 0.5 # Setting is put here to emphasize that it needs to influence calibration loading

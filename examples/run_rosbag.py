@@ -254,6 +254,7 @@ def run_trial(config, settings, settings_description = None, config_idx = None, 
         if topic == lidar_topic and (not init) and timestamp.to_sec() and (tf_buffer is None or timestamp >= timestamps[0]):
             init = True
             start_time = timestamp
+            start_clock = time.time()
         
         if not init:
             continue
@@ -298,17 +299,13 @@ def run_trial(config, settings, settings_description = None, config_idx = None, 
         else:
             raise Exception("Should be unreachable")
 
-        if start_clock is None:
-            start_clock = time.time()
 
     loner.stop()
     end_clock = time.time()
 
-
     with open(f"{loner._log_directory}/runtime.txt", 'w+') as runtime_f:
         runtime_f.write(f"Execution Time (With Overhead): {end_clock - init_clock}\n")
         runtime_f.write(f"Execution Time (Without Overhead): {end_clock - start_clock}\n")
-
 
     checkpoints = os.listdir(f"{logdir}/checkpoints")
     if len(checkpoints) == 0:

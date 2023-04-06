@@ -77,6 +77,9 @@ class Tracker:
 
     def update(self):
         
+        tic = time.time()
+        num_tracked = 0
+
         if self._settings.synchronization.enabled and self._last_mapped_frame_time is not None:
             while self._last_tracked_frame_time > self._last_mapped_frame_time.value + self._max_time_delta:
                 time.sleep(0.01)
@@ -123,6 +126,13 @@ class Tracker:
             self._frame_signal.emit(frame)
             self._frame_count += 1
             self._last_tracked_frame_time = frame.get_time()
+            num_tracked += 1
+
+        toc = time.time()
+        
+        if num_tracked > 0 and self._settings.debug.log_times:
+            with open(f"{self._settings.log_directory}/track_times.csv", "a+") as time_f:
+                time_f.write(f"{toc - tic},{num_tracked}\n")
 
     ## Run spins and processes incoming data while putting resulting frames into the queue
     def run(self, last_mapped_frame_time) -> None:
