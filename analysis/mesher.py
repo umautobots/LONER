@@ -281,9 +281,9 @@ class Mesher(object):
 
                 bound = torch.from_numpy((np.array(self.marching_cubes_bound) + np.expand_dims(self.world_cube_shift,1)) / self.world_cube_scale_factor)
                 
-                x_boundaries = torch.from_numpy(grid["xyz"][0]).to(device)
-                y_boundaries = torch.from_numpy(grid["xyz"][1]).to(device)
-                z_boundaries = torch.from_numpy(grid["xyz"][2]).to(device)
+                x_boundaries = torch.from_numpy(grid["xyz"][0]).contiguous().to(device)
+                y_boundaries = torch.from_numpy(grid["xyz"][1]).contiguous().to(device)
+                z_boundaries = torch.from_numpy(grid["xyz"][2]).contiguous().to(device)
 
                 grid_pts = grid["grid_points"]
 
@@ -312,9 +312,9 @@ class Mesher(object):
 
                         spoints = spoints[good_idx]
 
-                        x = spoints[:,0]
-                        y = spoints[:,1]
-                        z = spoints[:,2]
+                        x = spoints[:,0].contiguous()
+                        y = spoints[:,1].contiguous()
+                        z = spoints[:,2].contiguous()
 
                         x_buck = torch.bucketize(x, x_boundaries)
                         y_buck = torch.bucketize(y, y_boundaries)
