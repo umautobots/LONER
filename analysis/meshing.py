@@ -29,7 +29,7 @@ from src.common.pose_utils import WorldCube
 from src.common.ray_utils import CameraRayDirections, LidarRayDirections
 from src.models.losses import *
 from src.models.model_tcnn import Model, OccupancyGridModel
-from src.models.ray_sampling import OccGridRaySampler
+from src.models.ray_sampling import OccGridRaySampler, UniformRaySampler
 
 CHUNK_SIZE = 512
 
@@ -269,6 +269,8 @@ else:
     ray_sampler = OccGridRaySampler()
     ray_sampler.update_occ_grid(occupancy_grid.detach())
     occ_model.load_state_dict(ckpt['occ_model_state_dict'])
+
+ray_sampler = UniformRaySampler()
 
 # rosbag_path = full_config.dataset_path
 lidar_topic = full_config.system.ros_names.lidar

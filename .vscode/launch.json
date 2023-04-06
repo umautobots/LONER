@@ -60,7 +60,7 @@
       "console": "integratedTerminal",
       "args": ["/mnt/ws-frb/projects/loner_slam/evaluation_v2/full/traj/canteen_033123_225623/proposed/trial_3/", 
                 "../cfg/fusion_portable/canteen.yaml",
-                "--use_weights"],
+                "--use_weights", "--save"],
       "cwd": "${workspaceFolder}/analysis",
       "subProcess": true
     },

@@ -266,69 +266,68 @@ class Mesher(object):
             print("points.shape: ", points.shape)
             
             if use_weights:
-                if use_weights:
-                    lidar_intrinsics = {
-                        "vertical_fov": [-22.5, 22.5],
-                        "vertical_resolution": 0.25,
-                        "horizontal_resolution": 0.5
-                    }
+                lidar_intrinsics = {
+                    "vertical_fov": [-22.5, 22.5],
+                    "vertical_resolution": 0.1,
+                    "horizontal_resolution": 0.1
+                }
 
-                    scan = build_lidar_scan(lidar_intrinsics)
+                scan = build_lidar_scan(lidar_intrinsics)
 
-                    ray_directions = LidarRayDirections(scan)
+                ray_directions = LidarRayDirections(scan)
 
-                    poses = self.ckpt["poses"]    
-                    lidar_poses = poses[::5]
+                poses = self.ckpt["poses"]    
+                lidar_poses = poses[::5]
 
-                    bound = torch.from_numpy((np.array(self.marching_cubes_bound) + np.expand_dims(self.world_cube_shift,1)) / self.world_cube_scale_factor)
-                    
-                    x_boundaries = torch.from_numpy(grid["xyz"][0]).to(device)
-                    y_boundaries = torch.from_numpy(grid["xyz"][1]).to(device)
-                    z_boundaries = torch.from_numpy(grid["xyz"][2]).to(device)
+                bound = torch.from_numpy((np.array(self.marching_cubes_bound) + np.expand_dims(self.world_cube_shift,1)) / self.world_cube_scale_factor)
+                
+                x_boundaries = torch.from_numpy(grid["xyz"][0]).to(device)
+                y_boundaries = torch.from_numpy(grid["xyz"][1]).to(device)
+                z_boundaries = torch.from_numpy(grid["xyz"][2]).to(device)
 
-                    grid_pts = grid["grid_points"]
+                grid_pts = grid["grid_points"]
 
-                    results = torch.full(len(points), 0.5, dtype=float, device=device)
-                    print(points.shape)
+                results = torch.zeros((len(points),), dtype=float, device=device)
+                print(points.shape)
 
-                    for pose_state in tqdm(lidar_poses):
-                        pose_key = "lidar_pose"
-                        lidar_pose = Pose(pose_tensor=pose_state[pose_key]).to(device)
+                for pose_state in tqdm(lidar_poses):
+                    pose_key = "lidar_pose"
+                    lidar_pose = Pose(pose_tensor=pose_state[pose_key]).to(device)
 
-                        size = ray_directions.lidar_scan.ray_directions.shape[1]
+                    size = ray_directions.lidar_scan.ray_directions.shape[1]
 
-                        samples = torch.zeros((0,2), device=device, dtype=torch.float32)
-                        for chunk_idx in range(ray_directions.num_chunks):
-                            eval_rays = ray_directions.fetch_chunk_rays(chunk_idx, lidar_pose, self.world_cube, self.ray_range)
-                            eval_rays = eval_rays.to(device)
-                            model_result = self.model(eval_rays, ray_sampler, self.world_cube_scale_factor, testing=True, return_variance=True)
+                    samples = torch.zeros((0,2), device=device, dtype=torch.float32)
+                    for chunk_idx in range(ray_directions.num_chunks):
+                        eval_rays = ray_directions.fetch_chunk_rays(chunk_idx, lidar_pose, self.world_cube, self.ray_range)
+                        eval_rays = eval_rays.to(device)
+                        model_result = self.model(eval_rays, ray_sampler, self.world_cube_scale_factor, testing=False, return_variance=True)
 
-                            spoints = model_result["points_fine"].detach().view(-1, 3)
-                            weights = model_result["weights_fine"].detach().view(-1, 1)
+                        spoints = model_result["points_fine"].detach().view(-1, 3)
+                        weights = model_result["weights_fine"].detach().view(-1, 1)
 
-                            good_idx = torch.ones_like(weights.flatten())
-                            for i in range(3):
-                                good_dim = torch.logical_and(spoints[:,i] >= bound[i][0], spoints[:,i] <= bound[i][1])
-                                good_idx = torch.logical_and(good_dim, good_idx)
+                        good_idx = torch.ones_like(weights.flatten())
+                        for i in range(3):
+                            good_dim = torch.logical_and(spoints[:,i] >= bound[i][0], spoints[:,i] <= bound[i][1])
+                            good_idx = torch.logical_and(good_dim, good_idx)
 
-                            spoints = spoints[good_idx]
+                        spoints = spoints[good_idx]
 
-                            x = spoints[:,0]
-                            y = spoints[:,1]
-                            z = spoints[:,2]
+                        x = spoints[:,0]
+                        y = spoints[:,1]
+                        z = spoints[:,2]
 
-                            x_buck = torch.bucketize(x, x_boundaries)
-                            y_buck = torch.bucketize(y, y_boundaries)
-                            z_buck = torch.bucketize(z, z_boundaries)
+                        x_buck = torch.bucketize(x, x_boundaries)
+                        y_buck = torch.bucketize(y, y_boundaries)
+                        z_buck = torch.bucketize(z, z_boundaries)
 
-                            bucket_idx = x_buck*len(z_boundaries) + y_buck * len(x_boundaries)*len(z_boundaries) + z_buck
-                            weights = weights[good_idx]
-
-                            good_weights = weights.flatten() != 0
-                            weights = weights[good_weights]
-                            bucket_idx = bucket_idx[good_weights]
-                            
-                            results[bucket_idx] = torch.max(results[bucket_idx], weights.flatten())
+                        bucket_idx = x_buck*len(z_boundaries) + y_buck * len(x_boundaries)*len(z_boundaries) + z_buck
+                        weights = weights[good_idx]
+                        
+                        good_weights = weights.flatten() != 0
+                        weights = weights[good_weights]
+                        bucket_idx = bucket_idx[good_weights]
+                        
+                        results[bucket_idx] = torch.max(results[bucket_idx], weights.flatten())
                 results = results.cpu().numpy()
             else:
                 # inference points
