@@ -253,7 +253,7 @@ class Mesher(object):
 
     def get_mesh(self, device, ray_sampler, occupancy_grid, occ_voxel_size, sigma_only=True, threshold=0, 
                  use_lidar_fov_mask=False, use_convex_hull_mask=False, use_lidar_pointcloud_mask=False, use_occ_mask=False, \
-                    color_mesh_extraction_method='direct_point_query', use_weights = False):
+                    color_mesh_extraction_method='direct_point_query', use_weights = False, skip_step = 15):
 
         if use_weights:
             mask_val = 0
@@ -277,13 +277,13 @@ class Mesher(object):
                 ray_directions = LidarRayDirections(scan)
 
                 poses = self.ckpt["poses"]    
-                lidar_poses = poses[::5]
+                lidar_poses = poses[::skip_step]
 
                 bound = torch.from_numpy((np.array(self.marching_cubes_bound) + np.expand_dims(self.world_cube_shift,1)) / self.world_cube_scale_factor)
                 
-                x_boundaries = torch.from_numpy(grid["xyz"][0]).to(device)
-                y_boundaries = torch.from_numpy(grid["xyz"][1]).to(device)
-                z_boundaries = torch.from_numpy(grid["xyz"][2]).to(device)
+                x_boundaries = torch.from_numpy(grid["xyz"][0]).contiguous().to(device)
+                y_boundaries = torch.from_numpy(grid["xyz"][1]).contiguous().to(device)
+                z_boundaries = torch.from_numpy(grid["xyz"][2]).contiguous().to(device)
 
                 grid_pts = grid["grid_points"]
 
@@ -312,9 +312,9 @@ class Mesher(object):
 
                         spoints = spoints[good_idx]
 
-                        x = spoints[:,0]
-                        y = spoints[:,1]
-                        z = spoints[:,2]
+                        x = spoints[:,0].contiguous()
+                        y = spoints[:,1].contiguous()
+                        z = spoints[:,2].contiguous()
 
                         x_buck = torch.bucketize(x, x_boundaries)
                         y_buck = torch.bucketize(y, y_boundaries)
@@ -323,11 +323,11 @@ class Mesher(object):
                         bucket_idx = x_buck*len(z_boundaries) + y_buck * len(x_boundaries)*len(z_boundaries) + z_buck
                         weights = weights[good_idx]
                         
-                        good_weights = weights.flatten() != 0
+                        good_weights = weights.flatten() > threshold
                         weights = weights[good_weights]
                         bucket_idx = bucket_idx[good_weights]
                         
-                        results[bucket_idx] = torch.max(results[bucket_idx], weights.flatten())
+                        results[bucket_idx] += 1 # torch.max(results[bucket_idx], weights.flatten())
                 results = results.cpu().numpy()
             else:
                 # inference points
