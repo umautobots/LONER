@@ -519,7 +519,6 @@ class Optimizer:
             loss_opacity_lidar = torch.abs(
                 self._results_lidar['opacity_fine'][opaque_rays] - 1).mean()
 
-            print((~opaque_rays).sum())
             loss += loss_opacity_lidar
             wandb_logs['loss_opacity_lidar'] = loss_opacity_lidar.item()
 

@@ -31,7 +31,7 @@ debug:
     profile: False
     draw_samples: False
     visualize_loss: False
-    log_times: True
+    log_times: False
     
 mapper:
   device: 0 # don't change this, use CUDA_VISIBLE_DEVICES
