@@ -6,7 +6,7 @@ mapper:
         time_diff_seconds: &keyframe_interval 3
     window_selection:
       hybrid_settings:
-        num_recent_frames: 4
+        num_recent_frames: 1
       window_size: 8
   optimizer:
     model_config:

@@ -34,7 +34,7 @@ def build_buffer_from_poses(poses, gt_timestamps):
         new_transform.child_frame_id = "lidar"
 
         new_transform.transform.translation.x = xyz[0]
-        new_transform.transform.translation.y = xyz[2]
+        new_transform.transform.translation.y = xyz[1]
         new_transform.transform.translation.z = xyz[2]
 
         new_transform.transform.rotation.x = quat[0]
