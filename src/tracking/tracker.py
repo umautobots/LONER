@@ -13,7 +13,7 @@ from common.pose import Pose
 from common.settings import Settings
 from common.signals import Signal, StopSignal
 from tracking.frame_synthesis import FrameSynthesis
-
+import kornia.morphology
 
 # Yanked from http://www.open3d.org/docs/release/python_example/pipelines/index.html#icp-registration-py
 def transform_cloud(source, transformation):
@@ -115,6 +115,9 @@ class Tracker:
             if not tracked:
                 print("Warning: Failed to track frame. Skipping.")
                 continue
+
+            if self._settings.compute_sky_rays:
+                self.compute_sky_rays(frame)
             
             if self._settings.debug.write_frame_point_clouds:
                 pcd = frame.build_point_cloud()
@@ -122,6 +125,12 @@ class Tracker:
                 os.makedirs(logdir, exist_ok=True)
                 o3d.io.write_point_cloud(
                     f"{logdir}/cloud_{self._frame_count}.pcd", pcd)
+
+                if frame.lidar_points.sky_rays is not None:
+                    dummy_frame = Frame(None, frame.lidar_points.get_sky_scan(100))
+                    pcd = dummy_frame.build_point_cloud()
+                    o3d.io.write_point_cloud(
+                        f"{logdir}/cloud_{self._frame_count}_sky.pcd", pcd)
 
             self._frame_signal.emit(frame)
             self._frame_count += 1
@@ -154,9 +163,9 @@ class Tracker:
         downsample_type = self._settings.icp.downsample.type
 
         if downsample_type is None:
-            frame_point_cloud = frame.build_point_cloud(0.09)
+            frame_point_cloud = frame.build_point_cloud()
         elif downsample_type == "VOXEL":
-            frame_point_cloud = frame.build_point_cloud(0.09)
+            frame_point_cloud = frame.build_point_cloud()
             voxel_size = self._settings.icp.downsample.voxel_downsample_size
             frame_point_cloud = frame_point_cloud.voxel_down_sample(
                 voxel_size=voxel_size
@@ -164,7 +173,7 @@ class Tracker:
         elif downsample_type == "UNIFORM":
             target_points = self._settings.icp.downsample.target_uniform_point_count
 
-            frame_point_cloud = frame.build_point_cloud(0.09, target_points=target_points)
+            frame_point_cloud = frame.build_point_cloud(target_points=target_points)
         else:
             raise Exception(f"Unrecognized downsample type {downsample_type}")
 
@@ -237,3 +246,45 @@ class Tracker:
         self._reference_pose = Pose(tracked_position, fixed=True)
         self._reference_point_cloud = frame_point_cloud
         return True
+
+    def compute_sky_rays(self, frame: Frame):
+        
+        TOP_ROWS = 3
+        HORIZON_OFFSET=10
+
+        dirs = frame.lidar_points.ray_directions
+        x,y,z = dirs[0], dirs[1], dirs[2]
+        theta = torch.atan2(y, x).rad2deg().round().long()
+        phi = torch.atan2(torch.sqrt(x**2 + y**2), z).rad2deg().round().long()
+
+        phi_img = phi - phi.min()
+        theta_img = theta-theta.min()
+        theta_img[theta_img == 360] = 0
+
+        depth_img = torch.zeros((phi_img.max()+1, 360), device=phi.device)
+            
+        depth_img[phi_img, theta_img] = 1
+
+        depth_img = kornia.morphology.dilation(depth_img.unsqueeze(0).unsqueeze(0), torch.ones((3,3), device=depth_img.device))
+        depth_img = kornia.morphology.erosion(depth_img, torch.ones((3,3), device=depth_img.device)).squeeze(0).squeeze(0)
+
+        depth_img[:TOP_ROWS] = 1
+
+        zero_locs = torch.where(depth_img == 0)
+        zero_phi = (zero_locs[0] + phi.min()).deg2rad()
+        zero_theta = (zero_locs[1] + theta.min()).deg2rad()
+
+        z_out = torch.cos(zero_phi)
+        y_out = torch.sin(zero_phi) * torch.sin(zero_theta)
+        x_out = torch.sin(zero_phi) * torch.cos(zero_theta)
+
+        zero_dirs = torch.vstack((x_out, y_out, z_out))
+
+        r = frame.get_lidar_pose().get_rotation()
+
+        zero_dirs_world = r @ zero_dirs
+        x_w,y_w,z_w = zero_dirs_world[0], zero_dirs_world[1], zero_dirs_world[2]
+        phi_w = 90 - torch.atan2(torch.sqrt(x_w**2 + y_w**2), z_w).rad2deg()
+        sky_rays = zero_dirs_world[:, phi_w > HORIZON_OFFSET]
+
+        frame.lidar_points.sky_rays = sky_rays

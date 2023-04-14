@@ -1,0 +1,20 @@
+-
+  mapper:
+    optimizer:
+      model_config:
+        loss:
+          depthloss_lambda: [0.0, 0.005, 0.01]
+          JS_loss:
+            min_js_score: [0.5, 1]
+            max_js_score: [5, 10]
+            alpha: [1, 5]
+-
+  mapper:
+    optimizer:
+      model_config:
+        loss:
+          JS_loss:
+            enable: False
+          depth_eps_decay_rate: [0.85]
+          depth_eps_decay_steps: 1
+          depthloss_lambda: [0.0, 0.001, 0.005, 0.01]

@@ -1,4 +1,5 @@
 import cProfile
+from typing import Union
 import torch
 import os
 import torch.multiprocessing as mp
@@ -8,7 +9,7 @@ from common.frame import Frame
 from common.settings import Settings
 from common.signals import Signal, StopSignal
 from mapping.keyframe_manager import KeyFrameManager
-from mapping.optimizer import Optimizer, OptimizationSettings
+from mapping.optimizer import Optimizer
 
 import time
 
@@ -24,7 +25,8 @@ class Mapper:
     # @param settings: The settings for the mapping and all contained classes
     # @param frame_signal: A Signal which the tracker emits to with completed Frame objects
     def __init__(self, settings: Settings, calibration: Settings, frame_signal: Signal,
-                 keyframe_update_signal: Signal, world_cube: WorldCube) -> None:
+                 keyframe_update_signal: Signal, world_cube: WorldCube,
+                 enable_sky_segmentation: bool = True) -> None:
                  
         self._frame_slot = frame_signal.register()
         self._keyframe_update_signal = keyframe_update_signal
@@ -46,7 +48,8 @@ class Mapper:
         self._optimizer = Optimizer(
             settings.optimizer, calibration, self._world_cube, 0,
             settings.debug.use_groundtruth_poses,
-            self._lidar_only)
+            self._lidar_only,
+            enable_sky_segmentation)
 
         self._term_signal = mp.Value('i', 0)
         self._processed_stop_signal = mp.Value('i', 0)
@@ -65,20 +68,22 @@ class Mapper:
         did_map_frame = False
 
         if self._frame_slot.has_value():
-            new_frame = self._frame_slot.get_value()
+            new_frame: Union[StopSignal, Frame] = self._frame_slot.get_value()
 
             if isinstance(new_frame, StopSignal):
                 self._processed_stop_signal.value = 1
                 return
-        
+            
+            if self._settings.debug.use_groundtruth_poses:
+                new_frame._lidar_pose = new_frame._gt_lidar_pose
+
             new_keyframe = self._keyframe_manager.process_frame(new_frame)
             
             accepted_frame = new_keyframe is not None
  
             # print(f"{accepted_str} frame at time {image_ts}")
         
-            if self._settings.optimizer.enabled and accepted_frame:
-                                
+            if self._settings.optimizer.enabled and accepted_frame:                                
                 active_window = self._keyframe_manager.get_active_window()
 
                 if self._last_mapped_frame_time is not None:    
@@ -87,7 +92,7 @@ class Mapper:
                 self._optimizer.iterate_optimizer(active_window)
 
                 pose_state = self._keyframe_manager.get_poses_state()
-                
+
                 kf_idx = self._optimizer._keyframe_count - 1
 
                 if kf_idx % 10 == 0 or self._settings.log_verbose:

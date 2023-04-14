@@ -59,7 +59,7 @@ def build_lidar_scan(lidar_intrinsics):
 class Mesher(object):
     def __init__(self, model, ckpt, world_cube, ray_range, rosbag_path=None, lidar_topic=None,
                        resolution = 0.2, marching_cubes_bound = [[-40,20], [0,20], [-3,15]], level_set=10,
-                       points_batch_size=5000000):
+                       points_batch_size=5000000, lidar_vertical_fov = [-22.5, 22.5]):
 
         # marching_cubes_bound = np.array([[-40,20], [-20,50], [-3,15]])
         self.marching_cubes_bound = np.array(marching_cubes_bound)
@@ -77,6 +77,8 @@ class Mesher(object):
         self.clean_mesh_bound_scale = 1.05
 
         self.ray_range = ray_range
+
+        self.lidar_vertical_fov = lidar_vertical_fov
 
     def lidar_ts_to_seq(self, bag, lidar_topic):
         init_ts = -1
@@ -129,6 +131,7 @@ class Mesher(object):
 
         length = self.marching_cubes_bound[:,1]-self.marching_cubes_bound[:,0]
         num = (length/resolution).astype(int)
+        print("Requested Size:", num)
 
         x = np.linspace(bound[0][0], bound[0][1],num[0])
         y = np.linspace(bound[1][0], bound[1][1],num[1])
@@ -274,7 +277,7 @@ class Mesher(object):
             
             if use_weights:
                 lidar_intrinsics = {
-                    "vertical_fov": [-22.5, 22.5],
+                    "vertical_fov": self.lidar_vertical_fov,
                     "vertical_resolution": 0.25,
                     "horizontal_resolution": 0.25
                 }
@@ -327,7 +330,8 @@ class Mesher(object):
 
                         good_idx = torch.ones_like(weights.flatten())
                         for i in range(3):
-                            good_idx = torch.logical_and(spoints[:,i] >= bound[i][0], spoints[:,i] <= bound[i][1])
+                            good_dim = torch.logical_and(spoints[:,i] >= bound[i][0], spoints[:,i] <= bound[i][1])
+                            good_idx = torch.logical_and(good_idx, good_dim)
 
                         spoints = spoints[good_idx]
 
@@ -337,7 +341,7 @@ class Mesher(object):
                         x = spoints[:,0].contiguous()
                         y = spoints[:,1].contiguous()
                         z = spoints[:,2].contiguous()
-
+                        
                         x_buck = torch.bucketize(x, x_boundaries)
                         y_buck = torch.bucketize(y, y_boundaries)
                         z_buck = torch.bucketize(z, z_boundaries)
@@ -352,6 +356,7 @@ class Mesher(object):
                         bucket_idx = bucket_idx[valid_buckets]
                         
                         results[bucket_idx] = torch.max(results[bucket_idx], weights.flatten())
+                        
                 results = results.cpu().numpy()
             else:
                 # inference points

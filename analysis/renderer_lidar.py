@@ -36,12 +36,6 @@ from src.common.ray_utils import LidarRayDirections
 
 CHUNK_SIZE=2**12
 
-lidar_intrinsics = {
-    "vertical_fov": [-22.5, 22.5],
-    "vertical_resolution": 0.1,
-    "horizontal_resolution": 0.05
-}
-
 def build_lidar_scan(lidar_intrinsics):
     vert_fov = lidar_intrinsics["vertical_fov"]
     vert_res = lidar_intrinsics["vertical_resolution"]
@@ -134,6 +128,7 @@ parser.add_argument("--stack_heights", type=float, nargs="+", required=False, de
 parser.add_argument("--translation_noise", type=float, default=0, help="std dev of noise to apply to pose tranlsations")
 parser.add_argument("--voxel_size", type=float, default=None, required=True)
 parser.add_argument("--max_range", type=float, default=None)
+parser.add_argument("--vert_fov", type=float, nargs=2, default=None)
 
 args = parser.parse_args()
 
@@ -266,6 +261,19 @@ if __name__ == "__main__":
         for pose in lidar_poses:
             pose[:3, 3] += torch.normal(torch.zeros_like(pose[:3,3]), args.translation_noise)
 
+    if args.vert_fov is not None:
+        vert_fov = args.vert_fov
+    else:
+        try:
+            vert_fov = full_config.run_config.lidar_vertical_fov
+        except Exception as e:
+            print("Vertical FOV not in config. Please pass as parameter instead")
+
+    lidar_intrinsics = {
+        "vertical_fov": vert_fov,
+        "vertical_resolution": 0.25,
+        "horizontal_resolution": 0.25
+    }
 
     lidar_scan = build_lidar_scan(lidar_intrinsics)
     ray_directions = LidarRayDirections(lidar_scan, chunk_size=CHUNK_SIZE)

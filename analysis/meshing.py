@@ -38,29 +38,6 @@ import yaml
 from pathlib import Path
 
 
-def build_lidar_scan(lidar_intrinsics):
-    vert_fov = lidar_intrinsics["vertical_fov"]
-    vert_res = lidar_intrinsics["vertical_resolution"]
-    hor_res = lidar_intrinsics["horizontal_resolution"]
-
-    phi = torch.arange(vert_fov[0], vert_fov[1], vert_res).deg2rad()
-    theta = torch.arange(0, 360, hor_res).deg2rad()
-
-    phi_grid, theta_grid = torch.meshgrid(phi, theta)
-
-    phi_grid = torch.pi/2 - phi_grid.reshape(-1, 1)
-    theta_grid = theta_grid.reshape(-1, 1)
-
-    x = torch.cos(theta_grid) * torch.sin(phi_grid)
-    y = torch.sin(theta_grid) * torch.sin(phi_grid)
-    z = torch.cos(phi_grid)
-
-    xyz = torch.hstack((x,y,z))
-
-    scan = LidarScan(xyz.T, torch.ones_like(x).flatten(), torch.zeros_like(x).flatten()).to(0)
-
-    return scan 
-
 parser = argparse.ArgumentParser(description="Render ground truth maps using trained nerf models")
 parser.add_argument("experiment_directory", type=str, nargs="+", help="folder in outputs with all results")
 parser.add_argument("configuration_path")
@@ -208,7 +185,9 @@ def build_mesh(exp_dir):
     # rosbag_path = full_config.dataset_path
     lidar_topic = full_config.system.ros_names.lidar
     ray_range = full_config.mapper.optimizer.model_config.data.ray_range
-    mesher = Mesher(model, ckpt, world_cube, ray_range, rosbag_path=rosbag_path, lidar_topic=lidar_topic,  level_set=args.level, resolution=resolution, marching_cubes_bound=meshing_bound, points_batch_size=500000)
+    mesher = Mesher(model, ckpt, world_cube, ray_range, rosbag_path=rosbag_path, lidar_topic=lidar_topic,  level_set=args.level, 
+                    resolution=resolution, marching_cubes_bound=meshing_bound, points_batch_size=500000,
+                    lidar_vertical_fov=config["lidar_vertical_fov"])
     mesh_o3d, mesh_lidar_frames = mesher.get_mesh(_DEVICE, ray_sampler, occupancy_grid, occ_voxel_size=occ_model_config.voxel_size, sigma_only=sigma_only, threshold=threshold, 
                                                     use_lidar_fov_mask=use_lidar_fov_mask, use_convex_hull_mask=use_convex_hull_mask,use_lidar_pointcloud_mask=use_lidar_pointcloud_mask, use_occ_mask=use_occ_mask,
                                                     color_mesh_extraction_method=color_mesh_extraction_method,

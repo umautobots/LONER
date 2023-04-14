@@ -176,7 +176,8 @@ class Loner:
                               self._settings.calibration,
                               self._frame_signal,
                               self._keyframe_update_signal,
-                              self._world_cube)
+                              self._world_cube,
+                              self._settings.system.sky_segmentation)
         self._tracker = Tracker(self._settings,
                                 self._rgb_signal,
                                 self._lidar_signal,

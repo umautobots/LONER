@@ -14,7 +14,8 @@ mapper:
         min_depth_eps: 0.5
     num_samples:
       rgb: 0
-      lidar: 512
+      lidar: 448
+      sky: 64 # sum to 512
     keyframe_schedule:
       - 
         num_keyframes: 1
@@ -44,7 +45,7 @@ tracker:
   frame_synthesis:
     decimate_on_load: True
     frame_decimation_rate_hz: 5
-    lidar_point_step: 20 # Only keep 1 out of this many lidar points
+    lidar_point_step: 1 # Only keep 1 out of this many lidar points
   icp:
     schedule:
       - 

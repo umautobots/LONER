@@ -21,6 +21,9 @@ def get_far_val(pts_o: torch.Tensor, pts_d: torch.Tensor, no_nan: bool = False):
     if no_nan:
         pts_d = pts_d + 1e-15
 
+    # The unoptimized function is below. Left it here since it's unclear enough
+    # even without optimizaiton.... and is just a nightmare with optimization.
+    # So left for understandability.
     # Intersection with z = -1, z = 1
     t_z1 = (-1 - pts_o[:, [2]]) / pts_d[:, [2]]
     t_z2 = (1 - pts_o[:, [2]]) / pts_d[:, [2]]
@@ -30,12 +33,17 @@ def get_far_val(pts_o: torch.Tensor, pts_d: torch.Tensor, no_nan: bool = False):
     # Intersection with x = -1, x = 1
     t_x1 = (-1 - pts_o[:, [0]]) / pts_d[:, [0]]
     t_x2 = (1 - pts_o[:, [0]]) / pts_d[:, [0]]
-
     clipped_ts = torch.cat([torch.maximum(t_z1.clamp(min=0), t_z2.clamp(min=0)),
                             torch.maximum(t_y1.clamp(min=0),
                                           t_y2.clamp(min=0)),
                             torch.maximum(t_x1.clamp(min=0), t_x2.clamp(min=0))], dim=1)
     far_clip = clipped_ts.min(dim=1)[0].unsqueeze(1)
+
+    dirs = torch.tensor([[-1.], [1.]], device=pts_o.device)
+    t = (dirs[..., None] - pts_o[:, [0,1,2]]) / pts_d[:, [0,1,2]]
+    clipped_ts = t.clamp(min=0).max(dim=0)[0]
+    far_clip = clipped_ts.min(dim=1)[0].unsqueeze(1)
+
     return far_clip
 
 def get_ray_directions(H, W, newK, dist=None, K=None, sppd=1, with_indices=False):

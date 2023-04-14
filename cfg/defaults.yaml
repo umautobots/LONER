@@ -57,6 +57,7 @@ mapper:
     num_samples:
       rgb: 1024
       lidar: 1024
+      sky: 128
     rays_selection:
       strategy: RANDOM # FIXED
     samples_selection:
@@ -91,8 +92,10 @@ mapper:
   
 system:
   single_threaded: True
-  log_dir_prefix: "/mnt/ws-frb/projects/loner_slam/evaluation_v3/"
-  lidar_only: True
+  log_dir_prefix: "~/LonerSLAM/outputs"
+  lidar_only: False
+
+  sky_segmentation: &sky_seg_enabled True
   
   image_scale_factor: 0.5 # Setting is put here to emphasize that it needs to influence calibration loading
 
@@ -125,7 +128,7 @@ tracker:
     frame_match_tolerance: 0.01
     frame_delta_t_sec_tolerance: 0.02
     decimate_on_load: False
-    lidar_point_step: 10 # Only keep 1 out of this many lidar points
+    lidar_point_step: 1 # Only keep 1 out of this many lidar points
   icp:
     schedule:
       - 
@@ -145,4 +148,4 @@ tracker:
   motion_compensation:
     enabled: True
     use_gpu: True
-
+  compute_sky_rays: *sky_seg_enabled
