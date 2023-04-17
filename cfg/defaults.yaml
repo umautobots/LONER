@@ -31,7 +31,7 @@ debug:
     profile: False
     draw_samples: False
     visualize_loss: False
-    log_times: True
+    log_times: False
     
 mapper:
   device: 0 # don't change this, use CUDA_VISIBLE_DEVICES
@@ -45,7 +45,7 @@ mapper:
     window_selection:
       strategy: HYBRID
       hybrid_settings:
-        num_recent_frames: 5
+        num_recent_frames: 1
       window_size: 10
   optimizer:
     fix_poses: False # Overrides all other related settings and disables poses
@@ -91,7 +91,7 @@ mapper:
   
 system:
   single_threaded: True
-  log_dir_prefix: "/mnt/ws-frb/projects/loner_slam/timing_evaluation/"
+  log_dir_prefix: "/mnt/ws-frb/projects/loner_slam/evaluation_v3/"
   lidar_only: True
   
   image_scale_factor: 0.5 # Setting is put here to emphasize that it needs to influence calibration loading

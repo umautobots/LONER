@@ -6,6 +6,14 @@ import open3d as o3d
 from tqdm import tqdm
 from kornia.geometry.calibration import undistort_points
 
+import os, sys
+PROJECT_ROOT = os.path.abspath(os.path.join(
+    os.path.dirname(__file__),
+    os.pardir))
+sys.path.append(PROJECT_ROOT)
+sys.path.append(PROJECT_ROOT + "/src")
+
+
 from common.pose import Pose
 from common.sensors import Image
 from common.settings import Settings
@@ -116,14 +124,12 @@ class Mesher(object):
         Returns:
             (dict): points coordinates and sampled coordinates for each axis.
         """
-        print("get_grid_uniform")
 
         bound = torch.from_numpy((np.array(self.marching_cubes_bound) + np.expand_dims(self.world_cube_shift,1)) / self.world_cube_scale_factor)
 
         length = self.marching_cubes_bound[:,1]-self.marching_cubes_bound[:,0]
         num = (length/resolution).astype(int)
 
-        print(num)
         x = np.linspace(bound[0][0], bound[0][1],num[0])
         y = np.linspace(bound[1][0], bound[1][1],num[1])
         z = np.linspace(bound[2][0], bound[2][1],num[2])
@@ -253,7 +259,8 @@ class Mesher(object):
 
     def get_mesh(self, device, ray_sampler, occupancy_grid, occ_voxel_size, sigma_only=True, threshold=0, 
                  use_lidar_fov_mask=False, use_convex_hull_mask=False, use_lidar_pointcloud_mask=False, use_occ_mask=False, \
-                    color_mesh_extraction_method='direct_point_query', use_weights = False, skip_step = 15):
+                    color_mesh_extraction_method='direct_point_query', use_weights = False, skip_step = 15,
+                    var_threshold=None):
 
         if use_weights:
             mask_val = 0
@@ -268,8 +275,8 @@ class Mesher(object):
             if use_weights:
                 lidar_intrinsics = {
                     "vertical_fov": [-22.5, 22.5],
-                    "vertical_resolution": 0.1,
-                    "horizontal_resolution": 0.1
+                    "vertical_resolution": 0.25,
+                    "horizontal_resolution": 0.25
                 }
 
                 scan = build_lidar_scan(lidar_intrinsics)
@@ -302,15 +309,30 @@ class Mesher(object):
                         eval_rays = eval_rays.to(device)
                         model_result = self.model(eval_rays, ray_sampler, self.world_cube_scale_factor, testing=False, return_variance=True)
 
-                        spoints = model_result["points_fine"].detach().view(-1, 3)
-                        weights = model_result["weights_fine"].detach().view(-1, 1)
+                        spoints = model_result["points_fine"].detach()
+                        weights = model_result["weights_fine"].detach()
+                        variance = model_result["variance"].detach().view(-1,)
+                        depths = model_result["depth_fine"].detach().view(-1,)
+
+                        valid_idx = depths < self.ray_range[1] - 0.25
+
+                        if var_threshold is not None:
+                            valid_idx = torch.logical_and(valid_idx, variance < var_threshold)
+
+                        spoints = spoints[valid_idx, ...]
+                        weights = weights[valid_idx, ...]
+
+                        spoints = spoints.view(-1, 3)
+                        weights = weights.view(-1, 1)
 
                         good_idx = torch.ones_like(weights.flatten())
                         for i in range(3):
-                            good_dim = torch.logical_and(spoints[:,i] >= bound[i][0], spoints[:,i] <= bound[i][1])
-                            good_idx = torch.logical_and(good_dim, good_idx)
+                            good_idx = torch.logical_and(spoints[:,i] >= bound[i][0], spoints[:,i] <= bound[i][1])
 
                         spoints = spoints[good_idx]
+
+                        if len(spoints) == 0:
+                            continue
 
                         x = spoints[:,0].contiguous()
                         y = spoints[:,1].contiguous()
@@ -323,11 +345,13 @@ class Mesher(object):
                         bucket_idx = x_buck*len(z_boundaries) + y_buck * len(x_boundaries)*len(z_boundaries) + z_buck
                         weights = weights[good_idx]
                         
-                        good_weights = weights.flatten() > threshold
-                        weights = weights[good_weights]
-                        bucket_idx = bucket_idx[good_weights]
+                        # good_weights = torch.logical_and(weights.flatten() > threshold, bucket_idx < len(results))
+                        # good_weights = torch.logical_and(bucket_idx < len(results))
+                        valid_buckets = bucket_idx < len(results) # Hack around bucketize edge cases
+                        weights = weights[valid_buckets]
+                        bucket_idx = bucket_idx[valid_buckets]
                         
-                        results[bucket_idx] += 1 # torch.max(results[bucket_idx], weights.flatten())
+                        results[bucket_idx] = torch.max(results[bucket_idx], weights.flatten())
                 results = results.cpu().numpy()
             else:
                 # inference points

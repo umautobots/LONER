@@ -1,0 +1,7 @@
+mapper:
+  optimizer:
+    fix_poses: True
+  keyframe_manager:
+    window_selection:
+      hybrid_settings:
+        num_recent_frames: [1, 4, 8]
