@@ -1,3 +1,4 @@
+import cProfile
 from typing import Tuple, Union
 from enum import Enum
 
@@ -71,7 +72,8 @@ class KeyFrame:
                          ray_range: torch.Tensor,
                          world_cube: WorldCube,
                          use_gt_poses: bool = False,
-                         ignore_world_cube: bool = False) -> torch.Tensor:
+                         ignore_world_cube: bool = False,
+                         sky_indices: torch.Tensor = None) -> torch.Tensor:
 
         lidar_scan = self.get_lidar_scan()
 
@@ -81,9 +83,20 @@ class KeyFrame:
         else:
             lidar_poses = self._frame.get_lidar_pose().get_transformation_matrix()
 
-        ray_dirs = LidarRayDirections(lidar_scan)
-        return ray_dirs.build_lidar_rays(lidar_indices, ray_range, world_cube, lidar_poses, ignore_world_cube)
-    
+        if sky_indices is None:
+            ray_dirs = LidarRayDirections(lidar_scan)
+            lidar_rays, lidar_depths = ray_dirs.build_lidar_rays(lidar_indices, ray_range, world_cube, lidar_poses, ignore_world_cube)
+        
+        else:
+            scan_with_sky = lidar_scan.get_sky_scan(ray_range[1] + 1)
+            scan_with_sky.merge(lidar_scan)
+            ray_dirs = LidarRayDirections(scan_with_sky)
+
+            lidar_indices = torch.cat((sky_indices, lidar_indices + min(len(sky_indices),lidar_scan.sky_rays.shape[1]) ))
+            lidar_rays, lidar_depths = ray_dirs.build_lidar_rays(lidar_indices, ray_range, world_cube, lidar_poses, ignore_world_cube)
+
+        return lidar_rays, lidar_depths
+        
     ## Given the images, create camera rays in Loner's format
     def build_camera_rays(self,
                           first_camera_indices: torch.Tensor,

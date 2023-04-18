@@ -37,12 +37,6 @@ from examples.run_rosbag import build_scan_from_msg
 
 CHUNK_SIZE=2**12
 
-lidar_intrinsics = {
-    "vertical_fov": [-22.5, 22.5],
-    "vertical_resolution": 0.1,
-    "horizontal_resolution": 0.05
-}
-
 
 def compute_l1_depth(lidar_pose, ray_directions: LidarRayDirections, render_color: bool = False):
     with torch.no_grad():

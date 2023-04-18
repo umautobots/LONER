@@ -23,4 +23,6 @@ changes:
 meshing_bounding_box:
   x: [-35, 25]
   y: [-30,45]
-  z: [-3,15]
+  z: [-3,20]
+
+lidar_vertical_fov: [-22.5, 22.5]

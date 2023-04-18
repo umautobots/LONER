@@ -61,7 +61,8 @@ class Optimizer:
     # @param world_cube: The world cube pre-computed that is used to scale the world.
     # @param device: Which device to put the data on and run the optimizer on
     def __init__(self, settings: Settings, calibration: Settings, world_cube: WorldCube, device: int,
-                 use_gt_poses: bool = False, lidar_only: bool = True):
+                 use_gt_poses: bool = False, lidar_only: bool = True,
+                 enable_sky_segmentation: bool = True):
 
         self._settings = settings
         self._calibration = calibration
@@ -129,6 +130,8 @@ class Optimizer:
         self._num_lidar_samples = self._settings.num_samples.lidar
 
         self._grad_log = []
+
+        self._enable_sky_segmentation = enable_sky_segmentation
 
     ## Run one or more iterations of the optimizer, as specified by the stored settings
     # @param keyframe_window: The set of keyframes to use in the optimization.
@@ -198,7 +201,8 @@ class Optimizer:
             depth_eps_log.append([])
             
             if optimizer_settings is None:
-                self._optimization_settings.freeze_poses = iteration_config["fix_poses"] or self._settings.fix_poses
+                self._optimization_settings.freeze_poses = iteration_config["fix_poses"] or self._settings.fix_poses or self._use_gt_poses
+
                 
                 if "latest_kf_only" in iteration_config:
                     self._optimization_settings.latest_kf_only = iteration_config["latest_kf_only"]
@@ -211,7 +215,9 @@ class Optimizer:
                 self._optimization_settings.stage = 1 if self._lidar_only else iteration_config["stage"]
             else:
                 self._optimization_settings = optimizer_settings
-                self._optimization_settings.freeze_poses = self._optimization_settings.freeze_poses or self._settings.fix_poses 
+
+            self._optimization_settings.freeze_poses = self._optimization_settings.freeze_poses or self._settings.fix_poses or self._use_gt_poses
+
             if self._settings.samples_selection.strategy == 'OGM':
                 self._ray_sampler.update_occ_grid(self._occupancy_grid.detach())
 
@@ -235,7 +241,13 @@ class Optimizer:
                 if not kf.is_anchored:
                     kf.get_lidar_pose().set_fixed(not optimize_poses)
             
-            if optimize_poses:
+            tracking = (not self._optimization_settings.freeze_poses) and \
+                self._optimization_settings.freeze_rgb_mlp and self._optimization_settings.freeze_sigma_mlp
+            
+            if tracking:
+                optimizable_poses = [kf.get_lidar_pose().get_pose_tensor() for kf in active_keyframe_window if not kf.is_anchored]
+                self._optimizer = torch.optim.Adam([{'params': optimizable_poses, 'lr': self._model_config.train.lrate_pose}])
+            elif optimize_poses:
                 optimizable_poses = [kf.get_lidar_pose().get_pose_tensor() for kf in active_keyframe_window if not kf.is_anchored]
                         
                 self._optimizer = torch.optim.Adam([{'params': self._model.get_sigma_parameters(), 'lr': self._model_config.train.lrate_sigma_mlp},
@@ -275,9 +287,15 @@ class Optimizer:
                             raise RuntimeError(
                                 f"Can't find rays_selection strategy: {self._settings.rays_selection.strategy}")
 
-                        new_rays, new_depths = kf.build_lidar_rays(lidar_indices, self._ray_range, self._world_cube, self._use_gt_poses)
+                        sky_dirs = kf.get_lidar_scan().sky_rays
+                        if self._settings.num_samples.sky > 0 and self._enable_sky_segmentation and sky_dirs.nelement() > 0:
+                            sky_indices = torch.randint(0, sky_dirs.shape[1], (self._settings.num_samples.sky,))
+                        else:
+                            sky_indices = None
 
-                        if self._settings.debug.write_ray_point_clouds:
+                        new_rays, new_depths = kf.build_lidar_rays(lidar_indices, self._ray_range, self._world_cube, self._use_gt_poses, sky_indices=sky_indices)
+
+                        if self._settings.debug.write_ray_point_clouds and self._global_step % 100 == 0:
                             os.makedirs(f"{self._settings['log_directory']}/rays/lidar/kf_{kf_idx}_rays", exist_ok=True)
                             os.makedirs(f"{self._settings['log_directory']}/rays//lidar/kf_{kf_idx}_origins", exist_ok=True)
                             rays_fname = f"{self._settings['log_directory']}/rays/lidar/kf_{kf_idx}_rays/rays_{self._global_step}_{it_idx}.pcd"
@@ -323,7 +341,7 @@ class Optimizer:
                     
                         camera_samples = (camera_rays.to(self._device).float(), camera_intensities.to(self._device).float())
 
-                loss = self.compute_loss(camera_samples, lidar_samples, it_idx)
+                loss = self.compute_loss(camera_samples, lidar_samples, it_idx, tracking=tracking)
 
                 losses_log[-1].append(loss.detach().cpu().item())
 
@@ -338,7 +356,7 @@ class Optimizer:
                     loss_dot.render(directory=graph_dir, filename=f"iteration_{self._global_step}")
 
                 loss.backward(retain_graph=False)
-                
+
                 for kf in keyframe_window:
                     if kf.get_lidar_pose().get_pose_tensor().grad is not None:
                         self._grad_log.append(kf.get_lidar_pose().get_pose_tensor().grad.cpu().clone())                   
@@ -347,7 +365,7 @@ class Optimizer:
 
                 for kf in keyframe_window:
                     if not kf.get_lidar_pose().get_pose_tensor().isfinite().all():
-                        raise RuntimeError("Fatal: Encountered pose tensor.")
+                        raise RuntimeError("Fatal: Encountered invalid pose tensor.")
                 
                 self._optimizer.step()
 
@@ -398,7 +416,8 @@ class Optimizer:
     def compute_loss(self, camera_samples: Tuple[torch.Tensor, torch.Tensor], 
                            lidar_samples: Tuple[torch.Tensor, torch.Tensor],
                            iteration_idx: int,
-                           override_enables: bool = False) -> torch.Tensor:
+                           override_enables: bool = False,
+                           tracking=False) -> torch.Tensor:
         scale_factor = self._scale_factor.to(self._device).float()
         
         loss = 0
@@ -425,7 +444,7 @@ class Optimizer:
             opaque_rays = torch.logical_and((lidar_depths > 0)[..., 0], ~transparent_rays)
 
             # Rendering lidar rays. Results need to be in class for occ update to happen
-            self._results_lidar = self._model(lidar_rays, self._ray_sampler, scale_factor, camera=False)
+            self._results_lidar = self._model(lidar_rays, self._ray_sampler, scale_factor, camera=False, return_variance=True)
 
             # (N_rays, N_samples)
             # Depths along ray
@@ -433,6 +452,8 @@ class Optimizer:
 
             self._lidar_depths_gt = lidar_depths * scale_factor
             weights_pred_lidar = self._results_lidar['weights_fine']
+
+            variance = self._results_lidar["variance"]
             
             # Compute JS divergence (also calculate when using fix depth_eps for visualization)
             mean = torch.sum(self._lidar_depth_samples_fine * weights_pred_lidar, axis=1) / (torch.sum(weights_pred_lidar, axis=1) + 1e-10) # weighted mean # [N_rays]
@@ -609,7 +630,10 @@ class Optimizer:
                 depths_weighted_var + 1e-8).mean() - (1 + 1e-8))
             loss += self._model_config.loss.std_lambda * loss_std_cam
             wandb_logs['loss_std_cam'] = loss_std_cam.item()
-   
+
+        if isinstance(loss, int) and loss == 0:
+            print("Warning: zero loss")
+            
         assert not torch.isnan(loss), "NaN Loss Encountered"
             
         return loss

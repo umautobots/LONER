@@ -61,11 +61,13 @@ class LidarScan:
     def __init__(self,
                  ray_directions: torch.Tensor = torch.Tensor(),
                  distances: torch.Tensor = torch.Tensor(),
-                 timestamps: torch.Tensor = torch.Tensor()) -> None:
+                 timestamps: torch.Tensor = torch.Tensor(),
+                 sky_rays: torch.Tensor = None) -> None:
 
         self.ray_directions = ray_directions
         self.distances = distances
         self.timestamps = timestamps
+        self.sky_rays = sky_rays
 
     ## @returns the number of points in the scan
     def __len__(self) -> int:
@@ -84,13 +86,17 @@ class LidarScan:
         self.ray_directions = torch.Tensor()
         self.distances = torch.Tensor()
         self.timestamps = torch.Tensor()
+        if self.sky_rays is not None:
+            self.sky_rays = torch.Tensor()
+            
         return self
 
     ## @returns a deep copy of the current scan
     def clone(self) -> "LidarScan":
         return LidarScan(self.ray_directions.clone(),
                          self.distances.clone(),
-                         self.timestamps.clone())
+                         self.timestamps.clone(),
+                         self.sky_rays.clone() if self.sky_rays is not None else None)
 
     ## Removes the first @p num_points points from the scan. Also @returns self.
     def remove_points(self, num_points: int) -> "LidarScan":
@@ -104,7 +110,8 @@ class LidarScan:
     def merge(self, other: "LidarScan") -> "LidarScan":
         self.add_points(other.ray_directions,
                         other.distances,
-                        other.timestamps)
+                        other.timestamps,
+                        other.sky_rays)
         return self
 
     ## Moves all items in the LidarScan to the specified device, in-place.
@@ -120,19 +127,32 @@ class LidarScan:
     def add_points(self,
                    ray_directions: torch.Tensor,
                    distances: torch.Tensor,
-                   timestamps: torch.Tensor) -> "LidarScan":
+                   timestamps: torch.Tensor,
+                   sky_rays: torch.Tensor = None) -> "LidarScan":
 
         if self.ray_directions.shape[0] == 0:
             self.distances = distances
             self.ray_directions = ray_directions
             self.timestamps = timestamps
         else:
-            self.ray_directions = torch.hstack(
-                (self.ray_directions, ray_directions))
-            self.timestamps = torch.hstack((self.timestamps, timestamps))
-            self.distances = torch.hstack((self.distances, distances))
+            self.ray_directions = torch.cat(
+                (self.ray_directions, ray_directions), dim=-1)
+            self.timestamps = torch.cat((self.timestamps, timestamps), dim=-1)
+            self.distances = torch.cat((self.distances, distances), dim=-1)
 
+        if sky_rays is not None:
+            if self.sky_rays is None:
+                self.sky_rays = sky_rays
+            else:
+                self.sky_rays = torch.cat((self.sky_rays, sky_rays), dim=-1)
         return self
+
+    def get_sky_scan(self, distance: float) -> "LidarScan":
+        sky_dirs = self.sky_rays
+        distances = torch.full_like(sky_dirs[0], distance)
+        times = torch.full_like(sky_dirs[0], self.timestamps[-1])
+
+        return LidarScan(sky_dirs, distances, times)
 
     ## Given a start and end poses, applies motion compensation to the lidar points.
     # This first projects points into the global frame using the start and end poses,

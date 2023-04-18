@@ -118,12 +118,13 @@ def save_img(rgb_fine, mask, filename,render_dir,  equalize=False):
 
 def save_depth(depth_fine, fname, render_dir, min_depth=1, max_depth=50):
     img = depth_fine.squeeze().detach()
-    mask = (img >= 50)
+    mask = (img >= max_depth)
     img = torch.clip(img, min_depth, max_depth)
     # img = (img - img.min()) / (np.percentile(img, 99) - img.min())
     img = (img - min_depth) / (max_depth - min_depth)
     img = torch.clip(img, 0, 1).cpu().numpy()
     cmap = plt.cm.get_cmap('turbo')
     img_colored = cmap(img)
+    img_colored[mask.cpu().numpy()] = np.array([0,0,0,1])
     out_fname = render_dir / fname
     imageio.imwrite(str(out_fname), img_colored * 255)

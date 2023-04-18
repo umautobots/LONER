@@ -52,11 +52,11 @@ loss:
         
     decay_depth_eps: True              # boolean to enable decay
     depth_eps: 3.0                     # starting tolerance for line of sight loss in euclidean space
-    min_depth_eps: 0.9                 # Minimum value after decay
-    depth_eps_decay_rate: 0.001        # rate for decay, setting smaller value decay faster
-    depth_eps_decay_steps: 500         # step for decay, setting smaller value decay faster
+    min_depth_eps: 0.3                 # Minimum value after decay
+    depth_eps_decay_rate: 0.85        # rate for decay, setting smaller value decay faster
+    depth_eps_decay_steps: 1         # step for decay, setting smaller value decay faster
 
-    depthloss_lambda: 0.0      # weight for lidar termination depth
+    depthloss_lambda: 0.005      # weight for lidar termination depth
     cam_lambda: 1       # weight for camera intensity value
     std_lambda: 0.0       # weight for standard deviation loss on camera rays
 

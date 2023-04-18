@@ -233,7 +233,7 @@ if __name__ == "__main__":
                 cam_pose = lidar_pose.to('cpu') * lidar_to_camera.to('cpu')
                 rgb, depth, _ = render_dataset_frame(cam_pose.to(_DEVICE))
                 save_img(rgb, [], f"predicted_img_{timestamp}.png", render_dir)
-                save_depth(depth, f"predicted_depth_{timestamp}.png", render_dir, max_depth=150)
+                save_depth(depth, f"predicted_depth_{timestamp}.png", render_dir, max_depth=80)
 
         if args.render_video:
 

@@ -38,6 +38,8 @@ from src.common.pose_utils import build_poses_from_df
 
 from examples.utils import *
 
+import kornia.morphology
+
 LIDAR_MIN_RANGE = 0.3 #http://www.oxts.com/wp-content/uploads/2021/01/Ouster-datasheet-revc-v2p0-os0.pdf
 
 bridge = CvBridge()
@@ -66,6 +68,7 @@ def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time) -> LidarS
     xyz[:,2] = torch.from_numpy(lidar_data['z'].reshape(-1,))
 
     dists = xyz.norm(dim=1)
+
     valid_ranges = dists > LIDAR_MIN_RANGE
 
     xyz = xyz[valid_ranges].T
@@ -118,7 +121,6 @@ def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time) -> LidarS
     directions = directions[:, indices]
 
     return LidarScan(directions.float().cpu(), dists.float().cpu(), timestamps.float().cpu())
-
 
 
 def tf_to_settings(tf_msg):

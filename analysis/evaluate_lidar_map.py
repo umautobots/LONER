@@ -107,7 +107,6 @@ if __name__ == "__main__":
         help="If provided, is used to rough align the pointclouds (recommended)")
     parser.add_argument("--estimated_map", default=None, type=str, 
         help="path to estimated map. Defaults to experiment_directory/lidar_renders/render_full.pcd")
-    parser.add_argument("--var_threshold", type=float, default = [1e-5], nargs='+', help="Threshold(s) for variance")
     parser.add_argument("--f_score_threshold", type=float, default=0.1)
     parser.add_argument("--voxel_size", type=float, default=0.05)
     parser.add_argument("--initial_transform", default=None, type=float, nargs=16, required=False, help="Initial guess of alignment")
@@ -117,7 +116,7 @@ if __name__ == "__main__":
     if args.estimated_map is None:
         est_map_path = f"{args.experiment_directory}/lidar_renders/render_full.pcd"
     else:
-        est_map_path = args.estimated_map
+        est_map_path = f"{args.experiment_directory}/{args.estimated_map}"
 
 
 
@@ -144,5 +143,6 @@ if __name__ == "__main__":
     gt_map.transform(start_pose.inverse().cpu().numpy())    
 
 
-    trial_num = est_map_path[-18:].split("_")[1][0]
+    #trial_num = est_map_path[-10:].split("_")[1][0]
+    #print(trial_num)
     compare_point_clouds(est_map, gt_map, args.experiment_directory, args.f_score_threshold, args.voxel_size)#, id_str = trial_num)

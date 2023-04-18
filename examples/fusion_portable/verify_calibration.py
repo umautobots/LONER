@@ -154,7 +154,7 @@ for idx in tqdm.trange(bag.get_message_count(cam_topics)//2):
 
     xyz_homog = np.hstack((xyz, np.ones_like(xyz[:,0:1]))).reshape(-1, 4, 1)
     lidar_point_timestamps = lidar_data[valid_ranges, -1].astype(np.float128) + lidar_ts.to_sec()
-    
+
     # Apply motion compensation (ends up being nothing if MOTION_COMPENSATE is false)
     if MOTION_COMPENSATE:
         lidar_pose_rotations = pose_rot_slerp(lidar_point_timestamps).as_matrix()
@@ -199,11 +199,16 @@ for idx in tqdm.trange(bag.get_message_count(cam_topics)//2):
     camera_frame_points = camera_frame_points[good_points]
     depths = camera_frame_points[...,2]
 
+    image_frame_points = image_frame_points[::5]
+    depths = depths[::5]
     # Colorize and draw
-    depths_viz = cv2.normalize(depths, depths.copy(), alpha=255, beta=0, norm_type=cv2.NORM_MINMAX)
-    depths_viz = cv2.applyColorMap(depths_viz.astype(np.uint8), cv2.COLORMAP_TURBO).squeeze(1)
+    depths_viz = 255 * (depths - 1) / 25
+    depths_viz[depths < 0] = 0
+    depths_viz[depths > 255] = 255
+    # depths_viz = cv2.normalize(depths, depths.copy(), alpha=255, beta=0, norm_type=cv2.NORM_MINMAX)
+    depths_viz = cv2.applyColorMap(depths_viz.astype(np.uint8), cv2.COLORMAP_RAINBOW).squeeze(1)
 
-    disp_im = left_im.copy()
+    disp_im = np.ones_like(left_im.copy())*255
     
     # Expand the number of pixels we draw
     depth_im = np.zeros_like(disp_im)
@@ -211,6 +216,8 @@ for idx in tqdm.trange(bag.get_message_count(cam_topics)//2):
     depth_im = cv2.dilate(depth_im, np.ones((3,3)))
     color_coords = depth_im[:,:] != np.zeros(3)
     disp_im[color_coords] = depth_im[color_coords]
-
+    
+    black_idx = depth_im[:,:] == np.zeros(3)
+    
     if idx%100 == 0:
         cv2.imwrite(f"projection/projected_{idx}.png", disp_im)
