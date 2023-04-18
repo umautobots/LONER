@@ -406,11 +406,11 @@ class Optimizer:
 
         if (override_enables or self.should_enable_lidar()) and lidar_samples is not None:
 
-            if self._model_config.loss.decay_depth_lambda:
-                depth_lambda = max(self._model_config.loss.depth_lambda * (self._model_config.loss.depth_lamda_decay_rate ** (
-                    (self._global_step + 1) / (self._model_config.loss.depth_lambda_decay_steps))), self._model_config.loss.min_depth_lambda)
+            if self._model_config.loss.decay_los_lambda:
+                los_lambda = max(self._model_config.loss.los_lambda * (self._model_config.loss.los_lambda_decay_rate ** (
+                    (self._global_step + 1) / (self._model_config.loss.los_lambda_decay_steps))), self._model_config.loss.min_los_lambda)
             else:
-                depth_lambda = self._model_config.loss.depth_lambda
+                los_lambda = self._model_config.loss.los_lambda
             
             # rays = [origin, direction, viewdir, <ignore>, near limit, far limit]
             lidar_rays, lidar_depths = lidar_samples
@@ -437,12 +437,14 @@ class Optimizer:
             # Compute JS divergence (also calculate when using fix depth_eps for visualization)
             mean = torch.sum(self._lidar_depth_samples_fine * weights_pred_lidar, axis=1) / (torch.sum(weights_pred_lidar, axis=1) + 1e-10) # weighted mean # [N_rays]
             var = torch.sum((self._lidar_depth_samples_fine-torch.unsqueeze(mean, dim=-1))**2 * weights_pred_lidar, axis=1) / (torch.sum(weights_pred_lidar, axis=1) + 1e-10) + 1e-10 # [N_rays]
-            eps = torch.sqrt(var) # [N_rays]
-            mean, var, eps = torch.unsqueeze(mean, 1), torch.unsqueeze(var, 1), torch.unsqueeze(eps, 1)
+            std = torch.sqrt(var) # [N_rays]
+            mean, var, std = torch.unsqueeze(mean, 1), torch.unsqueeze(var, 1), torch.unsqueeze(std, 1)
             eps_min = self._model_config.loss.min_depth_eps
-            js_score = self.calculate_JS_divergence(self._lidar_depths_gt, eps_min, mean, eps).squeeze()
+            js_score = self.calculate_JS_divergence(self._lidar_depths_gt, eps_min/3., mean, std).squeeze()
 
-            if self._model_config.loss.JS_loss.enable:
+            loss_selection = self._model_config.loss.loss_selection
+            
+            if loss_selection == 'JS':
                 min_js_score = self._model_config.loss.JS_loss.min_js_score
                 max_js_score = self._model_config.loss.JS_loss.max_js_score
                 alpha = self._model_config.loss.JS_loss.alpha
@@ -461,7 +463,8 @@ class Optimizer:
                     self.visualize_loss(iteration_idx, viz_idx, opaque_rays, weights_gt_lidar, weights_pred_lidar, \
                                 mean, var, js_score, \
                                 self._lidar_depth_samples_fine, self._lidar_depths_gt, eps_dynamic)
-            else:
+
+            elif loss_selection == 'LOS':
                 if self._model_config.loss.decay_depth_eps:
                     self._depth_eps = max(self._model_config.loss.depth_eps * (self._model_config.loss.depth_eps_decay_rate ** (
                                     iteration_idx / (self._model_config.loss.depth_eps_decay_steps))), self._model_config.loss.min_depth_eps)
@@ -478,7 +481,15 @@ class Optimizer:
                     self.visualize_loss(iteration_idx, viz_idx, opaque_rays, weights_gt_lidar, weights_pred_lidar, \
                                     mean, var, js_score, \
                                     self._lidar_depth_samples_fine, self._lidar_depths_gt, self._depth_eps)
-            
+
+            elif loss_selection == 'KL':
+                kl_score = self.calculate_KL_divergence(self._lidar_depths_gt, eps_min/3., mean, std).squeeze()
+                print(kl_score.shape)
+                import sys
+                sys.exit()
+            else:
+                raise ValueError(f"Can't use unknown Loss {loss_selection}")
+
             if self._settings.debug.draw_samples:
                 points = self._results_lidar["points_fine"].view(-1, 3).detach().cpu()
                 weights = self._results_lidar["weights_fine"].view(-1, 1).detach().cpu().flatten()
@@ -510,13 +521,15 @@ class Optimizer:
                 color = eps_dynamic.repeat(1, 3)
                 rays_to_pcd(lidar_rays, lidar_depths, rays_fname, origins_fname, color)
 
+            # add LOS-based loss
+            if loss_selection == 'JS' or 'LOS':
+                depth_loss_los_fine = nn.functional.l1_loss(
+                    weights_pred_lidar, weights_gt_lidar)
 
-            depth_loss_los_fine = nn.functional.l1_loss(
-                weights_pred_lidar, weights_gt_lidar)
-
-            loss += depth_lambda * depth_loss_los_fine
-            wandb_logs['loss_lidar_los'] = depth_loss_los_fine.item()
-
+                loss += los_lambda * depth_loss_los_fine
+                wandb_logs['loss_lidar_los'] = depth_loss_los_fine.item()
+            
+            # add depth loss
             depth_euc_fine = self._results_lidar['depth_fine'].unsqueeze(
                 1) * scale_factor
             depth_loss_fine = nn.functional.mse_loss(
@@ -525,6 +538,7 @@ class Optimizer:
             loss += self._model_config.loss.depthloss_lambda * depth_loss_fine
             wandb_logs['loss_depth'] = depth_loss_fine.item()
 
+            # add opacity loss
             loss_opacity_lidar = torch.abs(
                 self._results_lidar['opacity_fine'][opaque_rays] - 1).mean()
 
@@ -539,11 +553,11 @@ class Optimizer:
                 depth_peaks_lidar, depth_euc_fine[..., 0])
             wandb_logs['loss_unimod_lidar'] = loss_unimod_lidar.item()
 
-            if self._model_config.loss.decay_depth_lambda:
-                depth_lambda = max(self._model_config.loss.depth_lambda * (self._model_config.loss.depth_lamda_decay_rate ** (
-                    (self._global_step + 1) / (self._model_config.loss.depth_lambda_decay_steps))), self._model_config.loss.min_depth_lambda)
+            if self._model_config.loss.decay_los_lambda:
+                los_lambda = max(self._model_config.loss.los_lambda * (self._model_config.loss.los_lambda_decay_rate ** (
+                    (self._global_step + 1) / (self._model_config.loss.los_lambda_decay_steps))), self._model_config.loss.min_los_lambda)
 
-            wandb_logs['depth_lambda'] = depth_lambda
+            wandb_logs['los_lambda'] = los_lambda
             wandb_logs['depth_eps'] = self._depth_eps
 
         if (override_enables or self.should_enable_camera()) and camera_samples is not None:
