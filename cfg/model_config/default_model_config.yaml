@@ -38,21 +38,21 @@ train:
     sigma_weight_decay: 0.0
      
 loss:
+    loss_selection: JS # JS, LOS, KL
     JS_loss:
-        enable: True          # boolean to enable JS divergence loss
         min_js_score: 1.
-        max_js_score: 20.
-        alpha: 5
+        max_js_score: 10.
+        alpha: 1.5
 
-    decay_depth_lambda: False          # boolean to enable decay
-    depth_lambda: 1000.0                # Depth lambda used for loss.
-    min_depth_lambda: 10.              # Minimum value after decay
-    depth_lamda_decay_rate: 0.001
-    depth_lambda_decay_steps: 15000
+    decay_los_lambda: False          # boolean to enable decay
+    los_lambda: 1000.0                # Depth lambda used for loss.
+    min_los_lambda: 10.              # Minimum value after decay
+    los_lambda_decay_rate: 0.001
+    los_lambda_decay_steps: 15000
         
     decay_depth_eps: True              # boolean to enable decay
     depth_eps: 3.0                     # starting tolerance for line of sight loss in euclidean space
-    min_depth_eps: 0.3                 # Minimum value after decay
+    min_depth_eps: 0.9                 # Minimum value after decay
     depth_eps_decay_rate: 0.001        # rate for decay, setting smaller value decay faster
     depth_eps_decay_steps: 500         # step for decay, setting smaller value decay faster
 
