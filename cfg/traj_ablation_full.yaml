@@ -1,7 +1,17 @@
-mapper:
-  optimizer:
-    fix_poses: True
-  keyframe_manager:
-    window_selection:
-      hybrid_settings:
-        num_recent_frames: [1, 5, 10]
+- 
+  mapper:
+    optimizer:
+      fix_poses: True
+    keyframe_manager:
+      window_selection:
+        hybrid_settings:
+          num_recent_frames: [5, 10]
+-
+  system:
+    sky_segmentation: False
+  tracker:
+    compute_sky_rays: False
+  mapper:
+    optimizer:
+      num_samples:
+        sky: 0
