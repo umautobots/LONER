@@ -465,7 +465,7 @@ class Optimizer:
 
             loss_selection = self._model_config.loss.loss_selection
             
-            if loss_selection == 'JS':
+            if loss_selection == 'L1_JS' or loss_selection == 'L2_JS':
                 min_js_score = self._model_config.loss.JS_loss.min_js_score
                 max_js_score = self._model_config.loss.JS_loss.max_js_score
                 alpha = self._model_config.loss.JS_loss.alpha
@@ -485,7 +485,7 @@ class Optimizer:
                                 mean, var, js_score, \
                                 self._lidar_depth_samples_fine, self._lidar_depths_gt, eps_dynamic)
 
-            elif loss_selection == 'LOS':
+            elif loss_selection == 'L1_LOS' or loss_selection == 'L2_LOS':
                 if self._model_config.loss.decay_depth_eps:
                     self._depth_eps = max(self._model_config.loss.depth_eps * (self._model_config.loss.depth_eps_decay_rate ** (
                                     iteration_idx / (self._model_config.loss.depth_eps_decay_steps))), self._model_config.loss.min_depth_eps)
@@ -503,11 +503,11 @@ class Optimizer:
                                     mean, var, js_score, \
                                     self._lidar_depth_samples_fine, self._lidar_depths_gt, self._depth_eps)
 
-            elif loss_selection == 'KL':
-                kl_score = self.calculate_KL_divergence(self._lidar_depths_gt, eps_min/3., mean, std).squeeze()
-                print(kl_score.shape)
-                import sys
-                sys.exit()
+            # elif loss_selection == 'KL':
+            #     # kl_score = self.calculate_KL_divergence(self._lidar_depths_gt, eps_min/3., mean, std).squeeze()
+            #     kl_loss = self._model.KL_loss(lidar_rays, lidar_depths, self._ray_sampler, scale_factor, camera=False)
+            #     loss += kl_loss
+            #     print('KL loss: ', loss)
             else:
                 raise ValueError(f"Can't use unknown Loss {loss_selection}")
 
@@ -543,12 +543,14 @@ class Optimizer:
                 rays_to_pcd(lidar_rays, lidar_depths, rays_fname, origins_fname, color)
 
             # add LOS-based loss
-            if loss_selection == 'JS' or 'LOS':
+            if loss_selection == 'L1_JS' or loss_selection == 'L1_LOS':                
                 depth_loss_los_fine = nn.functional.l1_loss(
                     weights_pred_lidar, weights_gt_lidar)
-
-                loss += los_lambda * depth_loss_los_fine
-                wandb_logs['loss_lidar_los'] = depth_loss_los_fine.item()
+            elif loss_selection == 'L2_JS' or loss_selection == 'L2_LOS':                
+                depth_loss_los_fine = nn.functional.mse_loss(
+                    weights_pred_lidar, weights_gt_lidar)
+            loss += los_lambda * depth_loss_los_fine
+            wandb_logs['loss_lidar_los'] = depth_loss_los_fine.item()
             
             # add depth loss
             depth_euc_fine = self._results_lidar['depth_fine'].unsqueeze(
@@ -579,7 +581,8 @@ class Optimizer:
                     (self._global_step + 1) / (self._model_config.loss.los_lambda_decay_steps))), self._model_config.loss.min_los_lambda)
 
             wandb_logs['los_lambda'] = los_lambda
-            wandb_logs['depth_eps'] = self._depth_eps
+            if loss_selection != 'KL':
+                wandb_logs['depth_eps'] = self._depth_eps
 
         if (override_enables or self.should_enable_camera()) and camera_samples is not None:
             # camera_samples is organized as [cam_rays, cam_intensities]
