@@ -1,7 +1,7 @@
 baseline: defaults.yaml
 dataset: ~/data/newer_college/cloister/2021-12-02-10-15-59_0-cloister-014.bag
 calibration: NULL
-groundtruth_traj: ~/data/newer_college/cloister/gt-nc-cloister.csv
+groundtruth_traj: ~/data/newer_college/cloister/gt-nc-cloister-014.csv
 experiment_name: cloister
 dataset_family: newer_college
 changes:

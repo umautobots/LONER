@@ -25,3 +25,8 @@ changes:
           ray_range: &ray_range [1, 150]
         model:
           ray_range: *ray_range
+meshing_bounding_box:
+  x: [-50, 50]
+  y: [-50,50]
+  z: [-3,30]
+lidar_vertical_fov: [16, 15]

@@ -9,9 +9,6 @@ mapper:
         num_recent_frames: 1
       window_size: 8
   optimizer:
-    model_config:
-      loss:
-        min_depth_eps: 0.5
     num_samples:
       rgb: 0
       lidar: 448

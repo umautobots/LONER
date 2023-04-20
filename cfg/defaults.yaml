@@ -91,9 +91,9 @@ mapper:
     model_config: !include ./model_config/default_model_config.yaml
   
 system:
-  single_threaded: True
+  single_threaded: False
   log_dir_prefix: "~/LonerSLAM/outputs"
-  lidar_only: False
+  lidar_only: True
 
   sky_segmentation: &sky_seg_enabled True
   
