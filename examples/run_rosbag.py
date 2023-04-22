@@ -361,7 +361,7 @@ if __name__ == "__main__":
     parser.add_argument("configuration_path")
     parser.add_argument("experiment_name", nargs="?", default=None)
     parser.add_argument("--duration", help="How long to run for (in input data time, sec)", type=float, default=None)
-    parser.add_argument("--gpu_ids", nargs="*", required=False, default = [0], help="Which GPUs to use. Defaults to parallel if set")
+    parser.add_argument("--gpu_ids", nargs="*", required=False, default = None, help="Which GPUs to use. Defaults to parallel if set")
     parser.add_argument("--num_repeats", type=int, required=False, default=1, help="How many times to run the experiment")
     parser.add_argument("--run_all_combos", action="store_true",default=False, help="If set, all combinations of overrides will be run. Otherwise, one changed at a time.")
     parser.add_argument("--overrides", type=str, default=None, help="File specifying parameters to vary for ablation study or testing")
@@ -411,7 +411,7 @@ if __name__ == "__main__":
         now_str = now.strftime("%m%d%y_%H%M%S")
         config["experiment_name"] += f"_{now_str}"
 
-    if len(args.gpu_ids) > 1:
+    if args.gpu_ids is not None and len(args.gpu_ids) > 1:
         mp.set_start_method('spawn')
         
         if len(settings_descriptions) > 1:
@@ -445,8 +445,9 @@ if __name__ == "__main__":
         
                 
     else:
-        gpu_id = str(args.gpu_ids[0])
-        os.environ["CUDA_VISIBLE_DEVICES"] = gpu_id
+        if args.gpu_ids is not None:
+            gpu_id = str(args.gpu_ids[0])
+            os.environ["CUDA_VISIBLE_DEVICES"] = gpu_id
         for config_idx, (settings, description) in enumerate(zip(settings_options, settings_descriptions)):
             if len(settings_options) == 1:
                 config_idx = None

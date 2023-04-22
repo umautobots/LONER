@@ -3,20 +3,17 @@
     optimizer:
       model_config:
         loss:
-          loss_selection: JS
+          loss_selection: L1_JS
           depthloss_lambda: [0.005]
           JS_loss:
             min_js_score: [0.5, 1]
-            max_js_score: [5, 10]
-            alpha: [1, 5, 10]
-          min_depth_eps: [0.3, 0.9, 1.5]
+            max_js_score: 10
+            alpha: [0.5, 1, 3]
+          min_depth_eps: [0.3, 1, 1.5]
 -
   mapper:
     optimizer:
       model_config:
         loss:
-          loss_selection: LOS
-          depth_eps_decay_rate: [0.85]
-          depth_eps_decay_steps: 1
-          depthloss_lambda: [0.005]
-          min_depth_eps: [0.3, 0.9, 1.5]
+          loss_selection: L1_LOS
+          min_depth_eps: [0.3, 1, 1.5]
