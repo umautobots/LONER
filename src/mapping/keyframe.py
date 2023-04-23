@@ -122,11 +122,11 @@ class KeyFrame:
 
     def get_pose_state(self) -> dict:
         state_dict = {
-            "timestamp": self.get_time(),
-            "lidar_to_camera": self._frame._lidar_to_camera.get_pose_tensor().detach().cpu(),
-            "lidar_pose":  self._frame.get_lidar_pose().get_pose_tensor().detach().cpu(),
-            "gt_lidar_pose": self._frame._gt_lidar_pose.get_pose_tensor().detach().cpu(),
-            "tracked_pose": self._tracked_lidar_pose.get_pose_tensor().detach().cpu()
+            "timestamp": self.get_time().detach().cpu().clone(),
+            "lidar_to_camera": self._frame._lidar_to_camera.get_pose_tensor().detach().cpu().clone(),
+            "lidar_pose":  self._frame.get_lidar_pose().get_pose_tensor().detach().cpu().clone(),
+            "gt_lidar_pose": self._frame._gt_lidar_pose.get_pose_tensor().detach().cpu().clone(),
+            "tracked_pose": self._tracked_lidar_pose.get_pose_tensor().detach().cpu().clone()
         }
 
         return state_dict

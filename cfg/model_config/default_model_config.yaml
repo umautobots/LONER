@@ -43,7 +43,7 @@ loss:
     loss_selection: L1_JS # L1_LOS, L2_LOS, L1_JS, L2_JS
     JS_loss:
         min_js_score: 1.
-        max_js_score: 10. # 7
+        max_js_score: 10.
         alpha: 1.
 
     decay_los_lambda: False          # boolean to enable decay

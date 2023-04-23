@@ -9,9 +9,6 @@ mapper:
         num_recent_frames: 1
       window_size: 8
   optimizer:
-    model_config:
-      loss:
-        min_depth_eps: 0.3
     num_samples:
       rgb: 0
       lidar: 448
@@ -20,7 +17,7 @@ mapper:
       - 
         num_keyframes: 1
         iteration_schedule:
-          - num_iterations: 5000
+          - num_iterations: 2500
             stage: 1
             fix_poses: True
             fix_sigma_mlp: False

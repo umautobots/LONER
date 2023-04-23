@@ -95,7 +95,7 @@ class Mapper:
 
                 kf_idx = self._optimizer._keyframe_count - 1
 
-                if kf_idx % 10 == 0 or self._settings.log_verbose:
+                if (kf_idx % 10 == 0 and self._settings.log_level == "STANDARD") or self._settings.log_level == "VERBOSE":
                     if self._settings.optimizer.samples_selection.strategy == 'OGM':
                         ckpt = {'global_step': self._optimizer._global_step,
                                 'network_state_dict': self._optimizer._model.state_dict(),
@@ -108,14 +108,17 @@ class Mapper:
                                 'network_state_dict': self._optimizer._model.state_dict(),
                                 'optimizer_state_dict': self._optimizer._optimizer.state_dict(),
                                 'poses': pose_state}
+
+                    torch.save(ckpt, f"{self._settings.log_directory}/checkpoints/ckpt_{kf_idx}.tar")
+
                 else:
                     ckpt = {'global_step': self._optimizer._global_step,
                             'poses': pose_state}
+                    torch.save(ckpt, f"{self._settings.log_directory}/checkpoints/ckpt_{kf_idx}.tar")
                 
                 self._keyframe_update_signal.emit(pose_state)
                 did_map_frame = True
                 
-                torch.save(ckpt, f"{self._settings.log_directory}/checkpoints/ckpt_{kf_idx}.tar")
                 
             elif not self._settings.optimizer.enabled:
                 if self._optimizer._global_step % 100 == 0:
