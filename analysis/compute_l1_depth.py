@@ -37,6 +37,7 @@ from examples.run_rosbag import build_scan_from_msg
 
 CHUNK_SIZE=2**12
 
+np.random.seed(0)
 
 def compute_l1_depth(lidar_pose, ray_directions: LidarRayDirections, render_color: bool = False):
     with torch.no_grad():
@@ -66,6 +67,7 @@ parser.add_argument("experiment_directory", type=str, help="folder in outputs wi
 parser.add_argument("--single_threaded", default=False, action="store_true")
 parser.add_argument("--ckpt_id", type=str, default=None)
 parser.add_argument("--num_frames", type=int, default=25)
+parser.add_argument("--use_est_poses", action='store_true', default=False)
 
 
 args = parser.parse_args()
@@ -157,7 +159,7 @@ if __name__ == "__main__":
 
     # Re-creating logic to find init time. should really just log it. TODO. 
     gt_traj_df = pd.read_csv(full_config.run_config.groundtruth_traj, header=None, delimiter=" ")
-    _, gt_timestamps = build_poses_from_df(gt_traj_df, False)
+    gt_poses, gt_timestamps = build_poses_from_df(gt_traj_df, False)
     init = False
     lidar_topic = f"/{full_config.system.ros_names.lidar}"
     for topic, msg, timestamp in bag.read_messages(topics=[lidar_topic]):
@@ -168,10 +170,6 @@ if __name__ == "__main__":
         lidar_timestamps.append(timestamp)
         lidar_msgs.append(msg)
     
-    # make sure we don't use groundtruth stuff by mistake later
-    del gt_timestamps
-
-    
     est_df = pd.read_csv(f"{args.experiment_directory}/trajectory/estimated_trajectory.txt", header=None, delimiter=" ")
     est_poses, est_timestamps = build_poses_from_df(est_df, False)
     
@@ -181,10 +179,16 @@ if __name__ == "__main__":
     selected_lidar_times = [(lidar_timestamps[i] - start_time).to_sec() for i in selected_lidar_indices]
     selected_lidar_times = torch.tensor(selected_lidar_times, dtype=torch.float64)
 
-    abs_diff = torch.abs(est_timestamps.cpu().unsqueeze(1) - selected_lidar_times.cpu().unsqueeze(0))
+    if args.use_est_poses:
+        all_lidar_timestamps = est_timestamps
+        all_lidar_poses = est_poses
+    else:
+        all_lidar_timestamps = gt_timestamps
+        all_lidar_poses = gt_poses
+
+    abs_diff = torch.abs(all_lidar_timestamps.cpu().unsqueeze(1) - selected_lidar_times.cpu().unsqueeze(0))
     pose_indices = torch.argmin(abs_diff, dim=0)
-    
-    lidar_poses = [est_poses[i] for i in pose_indices]
+    lidar_poses = [all_lidar_poses[i] for i in pose_indices]
 
     jobs = []
     for pose_idx, (pose_state, lidar_msg) in enumerate(zip(lidar_poses, selected_lidar_msgs)):

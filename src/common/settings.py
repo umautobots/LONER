@@ -3,6 +3,7 @@ import os
 import yaml
 import numpy as np
 import copy
+from collections.abc import Iterable
 
 from attrdict import AttrDict
 
@@ -153,6 +154,10 @@ class Settings(AttrDict):
                 settings_options = []
                 settings_descriptions = []
                 for attr_stack, values in options:
+                    
+                    if len(values) > 0 and isinstance(values[0], Iterable):
+                        values = [values]
+
                     for value in values:
                         settings_copy = copy.deepcopy(baseline)
                         settings_description = ""
