@@ -13,8 +13,11 @@ changes:
     optimizer:
       model_config:
         data:
-          ray_range: &ray_range [1, 100]
+          ray_range: &ray_range [1, 75]
         model:
           ray_range: *ray_range
-
+    keyframe_manager:
+      window_selection:
+        hybrid_settings:
+          num_recent_frames: 4
 lidar_vertical_fov: [-22.5, 22.5]
