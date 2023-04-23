@@ -3,7 +3,7 @@ mapper:
   keyframe_manager:
     keyframe_selection:
       temporal:
-        time_diff_seconds: &keyframe_interval 3
+        time_diff_seconds: &keyframe_interval 3 
     window_selection:
       hybrid_settings:
         num_recent_frames: 1
@@ -11,7 +11,7 @@ mapper:
   optimizer:
     model_config:
       loss:
-        min_depth_eps: 0.5
+        min_depth_eps: 0.3
     num_samples:
       rgb: 0
       lidar: 448
@@ -20,7 +20,7 @@ mapper:
       - 
         num_keyframes: 1
         iteration_schedule:
-          - num_iterations: 1000
+          - num_iterations: 5000
             stage: 1
             fix_poses: True
             fix_sigma_mlp: False
@@ -49,7 +49,7 @@ tracker:
   icp:
     schedule:
       - 
-        threshold: 1.5
+        threshold: 1.5 #1.5
         max_iterations: 5
         relative_fitness: 1.e-8
         relative_rmse: 1.e-8
@@ -59,7 +59,7 @@ tracker:
         relative_fitness: 1.e-8
         relative_rmse: 1.e-8
     downsample:
-      target_uniform_point_count: 5000
+      target_uniform_point_count: 5000 #5000
 
 system:
   synchronization:
