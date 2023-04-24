@@ -6,12 +6,3 @@
       window_selection:
         hybrid_settings:
           num_recent_frames: [4, 8]
-- # Disable sky segmentation
-  system:
-    sky_segmentation: False
-  tracker:
-    compute_sky_rays: False
-  mapper:
-    optimizer:
-      num_samples:
-        sky: 0

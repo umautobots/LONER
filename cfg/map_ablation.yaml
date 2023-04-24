@@ -20,3 +20,15 @@
         loss:
           depthloss_lambda: 1
           los_lambda: 0.0
+- # Disable sky segmentation
+  debug:
+    flags:
+      use_groundtruth_poses: [True, False]
+  system:
+    sky_segmentation: False
+  tracker:
+    compute_sky_rays: False
+  mapper:
+    optimizer:
+      num_samples:
+        sky: 0
