@@ -36,7 +36,7 @@ debug:
 mapper:
   device: 0 # don't change this, use CUDA_VISIBLE_DEVICES
   data_prep_on_cpu: &data_prep_on_cpu True
-  log_level: STANDARD # VERBOSE (every keyframe), STANDARD (every 10), DISABLED (final checkpoint only)
+  log_level: DISABLED # VERBOSE (every keyframe), STANDARD (every 10), DISABLED (final checkpoint only)
   keyframe_manager:
     keyframe_selection:
       strategy: TEMPORAL
@@ -91,7 +91,7 @@ mapper:
     model_config: !include ./model_config/default_model_config.yaml
   
 system:
-  single_threaded: False
+  single_threaded: True
   log_dir_prefix: "~/LonerSLAM/outputs"
   lidar_only: True
 

@@ -1,33 +1,22 @@
+# All the LOS configs
 -
+  debug:
+    flags:
+      use_groundtruth_poses: [True, False]
   mapper:
     optimizer:
       model_config:
         loss:
           depthloss_lambda: [0.0, 0.005]
+          loss_selection: [L1_JS, L1_LOS, L2_JS, L2_LOS]
+# Depth Only
 -
+  debug:
+    flags:
+      use_groundtruth_poses: [True, False]
   mapper:
     optimizer:
       model_config:
         loss:
           depthloss_lambda: 1
           los_lambda: 0.0
--
-  mapper:
-    optimizer:
-      model_config:
-        loss:
-          JS_loss:
-            enable: False
-          depth_eps_decay_rate: [0.85, 0.95, 0.99]
-          depth_eps_decay_steps: 1
-          depthloss_lambda: 0.0
-  -
-  mapper:
-    optimizer:
-      model_config:
-        loss:
-          JS_loss:
-            enable: False
-          depth_eps_decay_rate: 0.85
-          depthloss_lambda: 0.005
-          depth_eps_decay_steps: 1
