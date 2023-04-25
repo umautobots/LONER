@@ -110,7 +110,7 @@ for experiment_directory in experiment_directories:
     rmse_rel_err = torch.sqrt(torch.mean(translation_rel_errs**2))
 
     rel_errs_tracked = torch.tensor(rel_errs_tracked)
-    rmse_rel_err_tracked = torch.sqrt(torch.mean(translation_rel_errs**2))
+    rmse_rel_err_tracked = torch.sqrt(torch.mean(rel_errs_tracked**2))
     
     if os.path.exists(f"{experiment_directory}/configuration.txt"):
         with open(f"{experiment_directory}/configuration.txt") as f:
@@ -195,7 +195,7 @@ for experiment_directory in experiment_directories:
         plt.tight_layout()
         
         plt.savefig(f"{experiment_directory}/poses.png")
-        plt.show()
+        # plt.show()
         plt.clf()
     
     all_gts.append(gt)
