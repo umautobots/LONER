@@ -36,8 +36,7 @@ debug:
 mapper:
   device: 0 # don't change this, use CUDA_VISIBLE_DEVICES
   data_prep_on_cpu: &data_prep_on_cpu True
-  log_verbose: False
-  log_level: STANDARD
+  log_level: DISABLED # VERBOSE (every keyframe), STANDARD (every 10), DISABLED (final checkpoint only)
   keyframe_manager:
     keyframe_selection:
       strategy: TEMPORAL
