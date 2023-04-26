@@ -110,9 +110,8 @@ def build_mesh(exp_dir):
         checkpoint = f"ckpt_{args.ckpt_id}.tar"
     checkpoint_path = pathlib.Path(f"{exp_dir}/checkpoints/{checkpoint}")
 
-    if not os.path.exists(f"{exp_dir}/meshing"):
-        os.makedirs(f"{exp_dir}/meshing")
-    mesh_out_file=f"{exp_dir}/meshing/meshing_ckpt_{args.ckpt_id}_res_{resolution}.ply"
+    os.makedirs(f"{exp_dir}/meshing/resolution_{resolution}/", exist_ok=True)
+    mesh_out_file=f"{exp_dir}/meshing/resolution_{resolution}/ckpt_{args.ckpt_id}.ply"
 
     # override any params loaded from yaml
     with open(f"{exp_dir}/full_config.pkl", 'rb') as f:

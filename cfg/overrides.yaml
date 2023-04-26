@@ -2,5 +2,4 @@ mapper:
   optimizer:
     model_config:
       loss:
-        JS_loss:
-          max_js_score: [10, 20, 50]
+        depthloss_lambda: [0., 0.001]

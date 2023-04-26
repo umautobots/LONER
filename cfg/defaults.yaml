@@ -92,10 +92,10 @@ mapper:
   
 system:
   single_threaded: True
-  log_dir_prefix: "~/LonerSLAM/outputs"
+  log_dir_prefix: "~/LonerSLAM/outputs/"
   lidar_only: True
 
-  sky_segmentation: &sky_seg_enabled True
+  sky_segmentation: &sky_seg_enabled False
   
   image_scale_factor: 0.5 # Setting is put here to emphasize that it needs to influence calibration loading
 

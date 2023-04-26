@@ -140,7 +140,7 @@ def build_image_from_msg(image_msg, timestamp, scale_factor) -> Image:
     return Image(pytorch_img, timestamp.to_sec())
 
 
-def run_trial(config, settings, settings_description = None, config_idx = None, trial_idx = None):
+def run_trial(config, settings, settings_description = None, config_idx = None, trial_idx = None, dryrun: bool = False):
     im_scale_factor = settings.system.image_scale_factor
 
     rosbag_path = Path(os.path.expanduser(config["dataset"]))
@@ -233,6 +233,8 @@ def run_trial(config, settings, settings_description = None, config_idx = None, 
             with open(f"{logdir}/configuration.txt", 'w+') as desc_file:
                 desc_file.write(settings_description)
     
+    if dryrun:
+        return
     bag = rosbag.Bag(rosbag_path.as_posix(), 'r')
 
     loner.start()
@@ -345,7 +347,7 @@ def run_trial(config, settings, settings_description = None, config_idx = None, 
 
 
 # Implements a single worker in a thread-pool model.
-def _gpu_worker(config, gpu_id: int, job_queue: mp.Queue) -> None:
+def _gpu_worker(config, gpu_id: int, job_queue: mp.Queue, dryrun: bool) -> None:
 
     while not job_queue.empty():
         data = job_queue.get()
@@ -353,7 +355,7 @@ def _gpu_worker(config, gpu_id: int, job_queue: mp.Queue) -> None:
             return
 
         settings, description, config_idx, trial_idx = data
-        run_trial(config, settings, description, config_idx, trial_idx)
+        run_trial(config, settings, description, config_idx, trial_idx, dryrun)
 
 if __name__ == "__main__":
 
@@ -366,6 +368,7 @@ if __name__ == "__main__":
     parser.add_argument("--run_all_combos", action="store_true",default=False, help="If set, all combinations of overrides will be run. Otherwise, one changed at a time.")
     parser.add_argument("--overrides", type=str, default=None, help="File specifying parameters to vary for ablation study or testing")
     parser.add_argument("--lite", action="store_true",default=False, help="If set, uses the lite model configuration instead of the full model.")
+    parser.add_argument("--dryrun", action="store_true",default=False, help="If set, generates output dirs and settings files but doesn't run anything.")
 
     args = parser.parse_args()
 
@@ -436,7 +439,7 @@ if __name__ == "__main__":
         gpu_worker_processes = []
         for gpu_id in args.gpu_ids:
             os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
-            gpu_worker_processes.append(mp.Process(target = _gpu_worker, args=(config,gpu_id,job_queue,)))
+            gpu_worker_processes.append(mp.Process(target = _gpu_worker, args=(config,gpu_id,job_queue,args.dryrun)))
             gpu_worker_processes[-1].start()
 
         # Sync
@@ -454,4 +457,4 @@ if __name__ == "__main__":
             for trial_idx in range(args.num_repeats):
                 if args.num_repeats == 1:
                     trial_idx = None
-                run_trial(config, settings, description, config_idx, trial_idx)
+                run_trial(config, settings, description, config_idx, trial_idx, args.dryrun)

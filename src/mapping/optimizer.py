@@ -461,7 +461,7 @@ class Optimizer:
             std = torch.sqrt(var) # [N_rays]
             mean, var, std = torch.unsqueeze(mean, 1), torch.unsqueeze(var, 1), torch.unsqueeze(std, 1)
             eps_min = self._model_config.loss.min_depth_eps
-            js_score = self.calculate_JS_divergence(self._lidar_depths_gt, eps_min/3., mean, std).squeeze()
+            js_score = self.calculate_JS_divergence(self._lidar_depths_gt, eps_min, mean, std).squeeze()
 
             loss_selection = self._model_config.loss.loss_selection
             

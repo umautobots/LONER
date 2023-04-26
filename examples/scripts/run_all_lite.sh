@@ -4,9 +4,9 @@ sequences=("../cfg/fusion_portable/canteen.yaml" "../cfg/fusion_portable/garden.
 for s in ${sequences[@]}; do
   python3 run_rosbag.py $s \
     --overrides ../cfg/map_ablation.yaml --num_repeats 5 \
-    --gpu_ids 0 1 --lite --run_all_combos
+    --gpu_ids 0 1 --lite --run_all_combos --dryrun
     
   python3 run_rosbag.py $s \
     --overrides ../cfg/traj_ablation_lite.yaml  \
-    --num_repeats 5 --gpu_ids 0 1 --lite
+    --num_repeats 5 --gpu_ids 0 1 --lite --dryrun
 done

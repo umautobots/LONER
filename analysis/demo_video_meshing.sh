@@ -3,6 +3,7 @@ exp_dir=$1
 cfg_dir=$2
 ckpt_step=$3
 meshing_step=$4
+resolution=$5
 
 # Find the file with the largest number in its name
 ckpt_path=$exp_dir/checkpoints
@@ -20,7 +21,9 @@ fi
 for ((i=0; i<=$max_id/$ckpt_step; i++))
 do
   ckpt_id=$(($i*$ckpt_step))  
-  echo "RUN $" python meshing.py $exp_dir $cfg_dir --ckpt_id $ckpt_id --use_weights --level 3 --threshold 0.1 --save --skip_step $meshing_step --resolution 0.05
-  python meshing.py $exp_dir $cfg_dir --ckpt_id $ckpt_id --use_weights --level 3 --threshold 0.1 --save --skip_step $meshing_step --resolution 0.05
+  echo "RUN $" python meshing.py $exp_dir $cfg_dir --ckpt_id $ckpt_id --use_weights --level 0.05 --save --skip_step $meshing_step --resolution $resolution
+  python meshing.py $exp_dir $cfg_dir --ckpt_id $ckpt_id --use_weights --level 0.05 --save --skip_step $meshing_step --resolution $resolution
 done
+
+python3 meshing.py $exp_dir $cfg_dir --use_weights --level 0.05 --save --skip_step $meshing_step --resolution $resolution
 

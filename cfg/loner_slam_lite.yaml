@@ -11,13 +11,13 @@ mapper:
   optimizer:
     num_samples:
       rgb: 0
-      lidar: 448
-      sky: 64 # sum to 512
+      lidar: 512
+      sky: 0 # sum to 512
     keyframe_schedule:
       - 
         num_keyframes: 1
         iteration_schedule:
-          - num_iterations: 2500
+          - num_iterations: 1000
             stage: 1
             fix_poses: True
             fix_sigma_mlp: False
