@@ -130,6 +130,7 @@ tracker:
     decimate_on_load: False
     lidar_point_step: 1 # Only keep 1 out of this many lidar points
   icp:
+    scan_duration: 0.9 # Only do ICP with the first <this proportion> of the scan. More robust since overlap in scans causes problems.
     schedule:
       - 
         threshold: 1.5

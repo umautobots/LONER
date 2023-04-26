@@ -88,13 +88,15 @@ class KeyFrame:
             lidar_rays, lidar_depths = ray_dirs.build_lidar_rays(lidar_indices, ray_range, world_cube, lidar_poses, ignore_world_cube)
         
         else:
-            scan_with_sky = lidar_scan.get_sky_scan(ray_range[1] + 1)
-            scan_with_sky.merge(lidar_scan)
-            ray_dirs = LidarRayDirections(scan_with_sky)
-
-            lidar_indices = torch.cat((sky_indices, lidar_indices + min(len(sky_indices),lidar_scan.sky_rays.shape[1]) ))
+            sky_scan = lidar_scan.get_sky_scan(ray_range[1] + 1)
+            sky_dirs = LidarRayDirections(sky_scan)
+            sky_rays, sky_depths = sky_dirs.build_lidar_rays(sky_indices, ray_range, world_cube, lidar_poses.detach(), ignore_world_cube)
+            
+            ray_dirs = LidarRayDirections(lidar_scan)
             lidar_rays, lidar_depths = ray_dirs.build_lidar_rays(lidar_indices, ray_range, world_cube, lidar_poses, ignore_world_cube)
 
+            lidar_rays = torch.cat((lidar_rays, sky_rays))
+            lidar_depths = torch.cat((lidar_depths, sky_depths))
         return lidar_rays, lidar_depths
         
     ## Given the images, create camera rays in Loner's format

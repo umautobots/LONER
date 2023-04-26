@@ -89,9 +89,14 @@ class Frame:
     # @p time_per_scan: The maximum time to allow in a scan. This prevents aliasing without motion compensation.
     # @p target_points: If not None, downsample uniformly to approximately this many points.
     # @returns a open3d Pointcloud
-    def build_point_cloud(self, time_per_scan: float = None,
+    def build_point_cloud(self, scan_duration: float = None,
                           target_points: int = None) -> o3d.cuda.pybind.geometry.PointCloud:
         pcd = o3d.cuda.pybind.geometry.PointCloud()
+
+        if scan_duration is None:
+            time_per_scan = None
+        else:
+            time_per_scan = scan_duration * self.get_scan_duration()
 
         # Only take 1 scan
         if time_per_scan is not None and self.lidar_points.get_end_time() - self.lidar_points.get_start_time() > 1e-3:
@@ -126,6 +131,9 @@ class Frame:
         pcd.points = o3d.utility.Vector3dVector(
             end_points_global.cpu().numpy().transpose())
         return pcd
+    
+    def get_scan_duration(self) -> float:
+        return (self.lidar_points.timestamps[-1] - self.lidar_points.timestamps[0]).item()
 
     ## @returns the Pose of the camera at the time the image was captured
     def get_camera_pose(self) -> Pose:

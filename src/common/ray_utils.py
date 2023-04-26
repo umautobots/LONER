@@ -24,20 +24,21 @@ def get_far_val(pts_o: torch.Tensor, pts_d: torch.Tensor, no_nan: bool = False):
     # The unoptimized function is below. Left it here since it's unclear enough
     # even without optimizaiton.... and is just a nightmare with optimization.
     # So left for understandability.
-    # Intersection with z = -1, z = 1
-    t_z1 = (-1 - pts_o[:, [2]]) / pts_d[:, [2]]
-    t_z2 = (1 - pts_o[:, [2]]) / pts_d[:, [2]]
-    # Intersection with y = -1, y = 1
-    t_y1 = (-1 - pts_o[:, [1]]) / pts_d[:, [1]]
-    t_y2 = (1 - pts_o[:, [1]]) / pts_d[:, [1]]
-    # Intersection with x = -1, x = 1
-    t_x1 = (-1 - pts_o[:, [0]]) / pts_d[:, [0]]
-    t_x2 = (1 - pts_o[:, [0]]) / pts_d[:, [0]]
-    clipped_ts = torch.cat([torch.maximum(t_z1.clamp(min=0), t_z2.clamp(min=0)),
-                            torch.maximum(t_y1.clamp(min=0),
-                                          t_y2.clamp(min=0)),
-                            torch.maximum(t_x1.clamp(min=0), t_x2.clamp(min=0))], dim=1)
-    far_clip = clipped_ts.min(dim=1)[0].unsqueeze(1)
+
+    # # Intersection with z = -1, z = 1
+    # t_z1 = (-1 - pts_o[:, [2]]) / pts_d[:, [2]]
+    # t_z2 = (1 - pts_o[:, [2]]) / pts_d[:, [2]]
+    # # Intersection with y = -1, y = 1
+    # t_y1 = (-1 - pts_o[:, [1]]) / pts_d[:, [1]]
+    # t_y2 = (1 - pts_o[:, [1]]) / pts_d[:, [1]]
+    # # Intersection with x = -1, x = 1
+    # t_x1 = (-1 - pts_o[:, [0]]) / pts_d[:, [0]]
+    # t_x2 = (1 - pts_o[:, [0]]) / pts_d[:, [0]]
+    # clipped_ts = torch.cat([torch.maximum(t_z1.clamp(min=0), t_z2.clamp(min=0)),
+    #                         torch.maximum(t_y1.clamp(min=0),
+    #                                       t_y2.clamp(min=0)),
+    #                         torch.maximum(t_x1.clamp(min=0), t_x2.clamp(min=0))], dim=1)
+    # far_clip = clipped_ts.min(dim=1)[0].unsqueeze(1)
 
     dirs = torch.tensor([[-1.], [1.]], device=pts_o.device)
     t = (dirs[..., None] - pts_o[:, [0,1,2]]) / pts_d[:, [0,1,2]]

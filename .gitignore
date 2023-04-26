@@ -17,5 +17,6 @@ graphs/
 
 test/outputs/
 sandbox/
+debug_quad/
 
 docker/.etc*

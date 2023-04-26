@@ -163,9 +163,9 @@ class Tracker:
         downsample_type = self._settings.icp.downsample.type
 
         if downsample_type is None:
-            frame_point_cloud = frame.build_point_cloud()
+            frame_point_cloud = frame.build_point_cloud(scan_duration=self._settings.icp.scan_duration)
         elif downsample_type == "VOXEL":
-            frame_point_cloud = frame.build_point_cloud()
+            frame_point_cloud = frame.build_point_cloud(scan_duration=self._settings.icp.scan_duration)
             voxel_size = self._settings.icp.downsample.voxel_downsample_size
             frame_point_cloud = frame_point_cloud.voxel_down_sample(
                 voxel_size=voxel_size
@@ -173,7 +173,7 @@ class Tracker:
         elif downsample_type == "UNIFORM":
             target_points = self._settings.icp.downsample.target_uniform_point_count
 
-            frame_point_cloud = frame.build_point_cloud(target_points=target_points)
+            frame_point_cloud = frame.build_point_cloud(scan_duration=self._settings.icp.scan_duration,target_points=target_points)
         else:
             raise Exception(f"Unrecognized downsample type {downsample_type}")
 
