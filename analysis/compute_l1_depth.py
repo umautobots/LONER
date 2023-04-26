@@ -164,7 +164,11 @@ if __name__ == "__main__":
 
         # Re-creating logic to find init time. should really just log it. TODO. 
         gt_traj_df = pd.read_csv(full_config.run_config.groundtruth_traj, header=None, delimiter=" ")
-        gt_poses, gt_timestamps = build_poses_from_df(gt_traj_df, False)
+        gt_poses, gt_timestamps = build_poses_from_df(gt_traj_df, True)
+
+        est_df = pd.read_csv(f"{exp_dir}/trajectory/estimated_trajectory.txt", header=None, delimiter=" ")
+        est_poses, est_timestamps = build_poses_from_df(est_df, True)
+
         init = False
         lidar_topic = f"/{full_config.system.ros_names.lidar}"
         for topic, msg, timestamp in bag.read_messages(topics=[lidar_topic]):
@@ -175,9 +179,6 @@ if __name__ == "__main__":
             lidar_timestamps.append(timestamp)
             lidar_msgs.append(msg)
         
-        est_df = pd.read_csv(f"{exp_dir}/trajectory/estimated_trajectory.txt", header=None, delimiter=" ")
-        est_poses, est_timestamps = build_poses_from_df(est_df, False)
-        
         selected_lidar_indices = np.random.choice(len(est_timestamps), (args.num_frames,), replace=False)
 
         selected_lidar_msgs = [lidar_msgs[i] for i in selected_lidar_indices]
@@ -185,10 +186,11 @@ if __name__ == "__main__":
         selected_lidar_times = torch.tensor(selected_lidar_times, dtype=torch.float64)
 
         if args.use_est_poses:
-            all_lidar_timestamps = est_timestamps
+            all_lidar_timestamps = est_timestamps # est timestamps are strat from zero
             all_lidar_poses = est_poses
         else:
-            all_lidar_timestamps = gt_timestamps
+
+            all_lidar_timestamps = gt_timestamps - start_time.to_sec()  # gt timestamps are not strat from zero
             all_lidar_poses = gt_poses
 
         abs_diff = torch.abs(all_lidar_timestamps.cpu().unsqueeze(1) - selected_lidar_times.cpu().unsqueeze(0))
