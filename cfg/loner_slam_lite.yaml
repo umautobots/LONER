@@ -9,10 +9,13 @@ mapper:
         num_recent_frames: 1
       window_size: 8
   optimizer:
+    model_config:
+      loss:
+        min_depth_eps: 0.5
     num_samples:
       rgb: 0
       lidar: 512
-      sky: 0 # sum to 512
+      sky: 64 # sum to 512
     keyframe_schedule:
       - 
         num_keyframes: 1
