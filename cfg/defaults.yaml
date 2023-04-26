@@ -95,7 +95,7 @@ system:
   log_dir_prefix: "~/LonerSLAM/outputs/"
   lidar_only: True
 
-  sky_segmentation: &sky_seg_enabled False
+  sky_segmentation: &sky_seg_enabled True
   
   image_scale_factor: 0.5 # Setting is put here to emphasize that it needs to influence calibration loading
 
