@@ -40,9 +40,9 @@ train:
 loss:
     loss_selection: L1_JS # L1_LOS, L2_LOS, L1_JS, L2_JS
     JS_loss:
-        min_js_score: 1.
-        max_js_score: 20.
-        alpha: 1.5
+        min_js_score: 3.
+        max_js_score: 7.
+        alpha: 3
 
     decay_los_lambda: False          # boolean to enable decay
     los_lambda: 1000.0                # Depth lambda used for loss.
@@ -56,7 +56,7 @@ loss:
     depth_eps_decay_rate: 0.85        # rate for decay, setting smaller value decay faster
     depth_eps_decay_steps: 1         # step for decay, setting smaller value decay faster
 
-    depthloss_lambda: 0.0      # weight for lidar termination depth
+    depthloss_lambda: 0.005      # weight for lidar termination depth
     cam_lambda: 1       # weight for camera intensity value
     std_lambda: 0.0       # weight for standard deviation loss on camera rays
 
