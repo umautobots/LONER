@@ -219,8 +219,9 @@ if __name__ == "__main__":
 
         l1s = []
         if args.single_threaded:
+            model_data = (model, ray_sampler, world_cube, ray_range, _DEVICE)
             for _, lidar_pose, ray_directions in tqdm(jobs):
-                l1 = compute_l1_depth(lidar_pose, ray_directions, False)
+                l1 = compute_l1_depth(lidar_pose, ray_directions, model_data, False)
                 l1s.append(l1)
         else:
             job_queue = mp.Queue()

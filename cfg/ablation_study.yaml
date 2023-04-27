@@ -1,0 +1,42 @@
+# All the L1 configs (Us, Us - depth, Cloner*, Us-JS)
+-
+  mapper:
+    optimizer:
+      model_config:
+        loss:
+          depthloss_lambda: [0.0, 0.005]
+          loss_selection: [L1_JS, L1_LOS]
+# URF*
+-
+  mapper:
+    optimizer:
+      model_config:
+        loss:
+          loss_selection: [L2_LOS]
+# Depth Only
+-
+  mapper:
+    optimizer:
+      model_config:
+        loss:
+          depthloss_lambda: 1
+          los_lambda: 0.0
+- # Disable sky segmentation
+  system:
+    sky_segmentation: False
+  tracker:
+    compute_sky_rays: False
+  mapper:
+    optimizer:
+      num_samples:
+        sky: 0
+- # No Pose Optimization
+  mapper:
+    optimizer:
+      fix_poses: True
+- # Changing KF selection
+  mapper:
+    keyframe_manager:
+      window_selection:
+        hybrid_settings:
+          num_recent_frames: [4, 8]

@@ -64,6 +64,8 @@ parser.add_argument("--only_last_frame", action="store_true", default=False)
 parser.add_argument("--sep_ckpt_result", action="store_true", default=False)
 parser.add_argument("--start_frame", type=int, default=0, dest="start_frame")
 
+parser.add_argument("--render_pose", default=None, type=float, nargs=6, help="x y z y p r render pose (angles in degrees).")
+
 args = parser.parse_args()
 
 checkpoints = os.listdir(f"{args.experiment_directory}/checkpoints")
@@ -214,6 +216,16 @@ if __name__ == "__main__":
         lidar_to_camera = Pose.from_settings(full_config.calibration.lidar_to_camera)
         if args.only_last_frame:
             poses_ = [poses[-1]]
+
+        elif args.render_pose is not None:
+            xyz = np.array([args.render_pose[:3]]).squeeze(0)
+            rpy = np.array([args.render_pose[3:]])
+
+            rotvec = Rotation.from_euler('ZYX', rpy, True).as_rotvec().squeeze(0)
+            T = np.hstack((xyz, rotvec))
+
+            poses_ = [{"lidar_pose": torch.from_numpy(T), "timestamp": torch.tensor([0.0])}]
+
         else:
             poses_ = poses[args.start_frame:]
             poses_ = poses_[::args.skip_step]
@@ -233,7 +245,7 @@ if __name__ == "__main__":
                 cam_pose = lidar_pose.to('cpu') * lidar_to_camera.to('cpu')
                 rgb, depth, _ = render_dataset_frame(cam_pose.to(_DEVICE))
                 save_img(rgb, [], f"predicted_img_{timestamp}.png", render_dir)
-                save_depth(depth, f"predicted_depth_{timestamp}.png", render_dir, max_depth=80)
+                save_depth(depth, f"predicted_depth_{timestamp}.png", render_dir, max_depth=70)
 
         if args.render_video:
 

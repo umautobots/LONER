@@ -92,7 +92,7 @@ mapper:
   
 system:
   single_threaded: False
-  log_dir_prefix: "~/LonerSLAM/outputs/"
+  log_dir_prefix: "/mnt/ws-frb/projects/loner_slam/evaluation_v5/"
   lidar_only: True
 
   sky_segmentation: &sky_seg_enabled True
@@ -129,18 +129,6 @@ tracker:
     frame_delta_t_sec_tolerance: 0.02
     decimate_on_load: False
     lidar_point_step: 1 # Only keep 1 out of this many lidar points
-  # icp:
-  #   schedule:
-  #     - 
-  #       threshold: 4. # 1.5
-  #       max_iterations: 10 # 5
-  #       relative_fitness: 1.e-8
-  #       relative_rmse: 1.e-8
-  #     - 
-  #       threshold: 0.25 # 0.125
-  #       max_iterations: 20
-  #       relative_fitness: 1.e-8
-  #       relative_rmse: 1.e-8
   icp:
     scan_duration: 0.9 # Only do ICP with the first <this proportion> of the scan. More robust since overlap in scans causes problems.
     schedule:

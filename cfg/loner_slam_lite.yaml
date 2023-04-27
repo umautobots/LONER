@@ -9,9 +9,6 @@ mapper:
         num_recent_frames: 1
       window_size: 8
   optimizer:
-    model_config:
-      loss:
-        min_depth_eps: 0.5
     num_samples:
       rgb: 0
       lidar: 448
@@ -49,7 +46,7 @@ tracker:
   icp:
     schedule:
       - 
-        threshold: 1.5 #1.5
+        threshold: 1.5
         max_iterations: 5
         relative_fitness: 1.e-8
         relative_rmse: 1.e-8
@@ -59,7 +56,7 @@ tracker:
         relative_fitness: 1.e-8
         relative_rmse: 1.e-8
     downsample:
-      target_uniform_point_count: 5000 #5000
+      target_uniform_point_count: 5000
 
 system:
   synchronization:
