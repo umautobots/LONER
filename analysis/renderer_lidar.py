@@ -12,6 +12,7 @@ import pandas as pd
 import tqdm
 import rosbag
 import torch.multiprocessing as mp
+from scipy.spatial.transform import Rotation
 
 
 PROJECT_ROOT = os.path.abspath(os.path.join(
@@ -129,6 +130,7 @@ parser.add_argument("--translation_noise", type=float, default=0, help="std dev 
 parser.add_argument("--voxel_size", type=float, default=None, required=True)
 parser.add_argument("--max_range", type=float, default=None)
 parser.add_argument("--vert_fov", type=float, nargs=2, default=None)
+parser.add_argument("--render_pose", default=None, type=float, nargs=6, help="x y z y p r render pose (angles in degrees).")
 
 args = parser.parse_args()
 
@@ -247,6 +249,14 @@ if __name__ == "__main__":
                 all_lidar_poses.append(stack)
 
             lidar_poses = torch.cat(all_lidar_poses)
+    elif args.render_pose is not None:
+        xyz = np.array([args.render_pose[:3]]).squeeze(0)
+        rpy = np.array([args.render_pose[3:]])
+
+        rotvec = Rotation.from_euler('ZYX', rpy, True).as_rotvec().squeeze(0)
+        T = np.hstack((xyz, rotvec))
+
+        lidar_poses = [{"lidar_pose": torch.from_numpy(T), "timestamp": torch.tensor([0.0])}]
     else:
         poses = ckpt["poses"]    
         all_poses = []
@@ -271,8 +281,8 @@ if __name__ == "__main__":
 
     lidar_intrinsics = {
         "vertical_fov": vert_fov,
-        "vertical_resolution": 0.25,
-        "horizontal_resolution": 0.25
+        "vertical_resolution": 0.1,
+        "horizontal_resolution": 0.1
     }
 
     lidar_scan = build_lidar_scan(lidar_intrinsics)
@@ -287,7 +297,7 @@ if __name__ == "__main__":
             else:
                 pose_key = "lidar_pose"
 
-            kf_timestamp = pose_state["timestamp"].numpy()
+            kf_timestamp = pose_state["timestamp"].cpu().numpy()
 
             lidar_pose = Pose(pose_tensor=pose_state[pose_key]).to(_DEVICE)
         else:

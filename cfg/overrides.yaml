@@ -6,9 +6,7 @@
   mapper:
     optimizer:
       model_config:
-        loss:
-          depthloss_lambda: [0.005]
-          loss_selection: [L1_JS, L1_LOS]
+        depthloss_lambda: [0.001, 0.005]
 # Depth Only
 # -
 #   debug:

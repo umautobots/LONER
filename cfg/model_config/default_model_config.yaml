@@ -44,7 +44,7 @@ loss:
     JS_loss:
         min_js_score: 1.
         max_js_score: 10.
-        alpha: 1
+        alpha: 1.
 
     decay_los_lambda: False          # boolean to enable decay
     los_lambda: 1000.0                # Depth lambda used for loss.
@@ -55,7 +55,7 @@ loss:
     decay_depth_eps: True              # boolean to enable decay
     depth_eps: 3.0                     # starting tolerance for line of sight loss in euclidean space
     min_depth_eps: 0.5                 # Minimum value after decay
-    depth_eps_decay_rate: 0.85        # rate for decay, setting smaller value decay faster
+    depth_eps_decay_rate: 0.95        # rate for decay, setting smaller value decay faster
     depth_eps_decay_steps: 1         # step for decay, setting smaller value decay faster
 
     depthloss_lambda: 0.005      # weight for lidar termination depth
