@@ -27,6 +27,8 @@ import numpy as np
 import torch
 import torch.multiprocessing as mp
 from torch.profiler import profile, record_function, ProfilerActivity
+from scipy.spatial.transform import Rotation as R
+
 
 PROJECT_ROOT = os.path.abspath(os.path.join(
     os.path.dirname(__file__),
@@ -44,6 +46,7 @@ from src.common.ray_utils import CameraRayDirections
 from src.models.losses import *
 from src.models.model_tcnn import Model, OccupancyGridModel
 from src.models.ray_sampling import UniformRaySampler, OccGridRaySampler
+from analysis.utils import *
 
 
 assert torch.cuda.is_available(), 'Unable to find GPU'
@@ -57,6 +60,7 @@ parser.add_argument("--debug", default=False, dest="debug", action="store_true")
 parser.add_argument("--eval", default=False, dest="eval", action="store_true")
 parser.add_argument("--ckpt_id", type=str, default=None)
 parser.add_argument("--use_gt_poses", default=False, dest="use_gt_poses", action="store_true")
+parser.add_argument("--use_raw_gt_poses", default=False, dest="use_raw_gt_poses", action="store_true")
 parser.add_argument("--no_render_stills", action="store_true", default=False)
 parser.add_argument("--render_video", action="store_true", default=False)
 parser.add_argument("--skip_step", type=int, default=15, dest="skip_step")
@@ -206,6 +210,7 @@ def _gpu_worker(job_queue: mp.Queue, result_queue: mp.Queue, lidar_to_cam, total
     
     while True:
         continue
+
 if __name__ == "__main__":
     mp.set_start_method('spawn')
 
@@ -217,6 +222,25 @@ if __name__ == "__main__":
         else:
             poses_ = poses[args.start_frame:]
             poses_ = poses_[::args.skip_step]
+
+        if args.use_raw_gt_poses:
+            gt_traj_file = full_config.run_config.groundtruth_traj
+            print(gt_traj_file)
+            traj_gt = load_tum_trajectory(gt_traj_file)
+            gt_ts_list= tumposes_ts_to_list(traj_gt)
+            first_gt_tumpose = None
+            for i, gt_pose in tqdm(enumerate(traj_gt)):
+                if first_gt_tumpose == None:
+                    first_gt_tumpose = gt_pose
+                lidar_pose = np.linalg.inv(first_gt_tumpose.to_transform()) @ gt_pose.to_transform()
+                timestamp = gt_ts_list[i]
+                timestamp = str(timestamp)
+                lidar_pose= Pose(torch.tensor(lidar_pose))
+                cam_pose = lidar_pose.to('cpu') * lidar_to_camera.to('cpu')
+                rgb, depth, _ = render_dataset_frame(cam_pose.to(_DEVICE))
+                save_depth(depth, f"predicted_depth_{timestamp}.png", render_dir, max_depth=30) # canteen 30 mcr 10
+            sys.exit()
+
         if not args.no_render_stills:
             for kf in tqdm(poses_):
                 
@@ -232,8 +256,8 @@ if __name__ == "__main__":
                 lidar_pose= Pose(pose_tensor=kf[pose_key])
                 cam_pose = lidar_pose.to('cpu') * lidar_to_camera.to('cpu')
                 rgb, depth, _ = render_dataset_frame(cam_pose.to(_DEVICE))
-                save_img(rgb, [], f"predicted_img_{timestamp}.png", render_dir)
-                save_depth(depth, f"predicted_depth_{timestamp}.png", render_dir, max_depth=80)
+                # save_img(rgb, [], f"predicted_img_{timestamp}.png", render_dir)
+                save_depth(depth, f"predicted_depth_{timestamp}.png", render_dir, max_depth=30)
 
         if args.render_video:
 
@@ -362,10 +386,10 @@ if __name__ == "__main__":
                     depths_nospin.append(d)
 
             save_video(f"{render_dir}/flythrough_depth.mp4", depths, depths[0].size(), 
-                    cmap='turbo', rescale=False, clahe=False, isdepth=True, fps=FPS*6)
+                    cmap='turbo', rescale=False, clahe=False, isdepth=True, fps=FPS*6) # fps 10: real-time
 
             save_video(f"{render_dir}/flythrough_depth_nospin.mp4", depths_nospin, depths[0].size(), 
-                    cmap='turbo', rescale=False, clahe=False, isdepth=True, fps=FPS*6)
+                    cmap='turbo', rescale=False, clahe=False, isdepth=True, fps=10)
             
             save_video(f"{render_dir}/flythrough_depth.gif", depths, depths[0].size(), 
                     cmap='turbo', rescale=False, clahe=False, isdepth=True, fps=FPS*6)

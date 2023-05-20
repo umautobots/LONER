@@ -4,6 +4,8 @@ import torch
 import pandas as pd
 import numpy as np
 import open3d as o3d
+from scipy.spatial.transform import Rotation as R
+import os
 
 def lidar_ts_to_seq(bag, lidar_topic):
     init_ts = None
@@ -15,11 +17,11 @@ def lidar_ts_to_seq(bag, lidar_topic):
         lidar_ts_to_seq.append(timestamp)
     return lidar_ts_to_seq
 
-def first_lidar_ts(bag, lidar_topic):
+def first_lidar_ts(bag, lidar_topic, gt_timestamps):
     for topic, msg, timestamp in bag.read_messages(topics=[lidar_topic]):
-        init_ts = msg.header.stamp.to_sec()
-        break
-    return init_ts
+        if timestamp.to_sec() > gt_timestamps[0]:
+            start_time = timestamp.to_sec()
+            return start_time
 
 def find_corresponding_lidar_scan(bag, lidar_topic, seq):
     for topic, msg, ts in bag.read_messages(topics=[lidar_topic]):
@@ -51,3 +53,68 @@ def merge_o3d_pc(pcd1, pcd2):
     p3_color = np.concatenate((p1_color, p2_color), axis=0)
     pcd.colors = o3d.utility.Vector3dVector(p3_color)
     return pcd
+
+class TUMPose:
+    def __init__(self, timestamp, x, y, z, qx, qy, qz, qw):
+        self.timestamp = timestamp
+        self.x = x
+        self.y = y
+        self.z = z
+        self.qw = qw
+        self.qx = qx
+        self.qy = qy
+        self.qz = qz
+
+    def to_transform(self):
+        r = R.from_quat([self.qx, self.qy, self.qz, self.qw])
+        r_mat = r.as_matrix()
+        t = np.array([self.x, self.y, self.z])
+        T = np.eye(4)
+        T[:3,:3] = r_mat
+        T[:3,3] = t
+        return T
+
+def find_pose_by_timestamp(poses, timestamp):
+    for pose in poses:
+        if pose.timestamp == timestamp:
+            return pose
+    raise ValueError(f"No pose found with timestamp {timestamp}")
+
+def find_closest_pose_by_timestamp(poses, timestamp):
+    closest_pose = None
+    closest_ts = None
+    closest_dist = float('inf')
+    for pose in poses:
+        dist = abs(pose.timestamp - timestamp)
+        if dist < closest_dist:
+            closest_pose = pose
+            closest_dist = dist
+            closest_ts = pose.timestamp
+    return closest_pose
+
+def load_tum_trajectory(filename):
+    poses = []
+    with open(os.path.expanduser(filename), 'r') as f:
+        for line in f:
+            if line.startswith('#'):
+                continue
+            values = line.strip().split(' ')
+            timestamp = float(values[0])
+            x, y, z = [float(v) for v in values[1:4]]
+            qx, qy, qz, qw = [float(v) for v in values[4:]]
+            pose = TUMPose(timestamp, x, y, z, qx, qy, qz, qw)
+            poses.append(pose)
+    return poses
+
+def tumposes_ts_to_list(tumposes):
+    ts_to_index_ = []
+    for tumpose in tumposes:
+        ts_to_index_.append(tumpose.timestamp)
+    return ts_to_index_
+
+def ckptposes_ts_to_list(ckptposes):
+    ts_to_index_ = []
+    for ckptpose in ckptposes:
+        ts_to_index_.append(ckptpose['timestamp'])
+    return ts_to_index_
+
