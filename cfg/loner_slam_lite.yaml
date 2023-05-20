@@ -17,7 +17,7 @@ mapper:
       - 
         num_keyframes: 1
         iteration_schedule:
-          - num_iterations: 250 #1000
+          - num_iterations: 1000
             stage: 1
             fix_poses: True
             fix_sigma_mlp: False

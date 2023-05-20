@@ -93,8 +93,7 @@ mapper:
   
 system:
   single_threaded: False
-  # log_dir_prefix: "~/LonerSLAM/outputs/"
-  log_dir_prefix: "/mnt/ws-frb/users/frank/frank/cloner-slam_experiment_data"
+  log_dir_prefix: "~/LonerSLAM/outputs/"
 
   lidar_only: True
 
