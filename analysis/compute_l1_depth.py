@@ -158,6 +158,17 @@ if __name__ == "__main__":
         if bag is None:
             rosbag_path = full_config.dataset_path
 
+            if 'canteen' in rosbag_path:
+                rosbag_path = '/home/pckung/LonerSLAM/sandbox/20220216_canteen_day/20220216_canteen_day_ref.bag'
+            elif 'garden' in rosbag_path:
+                rosbag_path = '/home/pckung/LonerSLAM/sandbox/20220216_garden_day/20220216_garden_day_ref.bag'
+            elif 'mcr' in rosbag_path:
+                rosbag_path = '/home/pckung/LonerSLAM/sandbox/20220219_MCR_slow_01/20220219_MCR_slow_01_ref.bag'
+            elif 'quad' in rosbag_path:
+                rosbag_path = '/home/pckung/LonerSLAM/sandbox/newer_college/quad/2021-07-01-10-37-38-quad-easy-002.bag'
+            elif 'cloister' in rosbag_path:
+                rosbag_path = '/home/pckung/LonerSLAM/sandbox/newer_college/cloister/2021-12-02-10-15-59_0-cloister-014.bag'
+
             print("Opening RosBag")
             bag = rosbag.Bag(rosbag_path)
             lidar_msgs, lidar_timestamps = [], []

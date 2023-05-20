@@ -34,7 +34,7 @@ train:
     lrate_gamma: 1.0
     decay_rate: 0.001
 
-    pose_lrate_gamma: 1. #0.97
+    pose_lrate_gamma: 1.
 
     rgb_weight_decay: 1.e-5
     sigma_weight_decay: 0.0
@@ -42,9 +42,9 @@ train:
 loss:
     loss_selection: L1_JS # L1_LOS, L2_LOS, L1_JS, L2_JS
     JS_loss:
-        min_js_score: 3.
-        max_js_score: 7.
-        alpha: 3
+        min_js_score: 1.
+        max_js_score: 10.
+        alpha: 1
 
     decay_los_lambda: False          # boolean to enable decay
     los_lambda: 1000.0                # Depth lambda used for loss.
