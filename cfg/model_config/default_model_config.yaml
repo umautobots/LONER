@@ -34,7 +34,7 @@ train:
     lrate_gamma: 1.0
     decay_rate: 0.001
 
-    pose_lrate_gamma: 1. #0.97
+    pose_lrate_gamma: 1.
 
     rgb_weight_decay: 1.e-5
     sigma_weight_decay: 0.0

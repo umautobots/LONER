@@ -22,6 +22,7 @@ debug:
     draw_comp_graph: False
     draw_rays_eps: False
     write_ray_point_clouds: False
+    store_ray: False
     write_frame_point_clouds: False
     write_icp_point_clouds: False
     profile_optimizer: False
@@ -36,7 +37,7 @@ debug:
 mapper:
   device: 0 # don't change this, use CUDA_VISIBLE_DEVICES
   data_prep_on_cpu: &data_prep_on_cpu True
-  log_level: DISABLED # VERBOSE (every keyframe), STANDARD (every 10), DISABLED (final checkpoint only)
+  log_level: VERBOSE # VERBOSE (every keyframe), STANDARD (every 10), DISABLED (final checkpoint only)
   keyframe_manager:
     keyframe_selection:
       strategy: TEMPORAL

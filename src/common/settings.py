@@ -1,4 +1,4 @@
-bfrom typing import List
+from typing import List
 import os
 import yaml
 import numpy as np

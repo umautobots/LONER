@@ -213,7 +213,7 @@ class CameraRayDirections:
         return self.build_rays(indices, pose, None, world_cube, ray_range)[0]
 
 ## Converts rays in Loner format to an open3d point cloude
-def rays_to_o3d(rays, depths, intensities=None):
+def rays_to_o3d(rays, depths, world_cube, intensities=None):
     origins = rays[:, :3]
     directions = rays[:, 3:6]
     
@@ -221,6 +221,9 @@ def rays_to_o3d(rays, depths, intensities=None):
     end_points = origins + directions*depths
 
     end_points = end_points.detach().cpu().numpy()
+
+    end_points = end_points * world_cube.scale_factor.numpy()
+    end_points = end_points - world_cube.shift.numpy()
 
     pcd = o3d.cuda.pybind.geometry.PointCloud()
 

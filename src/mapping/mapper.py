@@ -95,6 +95,9 @@ class Mapper:
 
                 kf_idx = self._optimizer._keyframe_count - 1
 
+                if isinstance(self._settings.log_level, tuple):
+                    self._settings.log_level = self._settings.log_level[0]
+            
                 if (kf_idx % 10 == 0 and self._settings.log_level == "STANDARD") or self._settings.log_level == "VERBOSE":
                     if self._settings.optimizer.samples_selection.strategy == 'OGM':
                         ckpt = {'global_step': self._optimizer._global_step,
