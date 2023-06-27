@@ -11,8 +11,8 @@ mapper:
   optimizer:
     num_samples:
       rgb: 0
-      lidar: 448
-      sky: 64 # sum to 512
+      lidar: 512
+      sky: 64
     keyframe_schedule:
       - 
         num_keyframes: 1

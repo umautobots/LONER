@@ -1,4 +1,4 @@
-from typing import List
+bfrom typing import List
 import os
 import yaml
 import numpy as np
@@ -113,6 +113,9 @@ class Settings(AttrDict):
         all_settings_options, all_settings_descriptions = [], []
 
         for overrides_data in overrides_datas:
+
+            if overrides_data is None:
+                continue
             
             options = generate_change_list(overrides_data)
 
@@ -176,4 +179,7 @@ class Settings(AttrDict):
                 all_settings_options += settings_options
                 all_settings_descriptions += settings_descriptions
 
+        if len(all_settings_options) == 0:
+            all_settings_options = [baseline]
+            all_settings_descriptions = [""]
         return all_settings_options, all_settings_descriptions

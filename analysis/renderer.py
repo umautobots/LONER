@@ -59,10 +59,14 @@ parser.add_argument("--ckpt_id", type=str, default=None)
 parser.add_argument("--use_gt_poses", default=False, dest="use_gt_poses", action="store_true")
 parser.add_argument("--no_render_stills", action="store_true", default=False)
 parser.add_argument("--render_video", action="store_true", default=False)
+parser.add_argument("--no_interp", action="store_true", default=False)
 parser.add_argument("--skip_step", type=int, default=15, dest="skip_step")
 parser.add_argument("--only_last_frame", action="store_true", default=False)
 parser.add_argument("--sep_ckpt_result", action="store_true", default=False)
 parser.add_argument("--start_frame", type=int, default=0, dest="start_frame")
+parser.add_argument("--traj", type=str, default=None, help="if provided, render this traj instead of estimated traj")
+parser.add_argument("--use_est_traj", default=False,  action="store_true", help="if set, use est traj for video")
+parser.add_argument("--render_global",action="store_true", help="if set, renders in global frame rather than relative to start of traj")
 
 parser.add_argument("--render_pose", default=None, type=float, nargs=6, help="x y z y p r render pose (angles in degrees).")
 
@@ -242,6 +246,8 @@ if __name__ == "__main__":
                 timestamp = str(timestamp.item()).replace('.','_')[:5]
 
                 lidar_pose= Pose(pose_tensor=kf[pose_key])
+                r = lidar_pose.get_rotation().cpu().numpy() #@ Rotation.from_euler('ZYX', [90, 0, 0], True).as_matrix()
+                lidar_pose.get_transformation_matrix()[:3,:3] = torch.from_numpy(r)
                 cam_pose = lidar_pose.to('cpu') * lidar_to_camera.to('cpu')
                 rgb, depth, _ = render_dataset_frame(cam_pose.to(_DEVICE))
                 save_img(rgb, [], f"predicted_img_{timestamp}.png", render_dir)
@@ -260,74 +266,95 @@ if __name__ == "__main__":
 
             FPS = 5
 
-            # Get ground truth trajectory
-            rosbag_path = pathlib.Path(full_config.dataset_path)
-            ground_truth_file = full_config.run_config["groundtruth_traj"]
-            ground_truth_df = pd.read_csv(ground_truth_file, names=["timestamp","x","y","z","q_x","q_y","q_z","q_w"], delimiter=" ")
+            if not args.use_est_traj:
+                # Get ground truth trajectory
+                rosbag_path = pathlib.Path(full_config.dataset_path)
+                if args.traj is None:
+                    ground_truth_file = full_config.run_config["groundtruth_traj"]
+                else:
+                    ground_truth_file = args.traj
 
-            ground_truth_data = ground_truth_df.to_numpy(dtype=np.float64)
+                ground_truth_df = pd.read_csv(ground_truth_file, names=["timestamp","x","y","z","q_x","q_y","q_z","q_w"], delimiter=" ")
 
-            gt_xyz = ground_truth_data[:,1:4]
-            gt_quats = ground_truth_data[:,4:]
-            rotations = Rotation.from_quat(gt_quats)
+                ground_truth_data = ground_truth_df.to_numpy(dtype=np.float64)
 
-            T = np.concatenate([rotations.as_matrix(), gt_xyz.reshape((-1, 3, 1))], axis=2)
-            homog = np.tile(np.asarray([0,0,0,1]), (T.shape[0], 1, 1))
-            T = np.concatenate([T, homog], axis=1)
-            start_pose = T[0].copy()
-            T = np.linalg.inv(start_pose) @ T
+                gt_xyz = ground_truth_data[:,1:4]
+                gt_quats = ground_truth_data[:,4:]
+                rotations = Rotation.from_quat(gt_quats)
 
-            gt_xyz = T[:, :3, 3]
-            rotations = Rotation.from_matrix(T[:, :3, :3])
-
-            diffs = np.diff(gt_xyz, axis=0)
-            dists = np.sqrt( np.sum(diffs ** 2, axis=1))
-
-            # Normalize the camera velocity
-            dts = dists / CAMERA_VELOCITY
-            timestamps = np.cumsum(dts)
-            timestamps = np.insert(timestamps, 0, 0.)
-
-            slerp = Slerp(timestamps, rotations)
-            xyz_interp = interp1d(timestamps, gt_xyz, axis=0)
-
-            num_images = int(timestamps[-1] * FPS)
-            image_timestamps = np.linspace(0, timestamps[-1], num_images)
-
-            lidar_poses = []
-
-            dist_since_last_spin = 0
-            prev_pose = np.eye(4)
-            
-            spin_idxs = []
-            for timestamp in image_timestamps:
-
-                xyz = xyz_interp(timestamp)
-                rot = slerp(timestamp)
-
-                T = np.hstack((rot.as_matrix(), xyz.reshape(-1, 1)))
-                T = np.vstack((T, [0,0,0,1]))
-                lidar_poses.append(T)
+                T = np.concatenate([rotations.as_matrix(), gt_xyz.reshape((-1, 3, 1))], axis=2)
+                homog = np.tile(np.asarray([0,0,0,1]), (T.shape[0], 1, 1))
+                T = np.concatenate([T, homog], axis=1)
+            else:
+                Ts = []
+                for kf in tqdm(poses_):
+                    pose_key = "lidar_pose"
+                    lidar_pose= Pose(pose_tensor=kf[pose_key])
+                    Ts.append(lidar_pose.get_transformation_matrix())
                 
-                dist_since_last_spin += np.sqrt(np.sum((xyz - prev_pose[:3,3])**2))
+                T = torch.stack(Ts).cpu().numpy()
 
-                if dist_since_last_spin > SPIN_SPACING_M:
-                    num_spin_steps =  SPIN_DURATION_S * FPS
-                    spin_amounts_rad = np.linspace(0, 2*np.pi, num_spin_steps)
-                    rotations = Rotation.from_euler('z', spin_amounts_rad)
+            if not args.render_global:
+                start_pose = T[0].copy()
+                T = np.linalg.inv(start_pose) @ T
+
+            if args.no_interp:
+                spin_idxs = []
+                lidar_poses = T
+            else:
+
+
+                gt_xyz = T[:, :3, 3]
+                rotations = Rotation.from_matrix(T[:, :3, :3])
+
+                diffs = np.diff(gt_xyz, axis=0)
+                dists = np.sqrt( np.sum(diffs ** 2, axis=1))
+
+                # Normalize the camera velocity
+                dts = dists / CAMERA_VELOCITY
+                timestamps = np.cumsum(dts)
+                timestamps = np.insert(timestamps, 0, 0.)
+
+                slerp = Slerp(timestamps, rotations)
+                xyz_interp = interp1d(timestamps, gt_xyz, axis=0)
+
+                num_images = int(timestamps[-1] * FPS)
+                image_timestamps = np.linspace(0, timestamps[-1], num_images)
+
+                lidar_poses = []
+
+                dist_since_last_spin = 0
+                prev_pose = np.eye(4)
+                
+                spin_idxs = []
+                for timestamp in image_timestamps:
+
+                    xyz = xyz_interp(timestamp)
+                    rot = slerp(timestamp)
+
+                    T = np.hstack((rot.as_matrix(), xyz.reshape(-1, 1)))
+                    T = np.vstack((T, [0,0,0,1]))
+                    lidar_poses.append(T)
                     
-                    
-                    for rel_rot in rotations:
-                        spin_idxs.append(len(lidar_poses))
-                        T = np.hstack((rot.as_matrix() @ rel_rot.as_matrix(), xyz.reshape(-1, 1)))
-                        T = np.vstack((T, [0,0,0,1]))
-                        spin_idxs.append(len(lidar_poses))
+                    dist_since_last_spin += np.sqrt(np.sum((xyz - prev_pose[:3,3])**2))
 
-                        lidar_poses.append(T)
+                    if dist_since_last_spin > SPIN_SPACING_M:
+                        num_spin_steps =  SPIN_DURATION_S * FPS
+                        spin_amounts_rad = np.linspace(0, 2*np.pi, num_spin_steps)
+                        rotations = Rotation.from_euler('z', spin_amounts_rad)
+                        
+                        
+                        for rel_rot in rotations:
+                            spin_idxs.append(len(lidar_poses))
+                            T = np.hstack((rot.as_matrix() @ rel_rot.as_matrix(), xyz.reshape(-1, 1)))
+                            T = np.vstack((T, [0,0,0,1]))
+                            spin_idxs.append(len(lidar_poses))
 
-                    dist_since_last_spin = 0
+                            lidar_poses.append(T)
 
-                prev_pose = T
+                        dist_since_last_spin = 0
+
+                    prev_pose = T
 
             lidar_poses = torch.from_numpy(np.stack(lidar_poses).astype(np.float32))
 

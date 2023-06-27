@@ -1,8 +1,0 @@
-- # Fix poses, change window size
-  mapper:
-    optimizer:
-      fix_poses: True
-    keyframe_manager:
-      window_selection:
-        hybrid_settings:
-          num_recent_frames: [4, 8]

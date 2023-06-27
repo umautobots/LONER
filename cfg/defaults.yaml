@@ -92,7 +92,7 @@ mapper:
   
 system:
   single_threaded: False
-  log_dir_prefix: "/mnt/ws-frb/projects/loner_slam/evaluation_v5/"
+  log_dir_prefix: "~/LonerSLAM/outputs/"
   lidar_only: True
 
   sky_segmentation: &sky_seg_enabled True
@@ -111,6 +111,10 @@ system:
       x: [-10, 10]
       y: [-10, 10]
       z: [-10, 10]
+
+  lidar_fov:
+    enabled: False
+    range: [[0, 235], [305, 360]] # Example, ignored when enabled is False
 
   # For Ouster, timestamps start at 0, and we need to add the start time of the scan
   lidar_timestamps_relative_to_start: True 

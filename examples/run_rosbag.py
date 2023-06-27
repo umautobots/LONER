@@ -48,9 +48,9 @@ WARN_MOCOMP_ONCE = True
 WARN_LIDAR_TIMES_ONCE = True
 
 
-def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time) -> LidarScan:
+def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time, fov: dict) -> LidarScan:
 
-    lidar_data = ros_numpy.point_cloud2.pointcloud2_to_array(lidar_msg).copy()
+    lidar_data = ros_numpy.point_cloud2.pointcloud2_to_array(lidar_msg)
 
     fields = [f.name for f in lidar_msg.fields]
     
@@ -63,10 +63,19 @@ def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time) -> LidarS
     num_points = lidar_msg.width * lidar_msg.height
 
     xyz = torch.zeros((num_points, 3,), dtype=torch.float32)
-    xyz[:,0] = torch.from_numpy(lidar_data['x'].reshape(-1,))
-    xyz[:,1] = torch.from_numpy(lidar_data['y'].reshape(-1,))
-    xyz[:,2] = torch.from_numpy(lidar_data['z'].reshape(-1,))
+    xyz[:,0] = torch.from_numpy(lidar_data['x'].copy().reshape(-1,))
+    xyz[:,1] = torch.from_numpy(lidar_data['y'].copy().reshape(-1,))
+    xyz[:,2] = torch.from_numpy(lidar_data['z'].copy().reshape(-1,))
 
+    if fov is not None and fov.enabled:
+        theta = torch.atan2(xyz[:,1], xyz[:,0]).rad2deg()
+        theta[theta < 0] += 360
+        point_mask = torch.zeros_like(xyz[:, 1])
+        for segment in fov.range:
+            local_mask = torch.logical_and(theta >= segment[0], theta <= segment[1])
+            point_mask = torch.logical_or(point_mask, local_mask) 
+
+        xyz = xyz[point_mask]
     dists = xyz.norm(dim=1)
 
     valid_ranges = dists > LIDAR_MIN_RANGE
@@ -82,15 +91,24 @@ def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time) -> LidarS
         timestamps = torch.full_like(xyz[0], timestamp.to_sec()).float()
     else:
 
-        timestamps = torch.from_numpy(lidar_data[time_key].astype(np.float32)).reshape(-1,)[valid_ranges]
+        timestamps = torch.from_numpy(lidar_data[time_key].astype(np.float32)).reshape(-1,)
+        if fov is not None and fov.enabled:
+            timestamps = timestamps[point_mask]
+        timestamps = timestamps[valid_ranges]
+
         # This logic deals with the fact that some lidars report time globally, and others 
         # use the ROS timestamp for the overall time then the timestamps in the message are just
         # offsets. This heuristic has looked legit so far on the tested lidars (ouster and hesai).
         global WARN_LIDAR_TIMES_ONCE
-        if timestamps[-1] > 1e7:
+        if timestamps.abs().max() > 1e7:
             if WARN_LIDAR_TIMES_ONCE:
                 print("Timestamnps look to be in nanoseconds. Scaling")
             timestamps *= 1e-9
+
+        if timestamps[0] < -0.001:
+            if WARN_LIDAR_TIMES_ONCE:
+                print("Timestamps negative (velodyne?). Correcting")
+                timestamps -= timestamps[0].clone()
 
         if timestamps[0] < 1e-2:
             if WARN_LIDAR_TIMES_ONCE:
@@ -296,7 +314,7 @@ def run_trial(config, settings, settings_description = None, config_idx = None, 
             else:
                 gt_lidar_pose = torch.eye(4)
 
-            lidar_scan = build_scan_from_msg(msg, timestamp)
+            lidar_scan = build_scan_from_msg(msg, timestamp, settings.system.lidar_fov)
 
             loner.process_lidar(lidar_scan, Pose(gt_lidar_pose))
 

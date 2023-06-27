@@ -129,8 +129,6 @@ class Optimizer:
         self._num_rgb_samples = self._settings.num_samples.rgb
         self._num_lidar_samples = self._settings.num_samples.lidar
 
-        self._grad_log = []
-
         self._enable_sky_segmentation = enable_sky_segmentation
 
     ## Run one or more iterations of the optimizer, as specified by the stored settings
@@ -357,9 +355,7 @@ class Optimizer:
 
                 loss.backward(retain_graph=False)
 
-                for kf in keyframe_window:
-                    if kf.get_lidar_pose().get_pose_tensor().grad is not None:
-                        self._grad_log.append(kf.get_lidar_pose().get_pose_tensor().grad.cpu().clone())                   
+                for kf in keyframe_window:          
                     if kf.get_lidar_pose().get_pose_tensor().grad is not None and not kf.get_lidar_pose().get_pose_tensor().grad.isfinite().all():
                         raise RuntimeError("Fatal: Encountered invalid gradient in pose.")
 
