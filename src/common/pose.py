@@ -151,4 +151,4 @@ class Pose:
     def get_axis_angle(self) -> torch.Tensor:
         if self._pose_tensor is not None:
             return self._pose_tensor[3:]
-        pytorch3d.transforms.matrix_to_axis_angle(self.get_rotation())
+        return pytorch3d.transforms.matrix_to_axis_angle(self.get_rotation())

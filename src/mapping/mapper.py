@@ -10,6 +10,7 @@ from common.settings import Settings
 from common.signals import Signal, StopSignal
 from mapping.keyframe_manager import KeyFrameManager
 from mapping.optimizer import Optimizer
+from common.shared_state import SharedState
 
 import time
 
@@ -81,13 +82,13 @@ class Mapper:
             
             accepted_frame = new_keyframe is not None
  
+            if self._last_mapped_frame_time is not None:    
+                self._last_mapped_frame_time.value = self._keyframe_manager.get_last_mapped_time()
+
             # print(f"{accepted_str} frame at time {image_ts}")
         
             if self._settings.optimizer.enabled and accepted_frame:                                
                 active_window = self._keyframe_manager.get_active_window()
-
-                if self._last_mapped_frame_time is not None:    
-                    self._last_mapped_frame_time.value = new_keyframe.get_time()
 
                 self._optimizer.iterate_optimizer(active_window)
 
@@ -129,7 +130,10 @@ class Mapper:
                     ckpt = {'poses': pose_state}
                     torch.save(ckpt, f"{self._settings.log_directory}/checkpoints/ckpt_{self._optimizer._keyframe_count}.tar")
                 self._optimizer._global_step += 1
-
+        else:
+            if self._last_mapped_frame_time is not None:    
+                self._last_mapped_frame_time.value = self._keyframe_manager.get_last_mapped_time()
+                
         toc = time.time()
 
         if did_map_frame and self._settings.debug.log_times:
@@ -137,8 +141,8 @@ class Mapper:
                 time_f.write(f"{toc - tic}\n")
 
     ## Spins by reading frames from the @m frame_slot as inputs.
-    def run(self, last_mapped_frame_time) -> None:
-        self._last_mapped_frame_time = last_mapped_frame_time
+    def run(self, shared_state: SharedState) -> None:
+        self._last_mapped_frame_time = shared_state.last_mapped_frame_time
 
         if self._settings.debug.pytorch_detect_anomaly:
             torch.autograd.set_detect_anomaly(True)

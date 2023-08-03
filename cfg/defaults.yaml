@@ -37,16 +37,21 @@ debug:
 mapper:
   device: 0 # don't change this, use CUDA_VISIBLE_DEVICES
   data_prep_on_cpu: &data_prep_on_cpu True
-  log_level: VERBOSE # VERBOSE (every keyframe), STANDARD (every 10), DISABLED (final checkpoint only)
+  log_level: DISABLED # VERBOSE (every keyframe), STANDARD (every 10), DISABLED (final checkpoint only)
   keyframe_manager:
     keyframe_selection:
-      strategy: TEMPORAL
+      # Options: TEMPORAL, MOTION, HYBRID (TEMPORAL & MOTION) [default],
+      # or HYBRID_LAZY (Temporal & Motion, but don't re-run anything while you wait). 
+      strategy: MOTION
       temporal:
         time_diff_seconds: &keyframe_interval 1
+      motion:
+        translation_threshold_m: 0.5
+        rotation_threshold_deg: 22.5
     window_selection:
       strategy: HYBRID
       hybrid_settings:
-        num_recent_frames: 1
+         num_recent_frames: 1
       window_size: 10
   optimizer:
     fix_poses: False # Overrides all other related settings and disables poses
@@ -54,6 +59,7 @@ mapper:
     enabled: True
     detach_rgb_from_poses: True
     detach_rgb_from_sigma: True
+
     skip_pose_refinement: True # If set, skips the tracking refinement part of the optimization
     num_samples:
       rgb: 1024
@@ -102,7 +108,9 @@ system:
 
   synchronization: &synchronization
     enabled: True
-    max_time_delta: *keyframe_interval
+    min_buffer_size: 2 # Always make sure there are this many frames in the buffer
+    # max amount of time to get ahead of last mapped frame, unless needed to satisfy min_buffer_size
+    max_time_delta: *keyframe_interval 
 
   world_cube:
     # If you don't have groundtruth, set this to False and specify a traj bounding box as demonstrated below

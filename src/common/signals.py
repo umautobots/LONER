@@ -58,6 +58,9 @@ class Slot:
             return None
         return self._queue.get()
 
+    def __len__(self):
+        return self._queue.qsize()
+
     # Used by Signal to send data. Don't call directly.
     def _insert(self, value):
         self._queue.put(value)

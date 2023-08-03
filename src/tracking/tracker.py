@@ -7,13 +7,14 @@ import numpy as np
 import open3d as o3d
 import torch
 import torch.multiprocessing as mp
+import kornia.morphology
 
 from common.frame import Frame
 from common.pose import Pose
 from common.settings import Settings
 from common.signals import Signal, StopSignal
 from tracking.frame_synthesis import FrameSynthesis
-import kornia.morphology
+from common.shared_state import SharedState
 
 # Yanked from http://www.open3d.org/docs/release/python_example/pipelines/index.html#icp-registration-py
 def transform_cloud(source, transformation):
@@ -81,8 +82,9 @@ class Tracker:
         num_tracked = 0
 
         if self._settings.synchronization.enabled and self._last_mapped_frame_time is not None:
-            while self._last_tracked_frame_time > self._last_mapped_frame_time.value + self._max_time_delta:
+            while self._last_tracked_frame_time - (self._last_mapped_frame_time.value + self._max_time_delta) > 1/self._frame_rate:
                 time.sleep(0.01)
+
 
         if self._processed_stop_signal.value:
             print("Not updating tracker: Tracker already done.")
@@ -144,8 +146,10 @@ class Tracker:
                 time_f.write(f"{toc - tic},{num_tracked}\n")
 
     ## Run spins and processes incoming data while putting resulting frames into the queue
-    def run(self, last_mapped_frame_time) -> None:
-        self._last_mapped_frame_time = last_mapped_frame_time
+    def run(self, shared_state: SharedState) -> None:
+        self._last_mapped_frame_time = shared_state.last_mapped_frame_time
+
+
         while not self._processed_stop_signal.value:
             self.update()
 

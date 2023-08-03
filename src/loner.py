@@ -20,6 +20,7 @@ from mapping.mapper import Mapper
 from tracking.tracker import Tracker
 from src.logging.default_logger import DefaultLogger
 from pathlib import Path
+from common.shared_state import SharedState
 
 
 class Loner:
@@ -72,7 +73,7 @@ class Loner:
         # To initialize, call initialize
         self._initialized = False
 
-        self._last_mapped_frame_time = mp.Value('d', 0.)
+        self._shared_state = SharedState()
 
         self._lidar_only = settings.system.lidar_only
 
@@ -188,8 +189,8 @@ class Loner:
         if not self._single_threaded:
 
             # Start the children
-            self._tracking_process = mp.Process(target=self._tracker.run, args=(self._last_mapped_frame_time,))
-            self._mapping_process = mp.Process(target=self._mapper.run, args=(self._last_mapped_frame_time,))
+            self._tracking_process = mp.Process(target=self._tracker.run, args=(self._shared_state,))
+            self._mapping_process = mp.Process(target=self._mapper.run, args=(self._shared_state,))
     
             self._tracking_process.daemon = True
             self._mapping_process.daemon = True
