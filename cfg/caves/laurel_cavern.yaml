@@ -1,0 +1,33 @@
+baseline: defaults.yaml
+dataset: ~/data/caves/laurel_cavern.bag
+groundtruth_traj: NULL
+experiment_name: cavern
+dataset_family: caves
+calibration: NULL
+changes:
+  system:
+    world_cube:
+      compute_from_groundtruth: False
+      trajectory_bounding_box:
+        x: [-25, 25]
+        y: [-25, 25]
+        z: [-25, 25]
+    ros_names:
+      camera: NULL
+      lidar: "velodyne_points"
+      camera_suffix: NULL
+      topic_prefix: ""
+  mapper:
+    optimizer:
+      model_config:
+        data:
+          ray_range: &ray_range [1, 55]
+        model:
+          ray_range: *ray_range
+ 
+meshing_bounding_box:
+  x: [-40, 40]
+  y: [-40,40]
+  z: [-3,15]
+
+lidar_vertical_fov: [-22.5, 22.5]

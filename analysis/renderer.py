@@ -270,7 +270,7 @@ if __name__ == "__main__":
                 timestamp = str(timestamp.item()).replace('.','_')[:5]
 
                 lidar_pose= Pose(pose_tensor=kf[pose_key])
-                r = lidar_pose.get_rotation().cpu().numpy() #@ Rotation.from_euler('ZYX', [90, 0, 0], True).as_matrix()
+                r = lidar_pose.get_rotation().cpu().numpy() @ Rotation.from_euler('ZYX', [270, 0, 0], True).as_matrix()
                 lidar_pose.get_transformation_matrix()[:3,:3] = torch.from_numpy(r)
                 cam_pose = lidar_pose.to('cpu') * lidar_to_camera.to('cpu')
                 rgb, depth, _ = render_dataset_frame(cam_pose.to(_DEVICE))
@@ -297,26 +297,21 @@ if __name__ == "__main__":
                     ground_truth_file = full_config.run_config["groundtruth_traj"]
                 else:
                     ground_truth_file = args.traj
-
-                ground_truth_df = pd.read_csv(ground_truth_file, names=["timestamp","x","y","z","q_x","q_y","q_z","q_w"], delimiter=" ")
-
-                ground_truth_data = ground_truth_df.to_numpy(dtype=np.float64)
-
-                gt_xyz = ground_truth_data[:,1:4]
-                gt_quats = ground_truth_data[:,4:]
-                rotations = Rotation.from_quat(gt_quats)
-
-                T = np.concatenate([rotations.as_matrix(), gt_xyz.reshape((-1, 3, 1))], axis=2)
-                homog = np.tile(np.asarray([0,0,0,1]), (T.shape[0], 1, 1))
-                T = np.concatenate([T, homog], axis=1)
             else:
-                Ts = []
-                for kf in tqdm(poses_):
-                    pose_key = "lidar_pose"
-                    lidar_pose= Pose(pose_tensor=kf[pose_key])
-                    Ts.append(lidar_pose.get_transformation_matrix())
-                
-                T = torch.stack(Ts).cpu().numpy()
+                ground_truth_file = f"{args.experiment_directory}/trajectory/estimated_trajectory.txt"
+
+            ground_truth_df = pd.read_csv(ground_truth_file, names=["timestamp","x","y","z","q_x","q_y","q_z","q_w"], delimiter=" ")
+
+            ground_truth_data = ground_truth_df.to_numpy(dtype=np.float64)
+
+            gt_xyz = ground_truth_data[:,1:4]
+            gt_quats = ground_truth_data[:,4:]
+            rotations = Rotation.from_quat(gt_quats)
+
+            T = np.concatenate([rotations.as_matrix(), gt_xyz.reshape((-1, 3, 1))], axis=2)
+            homog = np.tile(np.asarray([0,0,0,1]), (T.shape[0], 1, 1))
+            T = np.concatenate([T, homog], axis=1)
+
 
             if not args.render_global:
                 start_pose = T[0].copy()

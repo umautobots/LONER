@@ -48,7 +48,7 @@ WARN_MOCOMP_ONCE = True
 WARN_LIDAR_TIMES_ONCE = True
 
 
-def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time, fov: dict) -> LidarScan:
+def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time, fov: dict = None) -> LidarScan:
 
     lidar_data = ros_numpy.point_cloud2.pointcloud2_to_array(lidar_msg)
 

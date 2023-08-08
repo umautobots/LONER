@@ -42,7 +42,6 @@ tracker:
   frame_synthesis:
     decimate_on_load: True
     frame_decimation_rate_hz: 5
-    lidar_point_step: 5 # Only keep 1 out of this many lidar points
   icp:
     schedule:
       - 

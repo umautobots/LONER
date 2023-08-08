@@ -1,0 +1,35 @@
+baseline: defaults.yaml
+dataset: ~/data/subt/demo.bag
+calibration: NULL
+groundtruth_traj: NULL
+experiment_name: demo
+dataset_family: subt
+changes:
+  system:
+    lidar_fov:
+      enabled: True
+      range: [[0,  75], [105, 360]]
+    lidar_only: True
+    world_cube:
+      compute_from_groundtruth: False
+      trajectory_bounding_box:
+        x: [0, 45]
+        y: [-30, 10]
+        z: [-10, 10]
+    ros_names:
+      camera: NULL
+      lidar: "velodyne_points"
+      camera_suffix: NULL
+      topic_prefix: ""
+  mapper:
+    optimizer:
+      model_config:
+        data:
+          ray_range: &ray_range [1, 35]
+        model:
+          ray_range: *ray_range
+meshing_bounding_box:
+  x: [-5, 5]
+  y: [-5,5]
+  z: [-3,3]
+lidar_vertical_fov: [16, 15]

@@ -158,7 +158,7 @@ class Settings(AttrDict):
                 settings_descriptions = []
                 for attr_stack, values in options:
                     
-                    if len(values) > 0 and isinstance(values[0], Iterable):
+                    if len(values) > 0 and isinstance(values[0], list):
                         values = [values]
 
                     for value in values:
