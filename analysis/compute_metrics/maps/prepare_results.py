@@ -1,8 +1,6 @@
 import os
 import argparse
 import shutil
-import pandas as pd
-import numpy as np
 
 parser = argparse.ArgumentParser()
 parser.add_argument("experiment_dir", type=str)

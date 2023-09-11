@@ -16,7 +16,6 @@ import open3d as o3d
 import numpy as np
 import matplotlib.pyplot as plt
 from src.common.pose import Pose
-import trimesh
 
 parser = argparse.ArgumentParser(description="Render ground truth maps using trained nerf models")
 parser.add_argument("experiment_directory", type=str, help="folder in outputs with all results")
@@ -34,13 +33,8 @@ render_depth_path = f"{args.experiment_directory}/meshing/ckpt_{args.ckpt_id}_re
 print('loading mesh...')
 mesh = o3d.io.read_triangle_mesh(f"{args.experiment_directory}/meshing/meshing_ckpt_{args.ckpt_id}_res_{args.resolution}.ply")
 
-# tri_mesh = trimesh.load_mesh(f"{args.experiment_directory}/meshing/meshing_ckpt_{args.ckpt_id}_res_{args.resolution}.ply")
-# tri_mesh.show()
-# import sys
-# sys.exit()
 
 mesh = mesh.filter_smooth_simple(number_of_iterations=1)
-# mesh = mesh.filter_smooth_taubin(number_of_iterations=50)
 mesh.compute_vertex_normals()
 
 if args.viz:

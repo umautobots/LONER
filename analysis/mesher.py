@@ -1,5 +1,3 @@
-import struct
-
 import numpy as np
 import torch
 import open3d as o3d
@@ -15,22 +13,18 @@ sys.path.append(PROJECT_ROOT + "/src")
 
 
 from common.pose import Pose
-from common.sensors import Image
-from common.settings import Settings
 from common.pose_utils import WorldCube
-from common.sensors import Image, LidarScan
+from common.sensors import LidarScan
 from common.ray_utils import LidarRayDirections
 
-from sensor_msgs.msg import Image, PointCloud2
+from sensor_msgs.msg import PointCloud2
 import pandas as pd
 import ros_numpy
 import rosbag
-import rospy
 import trimesh
-import pymesh
 from packaging import version
 import skimage
-from models.model_tcnn import Model, OccupancyGridModel
+from models.model_tcnn import OccupancyGridModel
 
 
 def build_lidar_scan(lidar_intrinsics):

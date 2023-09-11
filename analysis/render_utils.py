@@ -3,10 +3,7 @@ import torch
 import imageio
 import numpy as np
 import matplotlib.pyplot as plt
-from skimage.exposure import rescale_intensity, equalize_adapthist, equalize_hist
-from matplotlib import cm
-from tqdm import tqdm
-
+from skimage.exposure import rescale_intensity, equalize_adapthist
 
 def vis_flow(flow, scale=0):
     fx, fy = cv2.split(flow)

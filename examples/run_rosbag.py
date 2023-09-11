@@ -38,8 +38,6 @@ from src.common.pose_utils import build_poses_from_df
 
 from examples.utils import *
 
-import kornia.morphology
-
 LIDAR_MIN_RANGE = 0.3 #http://www.oxts.com/wp-content/uploads/2021/01/Ouster-datasheet-revc-v2p0-os0.pdf
 
 bridge = CvBridge()

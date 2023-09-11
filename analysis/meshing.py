@@ -21,16 +21,13 @@ import open3d as o3d
 
 from render_utils import *
 
-from src.common.pose import Pose
 from src.common.pose_utils import WorldCube
-from src.common.ray_utils import CameraRayDirections, LidarRayDirections
 from src.models.losses import *
 from src.models.model_tcnn import Model, OccupancyGridModel
-from src.models.ray_sampling import OccGridRaySampler, UniformRaySampler
+from src.models.ray_sampling import OccGridRaySampler
 
 CHUNK_SIZE = 512
 
-from src.common.sensors import LidarScan
 from analysis.mesher import Mesher
 
 assert torch.cuda.is_available(), 'Unable to find GPU'

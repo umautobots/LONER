@@ -10,7 +10,6 @@ import sys
 import torch
 import pandas as pd
 import tqdm
-import rosbag
 import torch.multiprocessing as mp
 from scipy.spatial.transform import Rotation
 
