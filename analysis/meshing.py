@@ -38,7 +38,6 @@ from pathlib import Path
 parser = argparse.ArgumentParser(description="Render ground truth maps using trained nerf models")
 parser.add_argument("experiment_directory", type=str, nargs="+", help="folder in outputs with all results")
 parser.add_argument("configuration_path")
-# parser.add_argument("sequence", type=str, default="canteen", help="sequence name. Used to decide meshing bound [canteen | mcr]")
 parser.add_argument("--debug", default=False, dest="debug", action="store_true")
 parser.add_argument("--ckpt_id", type=str, default=None)
 parser.add_argument("--resolution", type=float, default=0.1, help="grid resolution (m)")

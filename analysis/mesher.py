@@ -50,6 +50,7 @@ def build_lidar_scan(lidar_intrinsics):
 
     return scan 
 
+# Some of the code is borrowed from the nice-slam mesher: https://github.com/cvg/nice-slam/blob/master/src/utils/Mesher.py
 class Mesher(object):
     def __init__(self, model, ckpt, world_cube, ray_range, rosbag_path=None, lidar_topic=None,
                        resolution = 0.2, marching_cubes_bound = [[-40,20], [0,20], [-3,15]], level_set=10,
@@ -405,16 +406,10 @@ class Mesher(object):
                     occ_probs = 1. / (1 + np.exp(-occ_sigma_np))
                     occ_probs = (510 *  (occ_probs.clip(0.5, 1.0) - 0.5)).astype(np.uint8).reshape(-1)
                     nonzero_indices = occ_probs.nonzero()
-                    print('occ_voxel_size', occ_voxel_size)
                     x_ = np.arange(occ_voxel_size)
                     x, y, z = np.meshgrid(x_, x_, x_, indexing='ij')
                     # X = np.stack([x.reshape(-1)[nonzero_indices], y.reshape(-1)[nonzero_indices], -z.reshape(-1)[nonzero_indices], occ_probs[nonzero_indices]], axis=1)
                     X = np.stack([x.reshape(-1)[nonzero_indices], y.reshape(-1)[nonzero_indices], z.reshape(-1)[nonzero_indices], occ_probs[nonzero_indices]], axis=1)
-                    # pcd = o3d.geometry.PointCloud()
-                    # pcd.points = o3d.utility.Vector3dVector(X[:,:3]-(occ_voxel_size/2.))
-                    # pcd.colors = o3d.utility.Vector3dVector(np.repeat(X[:,3].reshape((-1,1)), 3, axis=1)/255.)
-                    # mesh_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=10, origin=[0, 0, 0])
-                    # o3d.visualization.draw_geometries([pcd, mesh_frame])
 
                     occ_mask = []
                     for i, pnts in enumerate(torch.split(points, self.points_batch_size, dim=0)):
@@ -431,7 +426,6 @@ class Mesher(object):
             results[results<threshold]=mask_val
             volume = np.copy(results.reshape(grid['xyz'][1].shape[0], grid['xyz'][0].shape[0],
                         grid['xyz'][2].shape[0]).transpose([1, 0, 2]))
-            print('volume.shape: ', volume.shape)
 
             # marching cube
             try:

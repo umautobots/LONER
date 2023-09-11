@@ -174,7 +174,7 @@ if __name__ == "__main__":
     # rendering camera config
     H = 1000
     W = 1000
-    focal = 100 # 1
+    focal = 100
     fx = focal
     fy = focal
     cx = H/2.0-0.5
@@ -274,14 +274,6 @@ if __name__ == "__main__":
             ctr.convert_from_pinhole_camera_parameters(param)
         else:
             param = o3d.camera.PinholeCameraParameters()
-            # lidar2cam = np.array([[0,0,1,-1],
-            #                     [-1,0,0,-1],
-            #                     [0,-1,0,35],
-            #                     [0,0,0,1]])
-            # r = R.from_euler('x', -90, degrees=True)
-            # r = r.as_matrix()
-            # cam_pitch_down = np.identity(4)
-            # cam_pitch_down[:3,:3] = r
 
             lidar2cam = np.array([[0,0,1,-6],
                                 [-1,0,0,-2],
