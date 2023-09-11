@@ -1,6 +1,6 @@
 # Loner SLAM
 
-This is Loner SLAM, a neural implicit SLAM algorithm for Camera-LiDAR fusion.
+This is Loner, a LiDAR-only SLAM algorithm based on a neural-implicit scene representation (similar to NeRF).
 
 
 ## Running the Code
