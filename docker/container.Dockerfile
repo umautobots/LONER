@@ -73,7 +73,9 @@ RUN python3 -m pip install -r /tmp/requirements.txt \
      && pip3 install more_itertools \
      && pip3 install pymesh \
      && pip3 install trimesh \
-     && rm /tmp/requirements.txt
+     && pip install evo --upgrade --no-binary evo \
+     && rm /tmp/requirements.txt \
+     && export PATH=$PATH:/home/${USER_NAME}/.local/bin
 
 # Install tiny-cuda-nn
 RUN ldconfig && pip3 install git+https://github.com/NVlabs/tiny-cuda-nn/#subdirectory=bindings/torch || \

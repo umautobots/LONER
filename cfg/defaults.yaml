@@ -37,14 +37,19 @@ debug:
 mapper:
   device: 0 # don't change this, use CUDA_VISIBLE_DEVICES
   data_prep_on_cpu: &data_prep_on_cpu True
-  log_level: STANDARD # VERBOSE (every keyframe), STANDARD (every 10), DISABLED (final checkpoint only)
+
+  # Sets how frequently to save a full pytorch checkpoint. Options are:
+  # VERBOSE: After every KeyFrame
+  # STANDARD: After every 10 KeyFrames
+  # DISABLED: Final checkpoint only
+  log_level: STANDARD
   keyframe_manager:
     keyframe_selection:
       # Options: TEMPORAL, MOTION, HYBRID (TEMPORAL & MOTION) [default],
       # or HYBRID_LAZY (Temporal & Motion, but don't re-run anything while you wait). 
       strategy: TEMPORAL
       temporal:
-        time_diff_seconds: &keyframe_interval 1
+        time_diff_seconds: &keyframe_interval 3
       motion:
         translation_threshold_m: 0.5
         rotation_threshold_deg: 22.5
@@ -52,7 +57,7 @@ mapper:
       strategy: HYBRID
       hybrid_settings:
          num_recent_frames: 1
-      window_size: 10
+      window_size: 8
   optimizer:
     fix_poses: False # Overrides all other related settings and disables poses
     data_prep_on_cpu: *data_prep_on_cpu
@@ -62,9 +67,9 @@ mapper:
 
     skip_pose_refinement: True # If set, skips the tracking refinement part of the optimization
     num_samples:
-      rgb: 1024
-      lidar: 1024
-      sky: 128
+      rgb: 0
+      lidar: 512
+      sky: 64
     rays_selection:
       strategy: RANDOM # FIXED
     samples_selection:
@@ -74,7 +79,7 @@ mapper:
         num_keyframes: 1
         iteration_schedule:
           - num_iterations: 1000
-            stage: 3
+            stage: 1
             fix_poses: True
             fix_sigma_mlp: False
             fix_rgb_mlp: False
@@ -89,8 +94,8 @@ mapper:
             fix_sigma_mlp: True
             fix_rgb_mlp: True
           # Now joint optimization
-          - stage: 3
-            num_iterations: 150 #150
+          - stage: 1
+            num_iterations: 25 #150
             fix_poses: False
             fix_sigma_mlp: False
             fix_rgb_mlp: False
@@ -140,7 +145,7 @@ tracker:
     frame_decimation_rate_hz: 5
     frame_match_tolerance: 0.01
     frame_delta_t_sec_tolerance: 0.02
-    decimate_on_load: False
+    decimate_on_load: True
   icp:
     scan_duration: 0.9 # Only do ICP with the first <this proportion> of the scan. More robust since overlap in scans causes problems.
     schedule:
@@ -151,12 +156,12 @@ tracker:
         relative_rmse: 1.e-8
       - 
         threshold: 0.125
-        max_iterations: 20
+        max_iterations: 5
         relative_fitness: 1.e-8
         relative_rmse: 1.e-8
     downsample:
       type: UNIFORM
-      target_uniform_point_count: 10000
+      target_uniform_point_count: 5000
       voxel_downsample_size: 0.1
   motion_compensation:
     enabled: True

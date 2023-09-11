@@ -44,8 +44,7 @@ This repo contains everything you need to use the Docker extension in VSCode. To
 1. Install the docker extension.
 2. Reload the workspace. You will likely be prompted if you want to re-open the folder in a dev-container. Say yes.
 3. If not, Click the little green box in the bottom left of the screen and select "Re-open Folder in Dev Container"
-4. To make python recognize everything properly, go to the python environment extension 
-(python logo in the left toolbar) and change the environment to Conda Base 3.8.12.
+4. To make python recognize everything properly, go to the python environment extension (python logo in the left toolbar) and change the environment to Conda Base 3.8.12.
 
 The DevContainer provided with this package assumes that datasets are stored in `~/Documents/LonerSlamData`. If you put the data somewhere else, modify the `devcontainer.json` file to point to the correct location.
 
@@ -86,14 +85,7 @@ python3 prepare_for_traj_eval.py <output_directory> <sequence_name> # output dir
 python3 renderer.py <output_directory> 
 ```
 
-Result will be stored in each output folder. To plot trajectories, use [rpg_trajectory_evaluation](https://github.com/uzh-rpg/rpg_trajectory_evaluation) by copying the relavent information from `<output_dir>/rpg_evaluation` into wherever you cloned the `rpg_trajectory_evaluation` repo. In particular, move `rpg_evaluation/<experiment_name>` to `rpg_trajectory_evaluation/results` and `rpg_evaluation/<config_name>.yaml` to `rpg_trajectory_evaluation/analyze_trajectories_config` Then, run with:
-
-```
-python3 scripts/analyze_trajectories.py <config_name>.yaml --output_dir ./results/<experiment_name>/ --results_dir ./results/<experiment_name>/ --platform desktop --odometry_error_per_dataset --plot_trajectories --png
-```
-
-Note that you may need to modify `rpg_trajectory_evaluation` to allow a larger time difference when associating poses between the ground truth and the estimated trajectories. 0.15s worked for us. 
-
+Result will be stored in each output folder. To compute metrics, see the information in `analysis/compute_metrics/README.md`.
 
 
 ## Settings
@@ -105,8 +97,6 @@ Each sequence has a file specifying the settings for that sequence. For example,
 2. Paths to the dataset, calibration, and groundtruth trajectory. The groundtruth trajectory is used for evaluation, in case you want to run with GT poses, and to pre-compute the world cube.
 3. `experiment_name`: Specifies the default prefix for output directories.
 4. `changes`: This is a dictionary specifying which settings to override in the defaults. See `cfg/fusion_portable/mcr.yaml` for an example of this in use.
-
-Next, if you specified `--lite` when running `run_fusion_portable.py`, the settings as determined above will be augmented with the settings in `cfg/Loner_slam_lite.yaml`.
 
 Finally, if you want to run an ablation study or try sets of parameters, you may pass `--overrides <path_to_yaml>` to `run_fusion_portable.py`. See `cfg/traj_ablation.py` for an example. You specify a path (in yaml) to the parameter, then one or more possible values. By default, for each value you specified in the overrides file, one trial of the algorithm will be run. Each trial will run with the settings as determined above, but with that one additional parameter changed. You may also pass `--run_all_combos` which will try all combinations of parameters specified in the overrides.
 
@@ -141,16 +131,6 @@ changes:
 
 If you run without specifying any options, the algorithm will run once, with all default settings except for `system.image_resolution.x = 15`.
 
-Say our `Loner_slam_lite.yaml` file then looks like this:
-
-```
-## File: Loner_slam_lite.yaml
-
-system:
-  number_of_keyframes: 5
-```
-
-Now, if we run with `--lite`, the algorithm will run once with default settings, but `system.image_resolution.x = 15` and `system.number_of_keyframes = 5`.
 
 
 Now, say we add an overrides file:
@@ -164,7 +144,7 @@ system:
     y: [50, 75, 150]
 ```
 
-If we specify `--lite` AND `--overrides overrides.yaml`, the algorithm will now run 5 times. All will have `system.number_of_keyframes = 5`. The five runs will have the following combinations of x and y resolutions:
+If we specify `--overrides overrides.yaml`, the algorithm will now run 5 times. All will have `system.number_of_keyframes = 5`. The five runs will have the following combinations of x and y resolutions:
 
 1. x = 5; y = 100
 2. x = 10; y = 100
@@ -174,7 +154,22 @@ If we specify `--lite` AND `--overrides overrides.yaml`, the algorithm will now 
 
 In each case, the `x` and `y` default to 15 and 100, and then one parameter is changed per run.
 
-Finally, if you specify `--lite` AND `--overrides overrides.yaml` AND `--run_all_combos`, 6 trials will be run representing all possible combinations of x and y resolutions.
+If you use `--overrides overrides.yaml` AND `--run_all_combos`, 6 trials will be run representing all possible combinations of x and y resolutions.
 
+Additionally, a single overrides file can provide multiple combinations of settings, like this:
 
-The last thing (for real this time) is you can also provide `--num_repeats=<n>`, which will run all configurations (as determined above) `n` times.
+```
+File: multi_overrides.yaml
+
+-
+  system:
+    image_resolution:
+      x: [5,10]
+      y: [50,75,100]
+-
+  number_of_keyframes: [1,5,10]
+```
+
+In this case, the system will run in sequence on each item in the list. So, it will first process the first entry in the list without modifying `number_of_keyframes` (exactly as above). Then, it'll move on to the other entries in the list, in this case fixing everything else at default and sweeping over `number_of_keyframes`.
+
+Finally, if you use `--num_repeats N`, every configuration will be run N times.

@@ -270,8 +270,12 @@ if __name__ == "__main__":
                 timestamp = str(timestamp.item()).replace('.','_')[:5]
 
                 lidar_pose= Pose(pose_tensor=kf[pose_key])
-                r = lidar_pose.get_rotation().cpu().numpy() @ Rotation.from_euler('ZYX', [270, 0, 0], True).as_matrix()
+                r = lidar_pose.get_rotation().cpu().numpy()# @ Rotation.from_euler('ZYX', [270, 0, 0], True).as_matrix()
+                r = Rotation.from_matrix(r).as_euler('ZYX')
+                r[1:3] = 0
+                r = Rotation.from_euler('ZYX', r).as_matrix()
                 lidar_pose.get_transformation_matrix()[:3,:3] = torch.from_numpy(r)
+                lidar_pose.get_transformation_matrix()[2,3] -= 0.7
                 cam_pose = lidar_pose.to('cpu') * lidar_to_camera.to('cpu')
                 rgb, depth, _ = render_dataset_frame(cam_pose.to(_DEVICE))
                 # save_img(rgb, [], f"predicted_img_{timestamp}.png", render_dir)

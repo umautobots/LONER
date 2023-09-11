@@ -385,7 +385,6 @@ if __name__ == "__main__":
     parser.add_argument("--num_repeats", type=int, required=False, default=1, help="How many times to run the experiment")
     parser.add_argument("--run_all_combos", action="store_true",default=False, help="If set, all combinations of overrides will be run. Otherwise, one changed at a time.")
     parser.add_argument("--overrides", type=str, default=None, help="File specifying parameters to vary for ablation study or testing")
-    parser.add_argument("--lite", action="store_true",default=False, help="If set, uses the lite model configuration instead of the full model.")
     parser.add_argument("--dryrun", action="store_true",default=False, help="If set, generates output dirs and settings files but doesn't run anything.")
 
     args = parser.parse_args()
@@ -399,13 +398,6 @@ if __name__ == "__main__":
 
     config["duration"] = args.duration
 
-    if args.lite:
-        lite_mode_path = os.path.expanduser("~/LonerSLAM/cfg/loner_slam_lite.yaml")
-        with open(lite_mode_path, 'r') as lite_mode_f:
-            lite_mode_changes = yaml.full_load(lite_mode_f)
-    else:
-        lite_mode_changes = None
-
     baseline_settings_path = os.path.expanduser(f"~/LonerSLAM/cfg/{config['baseline']}")
 
     if args.overrides is not None:
@@ -413,7 +405,7 @@ if __name__ == "__main__":
             Settings.generate_options(baseline_settings_path,
                                       args.overrides,
                                       args.run_all_combos,
-                                      [config["changes"], lite_mode_changes])
+                                      [config["changes"], None])
         
         settings_options = settings_options
         settings_descriptions = settings_descriptions
@@ -423,9 +415,7 @@ if __name__ == "__main__":
 
         if config["changes"] is not None:
                 settings_options[0].augment(config["changes"])
-                
-        if args.lite:
-            settings_options[0].augment(lite_mode_changes)
+
 
     if len(settings_options) > 1 or args.num_repeats > 1:
         now = datetime.datetime.now()

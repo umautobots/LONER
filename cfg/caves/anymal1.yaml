@@ -5,6 +5,24 @@ groundtruth_traj: NULL
 experiment_name: anymal
 dataset_family: caves
 changes:
+  tracker:
+    frame_synthesis:
+      decimate_on_load: True
+      frame_decimation_rate_hz: 10
+    icp:
+      schedule:
+        - 
+          threshold: 1.5
+          max_iterations: 10
+          relative_fitness: 1.e-8
+          relative_rmse: 1.e-8
+        - 
+          threshold: 0.125
+          max_iterations: 10
+          relative_fitness: 1.e-8
+          relative_rmse: 1.e-8
+      downsample:
+        type: NULL
   system:
     lidar_only: True
     world_cube:
