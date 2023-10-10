@@ -88,7 +88,7 @@ class Optimizer:
         # Main Model
         self._model = Model(self._model_config.model)
 
-        if self._settings.samples_selection.strategy == 'OGM':
+        if self._settings.samples_selection.strategy == 'OGM': #What is OGM ? 
             # Occupancy grid
             self._occupancy_grid_model = OccupancyGridModel(
                 self._model_config.model.occ_model).to(self._device)
@@ -140,7 +140,7 @@ class Optimizer:
             kf_count = item["num_keyframes"]
             iteration_schedule = item["iteration_schedule"]
 
-            cumulative_kf_idx += kf_count
+            cumulative_kf_idx += kf_count # Why is this needed ?
             if cumulative_kf_idx >= self._keyframe_count + 1 or kf_count == -1:
                 break
 
@@ -183,7 +183,7 @@ class Optimizer:
     def _do_iterate_optimizer(self, keyframe_window: List[KeyFrame], iteration_schedule: dict, 
                               profiler: profile = None, optimizer_settings: OptimizationSettings = None) -> float:
         
-        if len(keyframe_window) == 1:
+        if len(keyframe_window) == 1: 
             keyframe_window[0].is_anchored = True
 
         if len(iteration_schedule) > 1 and self._settings.skip_pose_refinement:
@@ -241,6 +241,7 @@ class Optimizer:
             tracking = (not self._optimization_settings.freeze_poses) and \
                 self._optimization_settings.freeze_rgb_mlp and self._optimization_settings.freeze_sigma_mlp
             
+            #Why are different optimizers being used for the pose optimization ? 
             if tracking:
                 optimizable_poses = [kf.get_lidar_pose().get_pose_tensor() for kf in active_keyframe_window if not kf.is_anchored]
                 self._optimizer = torch.optim.Adam([{'params': optimizable_poses, 'lr': self._model_config.train.lrate_pose}])
