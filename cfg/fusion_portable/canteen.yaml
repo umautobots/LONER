@@ -1,0 +1,28 @@
+baseline: defaults.yaml
+dataset: ~/data/fusion_portable/20220216_canteen_day/20220216_canteen_day_ref.bag
+calibration: ~/data/fusion_portable/calibration/20220209_calib
+groundtruth_traj: ~/data/fusion_portable/20220216_canteen_day/ground_truth_traj.txt
+experiment_name: canteen
+dataset_family: fusion_portable
+changes:
+  system:
+    world_cube:
+      compute_from_groundtruth: False
+      trajectory_bounding_box:
+        x: [-25, 10]
+        y: [-25, 15]
+        z: [-10, 10]
+  mapper:
+    optimizer:
+      model_config:
+        data:
+          ray_range: &ray_range [1, 50]
+        model:
+          ray_range: *ray_range
+
+meshing_bounding_box:
+  x: [-35, 25]
+  y: [-30,45]
+  z: [-3,20]
+
+lidar_vertical_fov: [-22.5, 22.5]

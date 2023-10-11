@@ -1,0 +1,26 @@
+baseline: defaults.yaml
+dataset: ~/data/newer_college/quad/2021-07-01-10-37-38-quad-easy-002.bag
+calibration: NULL
+groundtruth_traj: ~/data/newer_college/quad/gt-nc-quad-easy.csv
+experiment_name: quad
+dataset_family: newer_college
+changes:
+  system:
+    world_cube:
+      compute_from_groundtruth: False
+      trajectory_bounding_box:
+        x: [-5, 50]
+        y: [-25, 15]
+        z: [-3, 10]
+  mapper:
+    optimizer:
+      model_config:
+        data:
+          ray_range: &ray_range [1, 75]
+        model:
+          ray_range: *ray_range
+meshing_bounding_box:
+  x: [-10, 65]
+  y: [-30,25]
+  z: [-3,30]
+lidar_vertical_fov: [-45, 45]

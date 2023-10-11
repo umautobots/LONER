@@ -1,0 +1,164 @@
+### File: defaults.yaml
+### Provides default settings for loner slam
+
+
+# This should be overwritten  at runtime by reading data logs,
+# camera info messages, etc.
+calibration:
+  lidar_to_camera:
+    xyz: [0,0,0]
+    orientation: [0,0,0,1] 
+  camera_intrinsic:
+    k: NULL
+    distortion: NULL
+    new_k: NULL
+    width: NULL
+    height: NULL
+
+debug:
+  global_enabled: True
+  flags:
+    pytorch_detect_anomaly: False
+    draw_comp_graph: False
+    draw_rays_eps: False
+    write_ray_point_clouds: False
+    store_ray: False
+    write_frame_point_clouds: False
+    write_icp_point_clouds: False
+    profile_optimizer: False
+    use_groundtruth_poses: False
+    draw_loss_distribution: False
+    log_losses: False
+    profile: False
+    draw_samples: False
+    visualize_loss: False
+    log_times: False
+    
+mapper:
+  device: 0 # don't change this, use CUDA_VISIBLE_DEVICES
+  data_prep_on_cpu: &data_prep_on_cpu True
+
+  # Sets how frequently to save a full pytorch checkpoint. Options are:
+  # VERBOSE: After every KeyFrame
+  # STANDARD: After every 10 KeyFrames
+  # DISABLED: Final checkpoint only
+  log_level: STANDARD
+  keyframe_manager:
+    keyframe_selection:
+      # Options: TEMPORAL, MOTION, HYBRID (TEMPORAL & MOTION) [default],
+      # or HYBRID_LAZY (Temporal & Motion, but don't re-run anything while you wait). 
+      strategy: TEMPORAL
+      temporal:
+        time_diff_seconds: &keyframe_interval 3
+      motion:
+        translation_threshold_m: 0.5
+        rotation_threshold_deg: 22.5
+    window_selection:
+      strategy: HYBRID
+      hybrid_settings:
+         num_recent_frames: 1
+      window_size: 8
+  optimizer:
+    freeze_poses: False # Overrides all other related settings and disables poses
+    data_prep_on_cpu: *data_prep_on_cpu
+    enabled: True
+    detach_rgb_from_poses: True
+    detach_rgb_from_sigma: False
+
+    skip_pose_refinement: True # If set, skips the tracking refinement part of the optimization
+    num_samples:
+      lidar: 512
+      sky: 64
+    rays_selection:
+      strategy: RANDOM # FIXED
+    samples_selection:
+      strategy: OGM # UNIFORM
+    keyframe_schedule:
+      - 
+        num_keyframes: 1
+        iteration_schedule:
+          - num_iterations: 1000
+            freeze_poses: True
+            freeze_sigma_mlp: False
+            freeze_rgb_mlp: True
+      -
+        num_keyframes: -1
+        iteration_schedule:
+          # First refine the tracking (skipped by default)
+          - num_iterations: 50
+            freeze_poses: False
+            latest_kf_only: True
+            freeze_sigma_mlp: True
+            freeze_rgb_mlp: True
+          # Now joint optimization
+          - num_iterations: 50
+            freeze_poses: False
+            freeze_sigma_mlp: False
+            freeze_rgb_mlp: True
+
+    model_config: !include ./model_config/default_model_config.yaml
+system:
+  single_threaded: False
+  log_dir_prefix: "~/LonerSLAM/outputs/"
+  lidar_only: True
+
+  sky_segmentation: &sky_seg_enabled False
+  
+  image_scale_factor: 0.5 # Setting is put here to emphasize that it needs to influence calibration loading
+
+  synchronization: &synchronization
+    enabled: True
+    min_buffer_size: 2 # Always make sure there are this many frames in the buffer
+    # max amount of time to get ahead of last mapped frame, unless needed to satisfy min_buffer_size
+    max_time_delta: *keyframe_interval 
+
+  world_cube:
+    # If you don't have groundtruth, set this to False and specify a traj bounding box as demonstrated below
+    # The trajectory will be padded by ray range
+    compute_from_groundtruth: True
+    trajectory_bounding_box:
+      x: [-10, 10]
+      y: [-10, 10]
+      z: [-10, 10]
+
+  lidar_fov:
+    enabled: False
+    range: [[0, 235], [305, 360]] # Example, ignored when enabled is False
+
+  # For Ouster, timestamps start at 0, and we need to add the start time of the scan
+  lidar_timestamps_relative_to_start: True 
+  ros_names:
+    camera: "stereo/frame_left"
+    lidar: "os_cloud_node/points"
+    camera_suffix: "image_raw"
+    topic_prefix: "" 
+tracker:
+  synchronization: *synchronization
+  frame_synthesis:
+    strategy: NULL
+    sky_removal: NULL
+    frame_decimation_rate_hz: 5
+    frame_match_tolerance: 0.01
+    frame_delta_t_sec_tolerance: 0.02
+    decimate_on_load: True
+  icp:
+    scan_duration: 0.9 # Only do ICP with the first <this proportion> of the scan. More robust since overlap in scans causes problems.
+    schedule:
+      - 
+        threshold: 1.5
+        max_iterations: 10
+        relative_fitness: 1.e-8
+        relative_rmse: 1.e-8
+      - 
+        threshold: 0.125
+        max_iterations: 10
+        relative_fitness: 1.e-8
+        relative_rmse: 1.e-8
+    downsample:
+      type: UNIFORM
+      target_uniform_point_count: 5000
+      voxel_downsample_size: 0.1
+  motion_compensation:
+    enabled: True
+    use_gpu: True
+  compute_sky_rays: *sky_seg_enabled

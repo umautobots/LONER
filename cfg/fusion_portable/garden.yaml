@@ -1,0 +1,28 @@
+baseline: defaults.yaml
+dataset: ~/data/fusion_portable/20220216_garden_day/20220216_garden_day_ref.bag
+calibration: ~/data/fusion_portable/calibration/20220209_calib
+groundtruth_traj: ~/data/fusion_portable/20220216_garden_day/ground_truth_traj.txt
+experiment_name: garden
+dataset_family: fusion_portable
+changes:
+  system:
+    world_cube:
+      compute_from_groundtruth: False
+      trajectory_bounding_box:
+        x: [-5, 25]
+        y: [-15, 20]
+        z: [-10, 10]
+  mapper:
+    optimizer:
+      model_config:
+        data:
+          ray_range: &ray_range [1, 50]
+        model:
+          ray_range: *ray_range
+ 
+meshing_bounding_box:
+  x: [-40, 40]
+  y: [-40,40]
+  z: [-3,15]
+
+lidar_vertical_fov: [-22.5, 22.5]

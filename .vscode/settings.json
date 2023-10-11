@@ -1,0 +1,8 @@
+{
+  "python.analysis.extraPaths": [
+    "./src",
+    "/opt/ros/noetic/lib/python3/",
+    "/opt/ros/noetic/lib/python3/dist-packages",
+    "/opt/conda/lib/python3.8/site-packages"
+  ]
+}

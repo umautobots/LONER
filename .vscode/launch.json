@@ -1,0 +1,36 @@
+{
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Python: Current File",
+      "type": "python",
+      "request": "launch",
+      "program": "${file}",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "LonerSLAM: Fusion Portable",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/examples/run_loner.py",
+      "console": "integratedTerminal",
+      "args": ["${workspaceFolder}/cfg/fusion_portable/canteen.yaml"],
+      "cwd": "${workspaceFolder}/examples",
+      "subProcess": true
+    },
+    {
+      "name": "LonerSLAM: Newer College",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/examples/run_loner.py",
+      "console": "integratedTerminal",
+      "args": ["${workspaceFolder}/cfg/newer_college/quad.yaml"],
+      "cwd": "${workspaceFolder}/examples",
+      "subProcess": true
+    }
+  ]
+}
