@@ -73,7 +73,7 @@ When you launch the VSCode DevContainer, you might need to point VSCode manually
 ## Running experiments
 
 ### Download Fusion Portable
-Download the sequences you care about from https://ram-lab.com/file/site/fusionportable/dataset/fusionportable/, along with the 20220209 calibration. 
+Download the sequences you care about from [fusion portable](https://fusionportable.github.io/dataset/fusionportable), along with the 20220209 calibration. 
 We have tested on 20220216_canteen_day, 20220216_garden_day, and 20220219_MCR_normal_01.
 
 Put them in the folder you pointed the docker scripts (or VSCode `devcontainer.json` file) to mount (by default `~/Documents/LonerSlamData`). Also, download the groundtruth data.
@@ -104,14 +104,12 @@ The `renderer.py` file is also capable of producing videos by adding the `--rend
 
 #### Meshing the scene:
 ```
-python3 meshing.py ../outputs/<output_folder> ../cfg/fusion_portable/canteen.yaml \
- --resolution 0.2 --skip_step 3 --level 0.1 --viz --save
+python3 meshing.py ../outputs/<output_folder> ../cfg/fusion_portable/canteen.yaml --resolution 0.2 --skip_step 3 --level 0.1 --viz --save
 ```
 
 #### Render a lidar point cloud:
-This will render a LiDAR point cloud from the frame of the last. This will render LiDAR point clouds from every Nth KeyFrame, then assemble them. N defaults to 5, but can be set with --skip_step N.
 ```
-python3 renderer_lidar.py ../outputs/<output_folder> --voxel_size 0.1
+python3 renderer_lidar.py ../outputs/<output_folder> --voxel_size 0.1 --only_last_frame
 ```
 
 Results will be stored in each output folder.
@@ -120,6 +118,7 @@ Results will be stored in each output folder.
 ##### 2D visualization using matplotlib
 ```
 python3 plot_poses.py ../outputs/<output_folder>
+
 ```
 
 A plot will be stored in `poses.png` in the output folder.
@@ -129,29 +128,21 @@ A plot will be stored in `poses.png` in the output folder.
 Download the groundtruth trajectories from the dataset in TUM format. Fusion Portable provides those [here](http://filebrowser.ram-lab.com/share/S-2Th4iV). Put them in `<sequence_folder>/ground_truth_traj.txt`:
 
 ```
-mv <path_to_groundtruth>/traj/20220216_canteen_day.txt \
-      ~/data/fusion_portable/20220216_canteen_day/ground_truth_traj.txt 
+mv <path_to_groundtruth>/traj/20220216_canteen_day.txt ~/data/fusion_portable/20220216_canteen_day/ground_truth_traj.txt 
 ```
 
-Then prepare the output files:
+
 ```
-mkdir results && cd results
-python3 ~/LonerSLAM/analysis/compute_metrics/traj/prepare_results.py \
-      ~/LonerSLAM/outputs/<output_folder>\
-      eval_traj canteen \
-       ~/data/fusion_portable/20220216_canteen_day/ground_truth_traj.txt  \
-       --single_trial --single_config
+python3 compute_metrics/traj/prepare_results.py ../outputs/<output_folder> ./eval_traj canteen ~/data/fusion_portable/20220216_canteen_day/ground_truth_traj.txt  --single_trial --single_config
 ```
 
-Run trajectory evaluation and visualization:
+Run trajectory evaluation and visualization
 ```
-cd results
-evo_traj tum ./eval_traj/canteen/stamped_traj_estimate0.txt \
-      --ref ./eval_traj/canteen/stamped_groundtruth.txt \
-      -a --t_max_diff 0.1 -p
+evo_traj tum ./eval_traj/canteen/stamped_traj_estimate0.txt --ref ./eval_traj/canteen/stamped_groundtruth.txt -a --t_max_diff 0.1 -p
 ```
 
-This is the barebones way to produce plots, but there are lots of options for qualitative and quantitative comparisons. See the [metrics readme](analysis/compute_metrics/README.md) for more details on computing metrics.
+
+See the [metrics readme](analysis/compute_metrics/README.md) for more details on computing metrics.
 
 #### Analyzing the Results
 Dense trajectories are stored to `<output_dir>/trajectory`. This will contain three files:
@@ -164,7 +155,7 @@ To compute metrics, see the information in the [metrics readme](analysis/compute
 
 ## BibTeX
 
-This work has been accepted for publication in the IEEE Robotics and Automation Letters. Please cite the pre-print version until the RA-L publication is released:
+This work has been accepted for publication in the IEEE Robotics and Automation Letters. Please cite the pre-print version until the RA-L publiction is released:
 
 ```
 @misc{loner2023,
@@ -180,6 +171,6 @@ This work has been accepted for publication in the IEEE Robotics and Automation 
 ## License
 
 
-<p xmlns:cc="http://creativecommons.org/ns#" xmlns:dct="http://purl.org/dc/terms/"><a property="dct:title" rel="cc:attributionURL" href="http://github.com/umautobots/loner">LONER</a> by Ford Center for Autonomous Vehicles at the University of Michigan is licensed under <a href="http://creativecommons.org/licenses/by-nc-sa/4.0/?ref=chooser-v1" target="_blank" rel="license noopener noreferrer" style="display:inline-block;">CC BY-NC-SA 4.0<img style="height:22px!important;margin-left:3px;vertical-align:text-bottom;" src="https://mirrors.creativecommons.org/presskit/icons/cc.svg?ref=chooser-v1"><img style="height:22px!important;margin-left:3px;vertical-align:text-bottom;" src="https://mirrors.creativecommons.org/presskit/icons/by.svg?ref=chooser-v1"><img style="height:22px!important;margin-left:3px;vertical-align:text-bottom;" src="https://mirrors.creativecommons.org/presskit/icons/nc.svg?ref=chooser-v1"><img style="height:22px!important;margin-left:3px;vertical-align:text-bottom;" src="https://mirrors.creativecommons.org/presskit/icons/sa.svg?ref=chooser-v1"></a></p>
+<p xmlns:cc="http://creativecommons.org/ns#" xmlns:dct="http://purl.org/dc/terms/"><a property="dct:title" rel="cc:attributionURL" href="http://github.com/umautobots/loner">LONER</a> by <a rel="cc:attributionURL dct:creator" property="cc:attributionName" href="https://umautobots.github.io/loner">Ford Center for Autonomous Vehicles at the University of Michigan</a> is licensed under <a href="http://creativecommons.org/licenses/by-nc-sa/4.0/?ref=chooser-v1" target="_blank" rel="license noopener noreferrer" style="display:inline-block;">CC BY-NC-SA 4.0<img style="height:22px!important;margin-left:3px;vertical-align:text-bottom;" src="https://mirrors.creativecommons.org/presskit/icons/cc.svg?ref=chooser-v1"><img style="height:22px!important;margin-left:3px;vertical-align:text-bottom;" src="https://mirrors.creativecommons.org/presskit/icons/by.svg?ref=chooser-v1"><img style="height:22px!important;margin-left:3px;vertical-align:text-bottom;" src="https://mirrors.creativecommons.org/presskit/icons/nc.svg?ref=chooser-v1"><img style="height:22px!important;margin-left:3px;vertical-align:text-bottom;" src="https://mirrors.creativecommons.org/presskit/icons/sa.svg?ref=chooser-v1"></a></p>
 
-For inquiries about commercial licensing, please reach out to the authors.
+For inquirires about commercial licensing, please contact sethgi [at] umich [dot] edu. 
