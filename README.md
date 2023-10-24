@@ -105,7 +105,7 @@ The `renderer.py` file is also capable of producing videos by adding the `--rend
 #### Meshing the scene:
 ```
 python3 meshing.py ../outputs/<output_folder> ../cfg/fusion_portable/canteen.yaml \
- --resolution 0.2 --skip_step 3 --level 0.1 --viz --save
+ --resolution 0.1 --skip_step 3 --level 0.1 --viz --save
 ```
 
 #### Render a lidar point cloud:

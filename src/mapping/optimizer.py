@@ -442,7 +442,6 @@ class Optimizer:
         scale_factor = self._scale_factor.to(self._device).float()
         
         loss = 0
-        wandb_logs = {}
 
         if (override_enables or self.should_enable_lidar()) and lidar_samples is not None:
 
@@ -490,7 +489,6 @@ class Optimizer:
                 depth_euc_fine[opaque_rays, 0], self._lidar_depths_gt[opaque_rays, 0])
 
             loss += self._model_config.loss.depthloss_lambda * depth_loss_fine
-            wandb_logs['loss_depth'] = depth_loss_fine.item()
 
             loss_selection = self._model_config.loss.loss_selection
             
@@ -532,11 +530,6 @@ class Optimizer:
                                     mean, var, js_score, \
                                     self._lidar_depth_samples_fine, self._lidar_depths_gt, self._depth_eps, \
                                     depth_euc_fine)
-
-            elif loss_selection == 'KL':
-                loss = self.calculate_KL_divergence(self._lidar_depths_gt, eps_min/3., mean, std).squeeze().mean()
-                depth_loss_los_fine = torch.tensor(0)
-                self._depth_eps = 0
             else:
                 raise ValueError(f"Can't use unknown Loss {loss_selection}")
 
@@ -579,30 +572,17 @@ class Optimizer:
                 depth_loss_los_fine = nn.functional.mse_loss(
                     weights_pred_lidar, weights_gt_lidar)
             loss += los_lambda * depth_loss_los_fine
-            wandb_logs['loss_lidar_los'] = depth_loss_los_fine.item()
 
             # add opacity loss
             loss_opacity_lidar = torch.abs(
                 self._results_lidar['opacity_fine'][opaque_rays] - 1).mean()
 
             loss += loss_opacity_lidar
-            wandb_logs['loss_opacity_lidar'] = loss_opacity_lidar.item()
-
-            n_depth = lidar_depths.shape[0]
-
-            depth_peaks_lidar = self._lidar_depth_samples_fine[torch.arange(
-                n_depth), weights_pred_lidar.argmax(dim=1)].detach()
-            loss_unimod_lidar = nn.functional.mse_loss(
-                depth_peaks_lidar, depth_euc_fine[..., 0])
-            wandb_logs['loss_unimod_lidar'] = loss_unimod_lidar.item()
-
+            
             if self._model_config.loss.decay_los_lambda:
                 los_lambda = max(self._model_config.loss.los_lambda * (self._model_config.loss.los_lambda_decay_rate ** (
                     (self._global_step + 1) / (self._model_config.loss.los_lambda_decay_steps))), self._model_config.loss.min_los_lambda)
 
-            wandb_logs['los_lambda'] = los_lambda
-            if loss_selection != 'KL':
-                wandb_logs['depth_eps'] = self._depth_eps
 
         if isinstance(loss, int) and loss == 0:
             print("Warning: zero loss")

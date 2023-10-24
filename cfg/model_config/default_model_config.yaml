@@ -56,6 +56,3 @@ loss:
     depth_eps_decay_steps: 1         # step for decay, setting smaller value decay faster
 
     depthloss_lambda: 0.005      # weight for lidar termination depth
-    cam_lambda: 1       # weight for camera intensity value
-    std_lambda: 0.0       # weight for standard deviation loss on camera rays
-
