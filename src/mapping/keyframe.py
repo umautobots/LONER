@@ -39,8 +39,6 @@ class KeyFrame:
 
         self.lidar_loss_distribution = None
 
-        self.lidar_buckets = None
-
     def to(self, device) -> "KeyFrame":
         self._frame.to(device)
         self._device = device
