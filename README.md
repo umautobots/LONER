@@ -167,14 +167,15 @@ To compute metrics, see the information in the [metrics readme](analysis/compute
 This work has been accepted for publication in the IEEE Robotics and Automation Letters. Please cite the pre-print version until the RA-L publication is released:
 
 ```
-@misc{loner2023,
-      title={LONER: LiDAR Only Neural Representations for Real-Time SLAM}, 
-      author={Seth Isaacson and Pou-Chun Kung and Mani Ramanagopal and Ram Vasudevan and Katherine A. Skinner},
-      year={2023},
-      eprint={2309.04937},
-      archivePrefix={arXiv},
-      primaryClass={cs.RO}
-}
+@ARTICLE{loner2023,
+  author={Isaacson, Seth and Kung, Pou-Chun and Ramanagopal, Mani and Vasudevan, Ram and Skinner, Katherine A.},
+  journal={IEEE Robotics and Automation Letters}, 
+  title={LONER: LiDAR Only Neural Representations for Real-Time SLAM}, 
+  year={2023},
+  volume={},
+  number={},
+  pages={1-8},
+  doi={10.1109/LRA.2023.3324521}}
 ```
 
 ## License
