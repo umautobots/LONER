@@ -7,7 +7,7 @@
 </div>
 
 <p align="center">
-<strong>Seth Isaacson*</strong>, <strong>Pou-Chun Kung*</strong>, <strong>Mani Ramanagopal</strong>, <strong>Ram Vasudenvan</strong>, <strong>Katherine A. Skinner</strong> <br>
+<strong>Seth Isaacson*</strong>, <strong>Pou-Chun Kung*</strong>, <strong>Mani Ramanagopal</strong>, <strong>Ram Vasudevan</strong>, and <strong>Katherine A. Skinner</strong> <br>
 {sethgi, pckung, srmani, ramv, kskin}@umich.edu
 </p>
 
