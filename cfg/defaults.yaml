@@ -36,7 +36,7 @@ debug:
     
 mapper:
   device: 0 # don't change this, use CUDA_VISIBLE_DEVICES
-  data_prep_on_cpu: &data_prep_on_cpu True
+  data_prep_on_cpu: &data_prep_on_cpu False
 
   # Sets how frequently to save a full pytorch checkpoint. Options are:
   # VERBOSE: After every KeyFrame

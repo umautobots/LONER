@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-DATA_DIR="/mnt/ws-frb/projects/loner_slam"
+DATA_DIR="/mnt/ws-frb/projects/loner_slam/"
 
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 IMAGE_TAG=loner_slam
