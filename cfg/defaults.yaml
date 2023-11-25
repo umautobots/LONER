@@ -25,11 +25,11 @@ debug:
     store_ray: False
     write_frame_point_clouds: False
     write_icp_point_clouds: False
-    profile_optimizer: True
+    profile_optimizer: False
     use_groundtruth_poses: False
     draw_loss_distribution: False
     log_losses: False
-    profile: True 
+    profile: False
     draw_samples: False
     visualize_loss: False
     log_times: False

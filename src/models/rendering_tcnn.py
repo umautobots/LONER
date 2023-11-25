@@ -151,7 +151,9 @@ def inference(model, xyz_, dir_, sigma_only=False, netchunk=32768, detach_sigma=
             raw: (N_rays, N_samples_, num_colors + 1): predictions of each sample
     """
     N_rays, N_samples_ = xyz_.shape[0:2]
+    # print("Inside inference")
     xyz_ = xyz_.view(-1, 3).contiguous()  # (N_rays*N_samples_, 3)
+    
     if sigma_only:
         dir_ = None
     else:
@@ -161,8 +163,11 @@ def inference(model, xyz_, dir_, sigma_only=False, netchunk=32768, detach_sigma=
 
     # Perform model inference to get color and raw sigma
     B = xyz_.shape[0]
+    # print("i think I fouund the bug")
     if netchunk == 0:
+        # print("Maybe its the model")
         out = model(xyz_, dir_, sigma_only, detach_sigma)
+        # print("Maybe not")
     else:
         out_chunks = []
         for i in range(0, B, netchunk):
@@ -227,12 +232,12 @@ def render_rays(rays,
     z_vals = ray_sampler.get_samples(rays, N_samples, perturb)
 
     xyz_samples = rays_o.unsqueeze(1) + rays_d.unsqueeze(1) * z_vals.unsqueeze(2)  # (N_rays, N_samples, 3)
-
+    # print("rendering rays")
     raw = inference(nerf_model, xyz_samples, viewdirs, netchunk=netchunk, sigma_only=sigma_only, detach_sigma=detach_sigma)
-
+    # print("Raw inference done")
     rgb, depth, weights, opacity, variance = raw2outputs(
         raw, z_vals, rays_d, raw_noise_std, white_bkgd, sigma_only=sigma_only, num_colors=num_colors, far=far, ret_var=return_variance)
-
+    # print("raw outputs done")
     result = {'rgb_fine': rgb,
               'depth_fine': depth,
               'weights_fine': weights,

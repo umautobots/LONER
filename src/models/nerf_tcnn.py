@@ -49,16 +49,20 @@ class DecoupledNeRF(nn.Module):
 
         pos = (pos + 1) / 2
         if sigma_only:
+            # print("Where in nerf model ? (iF)")
             h = self._model_sigma(pos)
-            sigma = h[..., [0]]
+            # print("Is it the sigma models ?")
+            sigma = h[..., [0]]    
         elif detach_sigma:
+            # print("Where in nerf model ? (eliF)")
             with torch.no_grad():
                 h = self._model_sigma(pos)
                 sigma = h[..., [0]]
         else:
+            # print("Where in nerf model ? (else)")
             h = self._model_sigma(pos)
             sigma = h[..., [0]]
-
+        
         if not torch.isfinite(sigma).all():
             if self._warn_infinite:
                 print("Warning: Clipping infinite outputs. Will not warn about this again (but it will happen again)")

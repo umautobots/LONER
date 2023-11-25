@@ -37,6 +37,21 @@ class KeyFrame:
         self.lidar_loss_distribution = None
 
         self.lidar_buckets = None
+    
+    def copy_keyframe(self, kf) -> None:
+
+        self._frame = kf._frame
+
+        self._device = kf._device
+
+        self._tracked_lidar_pose: Pose = kf._frame.get_lidar_pose().clone()
+
+        self.is_anchored = kf.is_anchored
+
+        self.rgb_loss_distribution = kf.rgb_loss_distribution
+        self.lidar_loss_distribution = kf.lidar_loss_distribution
+
+        self.lidar_buckets = kf.lidar_buckets
 
     def to(self, device) -> "KeyFrame":
         self._frame.to(device)
@@ -67,7 +82,7 @@ class KeyFrame:
 
 
     ## For all the points in the frame, create lidar rays in the format Loner wants
-    def build_lidar_rays(self,
+    def build_lidar_rays(self, dirs, 
                          lidar_indices: torch.Tensor,
                          ray_range: torch.Tensor,
                          world_cube: WorldCube,
@@ -85,15 +100,15 @@ class KeyFrame:
 
         if sky_indices is None:
             ray_dirs = LidarRayDirections(lidar_scan)
-            lidar_rays, lidar_depths = ray_dirs.build_lidar_rays(lidar_indices, ray_range, world_cube, lidar_poses, ignore_world_cube)
+            lidar_rays, lidar_depths = ray_dirs.build_lidar_rays(dirs, lidar_indices, ray_range, world_cube, lidar_poses, ignore_world_cube)
         
         else:
             sky_scan = lidar_scan.get_sky_scan(ray_range[1] + 1)
             sky_dirs = LidarRayDirections(sky_scan)
-            sky_rays, sky_depths = sky_dirs.build_lidar_rays(sky_indices, ray_range, world_cube, lidar_poses.detach(), ignore_world_cube)
+            sky_rays, sky_depths = sky_dirs.build_lidar_rays(dirs, sky_indices, ray_range, world_cube, lidar_poses.detach(), ignore_world_cube)
             
             ray_dirs = LidarRayDirections(lidar_scan)
-            lidar_rays, lidar_depths = ray_dirs.build_lidar_rays(lidar_indices, ray_range, world_cube, lidar_poses, ignore_world_cube)
+            lidar_rays, lidar_depths = ray_dirs.build_lidar_rays(dirs, lidar_indices, ray_range, world_cube, lidar_poses, ignore_world_cube)
 
             lidar_rays = torch.cat((lidar_rays, sky_rays))
             lidar_depths = torch.cat((lidar_depths, sky_depths))

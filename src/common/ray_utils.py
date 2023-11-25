@@ -16,7 +16,7 @@ from common.pose_utils import WorldCube
 # until we exit the unit cube in this axis."
 # i.e. at (0,0) with unit vector (0.7, 0.7), the result should be (1.4, 1.4)
 # since after 1.4 unit vectors we're at the exit of the world cube.  
-def get_far_val(pts_o: torch.Tensor, pts_d: torch.Tensor, no_nan: bool = False):
+def get_far_val(dirs, pts_o: torch.Tensor, pts_d: torch.Tensor, no_nan: bool = False):
 
     if no_nan:
         pts_d = pts_d + 1e-15
@@ -40,8 +40,13 @@ def get_far_val(pts_o: torch.Tensor, pts_d: torch.Tensor, no_nan: bool = False):
     #                         torch.maximum(t_x1.clamp(min=0), t_x2.clamp(min=0))], dim=1)
     # far_clip = clipped_ts.min(dim=1)[0].unsqueeze(1)
 
-    dirs = torch.tensor([[-1.], [1.]], device=pts_o.device)
-    t = (dirs[..., None] - pts_o[:, [0,1,2]]) / pts_d[:, [0,1,2]]
+    # dirs = torch.tensor([[-1.], [1.]], device=pts_o.device)
+    # t = (dirs[..., None] - pts_o[:, [0,1,2]]) / pts_d[:, [0,1,2]]
+    # print(dirs[..., None], pts_o[:, [0,1,2]])
+    index = torch.arange(3, device = pts_o.device)
+    t = (dirs[..., None] - pts_o[:, index])/ pts_d[:, index]
+    # t_sub = torch.sub(dirs[..., None], pts_o[:, :])
+    # t= t_sub
     clipped_ts = t.clamp(min=0).max(dim=0)[0]
     far_clip = clipped_ts.min(dim=1)[0].unsqueeze(1)
 
@@ -160,7 +165,7 @@ class CameraRayDirections:
     # @param image: The image to sample intensities from
     # @param world_cube: Specifies transformation to stay within world cube
     # @param ray_range: 2-tensor with min and max range of each ray
-    def build_rays(self, camera_indices: torch.Tensor, pose: Pose, image: Image, world_cube: WorldCube, ray_range):
+    def build_rays(self, dirs, camera_indices: torch.Tensor, pose: Pose, image: Image, world_cube: WorldCube, ray_range):
 
         directions = self.directions[camera_indices]
         ray_i_grid = self.i_meshgrid[camera_indices]
@@ -188,7 +193,7 @@ class CameraRayDirections:
         near = ray_range[0] / world_cube.scale_factor * \
             torch.ones_like(ray_origins[:, :1])
 
-        far = get_far_val(ray_origins, ray_directions, no_nan=True)
+        far = get_far_val(dirs, ray_origins, ray_directions, no_nan=True)
         rays = torch.cat([ray_origins, ray_directions, view_directions,
                             ray_i_grid, ray_j_grid, near, far], 1).float()
 
@@ -254,7 +259,7 @@ class LidarRayDirections:
         pose_mat = pose.get_transformation_matrix()
         return self.build_lidar_rays(indices, ray_range, world_cube, pose_mat)[0]
 
-    def build_lidar_rays(self,
+    def build_lidar_rays(self, dirs, 
                          lidar_indices: torch.Tensor,
                          ray_range: torch.Tensor,
                          world_cube: WorldCube,
@@ -268,6 +273,8 @@ class LidarRayDirections:
         timestamps = lidar_scan.timestamps[lidar_indices]
 
         ray_origins: torch.Tensor = lidar_pose[:3, 3]
+        # print(ray_origins.device)
+
         ray_origins = ray_origins + world_cube.shift
         ray_origins = ray_origins / world_cube.scale_factor
 
@@ -286,16 +293,20 @@ class LidarRayDirections:
 
         view_directions = -ray_directions
 
-        if not ignore_world_cube:
-            assert (ray_origins.abs().max(dim=1)[0] > 1).sum() == 0, \
-                f"{(ray_origins.abs().max(dim=1)[0] > 1).sum()//3} ray origins are outside the world cube"
+        # if not ignore_world_cube:
+        #     # if (ray_origins.abs().max(dim=1)[0] > 1).sum() != 0:
+        #     #     print(f"{(ray_origins.abs().max(dim=1)[0] > 1).sum()//3} ray origins are outside the world cube")
+        #     #     return # need to find a bettere 
+        #     assert (ray_origins.abs().max(dim=1)[0] > 1).sum() == 0, \
+        #         f"{(ray_origins.abs().max(dim=1)[0] > 1).sum()//3} ray origins are outside the world cube"
 
         near = ray_range[0] / world_cube.scale_factor * \
             torch.ones_like(ray_origins[:, :1])
         far_range = ray_range[1] / world_cube.scale_factor * \
             torch.ones_like(ray_origins[:, :1])
 
-        far_clip = get_far_val(ray_origins, ray_directions, no_nan=True)
+        # print(dirs.device, ray_origins.device, ray_directions.device)
+        far_clip = get_far_val(dirs, ray_origins, ray_directions, no_nan=True)
         far = torch.minimum(far_range, far_clip)
 
         rays = torch.cat([ray_origins, ray_directions, view_directions,
@@ -303,11 +314,15 @@ class LidarRayDirections:
                             near, far], 1)
                             
         # Only rays that have more than 1m inside world
+        
         if ignore_world_cube:
             return rays, depths
         else:
             valid_idxs = (far > (near + 1. / world_cube.scale_factor))[..., 0]
-            return rays[valid_idxs], depths[valid_idxs]
+            # print(depths[valid_idxs])
+            # print(rays, depths)
+            # return rays[valid_idxs], depths[valid_idxs]
+            return rays, depths
 
 
 ## Converts rays in Loner format to a pcd file

@@ -67,6 +67,9 @@ class Optimizer:
         self._settings = settings
         self._calibration = calibration
         self._device = device
+        self.static_keyframe = None
+        self.static_lidar_rays = torch.randn(512, 13, device = self._device)
+        self.static_lidar_depths = torch.randn(512, device = self._device)
         
         self._use_gt_poses = use_gt_poses
 
@@ -74,11 +77,17 @@ class Optimizer:
 
         self._lidar_only = lidar_only
 
+        self._loss_graph = None 
+        self._data_graph = None
+
         self._model_config = settings.model_config
 
         self._scale_factor = world_cube.scale_factor
 
+        self._scale_factor_gpu = self._scale_factor.to(self._device).float()
+
         self._data_prep_device = 'cpu' if settings.data_prep_on_cpu else self._device
+        # print(self._data_prep_device)
 
         self._world_cube = world_cube.to(self._data_prep_device)
 
@@ -179,6 +188,136 @@ class Optimizer:
        
         self._keyframe_count += 1
         return result
+    def _record_data_processing(self, dirs):
+                        # maybe record the data processing since that is what might be slowing down aeverything
+        # lidar_rays, lidar_depths = None, None
+        # camera_rays, camera_intensities = None, None
+        
+        # Bookkeeping for occ update
+        self._results_lidar = None
+
+        # camera_samples, lidar_samples = None, None
+        # for kf_idx, kf in enumerate(active_keyframe_window):
+        s = torch.cuda.Stream()
+        s.wait_stream(torch.cuda.current_stream())
+        with torch.cuda.stream(s):               
+            if self.should_enable_lidar():
+                if self._settings.rays_selection.strategy == 'RANDOM':
+                    lidar_indices = torch.randint(len(self.static_keyframe.get_lidar_scan()), (self._num_lidar_samples,), device = self._data_prep_device)
+                elif self._settings.rays_selection.strategy == 'MASK':
+                    mask_index_map = self.static_keyframe.get_lidar_scan().mask.nonzero(as_tuple=True)[0]
+                    mask_indices = torch.randint(len(mask_index_map), (self._num_lidar_samples,), device = self._data_prep_device)
+                    lidar_indices = mask_index_map[mask_indices]
+                elif self._settings.rays_selection.strategy == 'FIXED':
+                    lidar_indices = torch.arange(self._num_lidar_samples, device = self._data_prep_device)
+                else:
+                    raise RuntimeError(
+                        f"Can't find rays_selection strategy: {self._settings.rays_selection.strategy}")
+
+                sky_dirs = self.static_keyframe.get_lidar_scan().sky_rays
+                if self._settings.num_samples.sky > 0 and self._enable_sky_segmentation and sky_dirs.nelement() > 0:
+                    sky_indices = torch.randint(0, sky_dirs.shape[1], (self._settings.num_samples.sky,), device =self._data_prep_device)
+                else:
+                    sky_indices = None
+
+                lidar_rays, lidar_depths = self.static_keyframe.build_lidar_rays(dirs, lidar_indices, self._ray_range, self._world_cube, self._use_gt_poses, sky_indices=sky_indices)
+                # self.static_lidar_rays, self.static_lidar_depths = lidar_rays, lidar_depths
+                self.static_lidar_rays.copy_(lidar_rays)
+                self.static_lidar_depths.copy_(lidar_depths)
+        torch.cuda.current_stream().wait_stream(s)
+        print("Warmed Up")
+        print(lidar_rays.shape, lidar_depths.shape)
+        # print(lidar_rays)
+        self._data_graph = torch.cuda.CUDAGraph()
+        with torch.cuda.graph(self._data_graph):
+            if self.should_enable_lidar():
+                if self._settings.rays_selection.strategy == 'RANDOM':
+                    lidar_indices = torch.randint(len(self.static_keyframe.get_lidar_scan()), (self._num_lidar_samples,), device = self._data_prep_device)
+                elif self._settings.rays_selection.strategy == 'MASK':
+                    mask_index_map = self.static_keyframe.get_lidar_scan().mask.nonzero(as_tuple=True)[0]
+                    mask_indices = torch.randint(len(mask_index_map), (self._num_lidar_samples,), device = self._data_prep_device)
+                    lidar_indices = mask_index_map[mask_indices]
+                elif self._settings.rays_selection.strategy == 'FIXED':
+                    lidar_indices = torch.arange(self._num_lidar_samples, device = self._data_prep_device)
+                else:
+                    raise RuntimeError(
+                        f"Can't find rays_selection strategy: {self._settings.rays_selection.strategy}")
+
+                sky_dirs = self.static_keyframe.get_lidar_scan().sky_rays
+                if self._settings.num_samples.sky > 0 and self._enable_sky_segmentation and sky_dirs.nelement() > 0:
+                    sky_indices = torch.randint(0, sky_dirs.shape[1], (self._settings.num_samples.sky,), device =self._data_prep_device)
+                else:
+                    sky_indices = None
+                lidar_rays, lidar_depths = self.static_keyframe.build_lidar_rays(dirs, lidar_indices, self._ray_range, self._world_cube, self._use_gt_poses, sky_indices=sky_indices)
+                self.static_lidar_rays.copy_(lidar_rays)
+                self.static_lidar_depths.copy_(lidar_depths)
+                # self.static_lidar_rays, self.static_lidar_depths = lidar_rays, lidar_depths
+        # print(lidar_rays)
+        print("Done")
+            # if self._settings.debug.write_ray_point_clouds and self._global_step % 100 == 0:
+            #     os.makedirs(f"{self._settings['log_directory']}/rays/lidar/kf_{kf_idx}_rays", exist_ok=True)
+            #     os.makedirs(f"{self._settings['log_directory']}/rays/lidar/kf_{kf_idx}_origins", exist_ok=True)
+            #     rays_fname = f"{self._settings['log_directory']}/rays/lidar/kf_{kf_idx}_rays/rays_{self._global_step}_{it_idx}.pcd"
+            #     origins_fname = f"{self._settings['log_directory']}/rays/lidar/kf_{kf_idx}_origins/origins_{self._global_step}_{it_idx}.pcd"
+            #     rays_to_pcd(new_rays, new_depths, rays_fname, origins_fname)
+
+            # if self._settings.debug.store_ray:
+            #     sky_mask = torch.zeros_like(new_depths)
+            #     current_mask = torch.zeros_like(new_depths)
+            #     if sky_indices != None:
+            #         sky_mask[-self._settings.num_samples.sky:] = 1
+            #     if kf_idx == len(active_keyframe_window)-1:
+            #         current_mask = torch.ones_like(new_depths)
+
+            #     if it_idx==0 and kf_idx==0:
+            #         acc_rays = new_rays
+            #         acc_depths = new_depths
+            #         acc_sky_mask = sky_mask
+            #         acc_current_mask = current_mask
+            #     else:
+            #         acc_rays = torch.vstack((acc_rays, new_rays))
+            #         acc_depths = torch.hstack((acc_depths, new_depths))
+            #         acc_sky_mask = torch.hstack((acc_sky_mask, sky_mask))
+            #         acc_current_mask = torch.hstack((acc_current_mask, current_mask))
+
+            # if lidar_rays is None:
+            # lidar_rays = new_rays
+            # lidar_depths = new_depths
+            # else:
+            #     lidar_rays = torch.vstack((lidar_rays, new_rays))
+            #     lidar_depths = torch.cat((lidar_depths, new_depths))
+            
+            # lidar_samples = (lidar_rays.to(self._device).float(), lidar_depths.to(self._device).float()) #Outside record 
+
+                    # if self.should_enable_camera():
+
+                    #     # Get all the uniform samples first
+                    #     start_idx = torch.randint(len(self._rgb_shuffled_indices), (1,))
+
+                    #     im_end_idx = start_idx[0] + self._num_rgb_samples
+                    #     im_indices = self._rgb_shuffled_indices[start_idx[0]:im_end_idx]
+                    #     im_indices = im_indices % len(self._rgb_shuffled_indices)
+                        
+                    #     new_cam_rays, new_cam_intensities = kf.build_camera_rays(
+                    #         im_indices, self._ray_range,
+                    #         self._cam_ray_directions, self._world_cube,
+                    #         self._use_gt_poses,
+                    #         self._settings.detach_rgb_from_poses)
+
+                    #     if camera_rays is None:
+                    #         camera_rays, camera_intensities = new_cam_rays, new_cam_intensities
+                    #     else:
+                    #         camera_rays = torch.vstack((camera_rays, new_cam_rays))
+                    #         camera_intensities = torch.vstack((camera_intensities, new_cam_intensities))
+
+                    #     if self._settings.debug.write_ray_point_clouds:
+                    #         os.makedirs(f"{self._settings['log_directory']}/rays/camera/kf_{kf_idx}_rays", exist_ok=True)
+                    #         os.makedirs(f"{self._settings['log_directory']}/rays/camera/kf_{kf_idx}_origins", exist_ok=True)
+                    #         rays_fname = f"{self._settings['log_directory']}/rays/camera/kf_{kf_idx}_rays/rays_{self._global_step}_{it_idx}.pcd"
+                    #         origins_fname = f"{self._settings['log_directory']}/rays/camera/kf_{kf_idx}_origins/origins_{self._global_step}_{it_idx}.pcd"
+                    #         rays_to_pcd(new_cam_rays, torch.ones_like(new_cam_rays[:,0]) * .1, rays_fname, origins_fname, new_cam_intensities)
+                    
+                    #     camera_samples = (camera_rays.to(self._device).float(), camera_intensities.to(self._device).float())
 
     def _do_iterate_optimizer(self, keyframe_window: List[KeyFrame], iteration_schedule: dict, 
                               profiler: profile = None, optimizer_settings: OptimizationSettings = None) -> float:
@@ -192,7 +331,10 @@ class Optimizer:
         # For each iteration config, have a list of the losses
         losses_log = []
         depth_eps_log = []
-
+        recorded = False
+        static_cam = None 
+        static_lidar = None
+        dirs = torch.tensor([[-1.], [1.]], device=self._data_prep_device) 
         for iteration_config in iteration_schedule:
             losses_log.append([])
             depth_eps_log.append([])
@@ -261,73 +403,33 @@ class Optimizer:
                                                     {'params': self._model.get_rgb_feature_parameters(), 'lr': self._model_config.train.lrate_rgb}])
                 
             lrate_scheduler = torch.optim.lr_scheduler.ExponentialLR(self._optimizer, self._model_config.train.lrate_gamma)
-            
+            self.static_keyframe = KeyFrame(active_keyframe_window[0]._frame)
             for it_idx in tqdm.tqdm(range(self._optimization_settings.num_iterations)):
-                lidar_rays, lidar_depths = None, None
-                camera_rays, camera_intensities = None, None
+                # maybe record the data processing since that is what might be slowing down aeverything
+                # static_lidar_rays, static_lidar_depths = None, None
                 
+                camera_rays, camera_intensities = None, None
+                lidar_rays, lidar_depths = None, None
                 # Bookkeeping for occ update
                 self._results_lidar = None
         
                 camera_samples, lidar_samples = None, None
-
-                for kf_idx, kf in enumerate(active_keyframe_window):                
-                    if self.should_enable_lidar():
-                        if self._settings.rays_selection.strategy == 'RANDOM':
-                            lidar_indices = torch.randint(len(kf.get_lidar_scan()), (self._num_lidar_samples,))
-                        elif self._settings.rays_selection.strategy == 'MASK':
-                            mask_index_map = kf.get_lidar_scan().mask.nonzero(as_tuple=True)[0]
-                            mask_indices = torch.randint(len(mask_index_map), (self._num_lidar_samples,))
-                            lidar_indices = mask_index_map[mask_indices]
-                        elif self._settings.rays_selection.strategy == 'FIXED':
-                            lidar_indices = torch.arange(self._num_lidar_samples)
-                        else:
-                            raise RuntimeError(
-                                f"Can't find rays_selection strategy: {self._settings.rays_selection.strategy}")
-
-                        sky_dirs = kf.get_lidar_scan().sky_rays
-                        if self._settings.num_samples.sky > 0 and self._enable_sky_segmentation and sky_dirs.nelement() > 0:
-                            sky_indices = torch.randint(0, sky_dirs.shape[1], (self._settings.num_samples.sky,))
-                        else:
-                            sky_indices = None
-
-                        new_rays, new_depths = kf.build_lidar_rays(lidar_indices, self._ray_range, self._world_cube, self._use_gt_poses, sky_indices=sky_indices)
-
-                        if self._settings.debug.write_ray_point_clouds and self._global_step % 100 == 0:
-                            os.makedirs(f"{self._settings['log_directory']}/rays/lidar/kf_{kf_idx}_rays", exist_ok=True)
-                            os.makedirs(f"{self._settings['log_directory']}/rays/lidar/kf_{kf_idx}_origins", exist_ok=True)
-                            rays_fname = f"{self._settings['log_directory']}/rays/lidar/kf_{kf_idx}_rays/rays_{self._global_step}_{it_idx}.pcd"
-                            origins_fname = f"{self._settings['log_directory']}/rays/lidar/kf_{kf_idx}_origins/origins_{self._global_step}_{it_idx}.pcd"
-                            rays_to_pcd(new_rays, new_depths, rays_fname, origins_fname)
-
-                        if self._settings.debug.store_ray:
-                            sky_mask = torch.zeros_like(new_depths)
-                            current_mask = torch.zeros_like(new_depths)
-                            if sky_indices != None:
-                                sky_mask[-self._settings.num_samples.sky:] = 1
-                            if kf_idx == len(active_keyframe_window)-1:
-                                current_mask = torch.ones_like(new_depths)
-
-                            if it_idx==0 and kf_idx==0:
-                                acc_rays = new_rays
-                                acc_depths = new_depths
-                                acc_sky_mask = sky_mask
-                                acc_current_mask = current_mask
-                            else:
-                                acc_rays = torch.vstack((acc_rays, new_rays))
-                                acc_depths = torch.hstack((acc_depths, new_depths))
-                                acc_sky_mask = torch.hstack((acc_sky_mask, sky_mask))
-                                acc_current_mask = torch.hstack((acc_current_mask, current_mask))
-
-                        if lidar_rays is None:
-                            lidar_rays = new_rays
-                            lidar_depths = new_depths
-                        else:
-                            lidar_rays = torch.vstack((lidar_rays, new_rays))
-                            lidar_depths = torch.cat((lidar_depths, new_depths))
-                        
-                        lidar_samples = (lidar_rays.to(self._device).float(), lidar_depths.to(self._device).float())
-
+                # print("New Iteration")
+                for kf_idx, kf in enumerate(active_keyframe_window): 
+                    self.static_keyframe.copy_keyframe(kf)              
+                    if it_idx == 0:
+                        self._record_data_processing(dirs)
+                    # print('recorded properly time to replay')
+                    self._data_graph.replay()
+                    # print(static_lidar_rays)
+                    if lidar_rays is None:
+                        lidar_rays = self.static_lidar_rays
+                        lidar_depths = self.static_lidar_depths
+                    else:
+                        lidar_rays = torch.vstack((lidar_rays, self.static_lidar_rays))
+                        lidar_depths = torch.cat((lidar_depths, self.static_lidar_depths))
+                    # print(lidar_rays.sum())
+                    lidar_samples = (lidar_rays.float(), lidar_depths.float())
                     if self.should_enable_camera():
 
                         # Get all the uniform samples first
@@ -357,7 +459,24 @@ class Optimizer:
                             rays_to_pcd(new_cam_rays, torch.ones_like(new_cam_rays[:,0]) * .1, rays_fname, origins_fname, new_cam_intensities)
                     
                         camera_samples = (camera_rays.to(self._device).float(), camera_intensities.to(self._device).float())
+                # if camera_samples is not None:
+                #     static_cam = (torch.randn(camera_samples[0].shape, device = self._device), torch.randn(camera_samples[1].shape, device =self._device))
+                #     static_lidar = (torch.randn(lidar_samples[0].shape, device = self._device), torch.randn(lidar_samples[1].shape, device = self._device))
+                # else:
+                #     static_lidar = (torch.randn(lidar_samples[0].shape, device = self._device), torch.randn(lidar_samples[1].shape, device = self._device))
+                # # loss = None
                 
+                # if not recorded:
+                #     self._record_compute_loss(static_cam, static_lidar, loss, it_idx, tracking=tracking)
+                #     recorded = True
+                
+                # static_lidar[0].copy_(lidar_samples[0])
+                # static_lidar[1].copy_(lidar_samples[1])
+                # if camera_samples is not None:
+                #     static_cam[0].copy_(camera_samples[0])
+                #     static_cam[1].copy_(camera_samples[0])
+                # else:
+                #     static_cam = None
                 if self._settings.debug.store_ray:
                     loss, std, js = self.compute_loss(camera_samples, lidar_samples, it_idx, tracking=tracking)
                     if it_idx==0:
@@ -367,7 +486,7 @@ class Optimizer:
                         acc_std = torch.hstack((acc_std, std))
                         acc_js = torch.hstack((acc_js, js))
                 else:
-                    loss = self.compute_loss(camera_samples, lidar_samples, it_idx, tracking=tracking)
+                    loss = self.compute_loss(camera_samples, lidar_samples, it_idx, tracking=tracking) #self._loss_graph.replay()
 
                 losses_log[-1].append(loss.detach().cpu().item())
 
@@ -455,16 +574,30 @@ class Optimizer:
                          and not self._optimization_settings.freeze_poses))
 
     ## For the given camera and lidar rays, compute and return the differentiable loss
+    def _record_compute_loss(self, camera_samples, lidar_samples, loss, iteration_idx, override_enables: bool = False, tracking = False):
+        print("Recording")
+        s = torch.cuda.Stream()
+        s.wait_stream(torch.cuda.current_stream())
+        with torch.cuda.stream(s):
+            loss = self.compute_loss(camera_samples, lidar_samples, iteration_idx, override_enables, tracking)
+        torch.cuda.current_stream().wait_stream(s)
+        print("Stream Warmed up")
+        self._loss_graph = torch.cuda.CUDAGraph()
+
+        with torch.cuda.graph(self._loss_graph):
+            loss = self.compute_loss(camera_samples, lidar_samples, iteration_idx, override_enables,tracking)
+        print("graph created")
+
+
     def compute_loss(self, camera_samples: Tuple[torch.Tensor, torch.Tensor], 
                            lidar_samples: Tuple[torch.Tensor, torch.Tensor],
                            iteration_idx: int,
                            override_enables: bool = False,
                            tracking=False) -> torch.Tensor:
-        scale_factor = self._scale_factor.to(self._device).float()
+        scale_factor = self._scale_factor_gpu
         
         loss = 0
         wandb_logs = {}
-
         if (override_enables or self.should_enable_lidar()) and lidar_samples is not None:
 
             if self._model_config.loss.decay_los_lambda:
@@ -478,24 +611,24 @@ class Optimizer:
 
             lidar_rays = lidar_rays.reshape(-1, lidar_rays.shape[-1])
             lidar_depths = lidar_depths.reshape(-1, 1)
-
+            # print("Checkpoint1")
             far = lidar_rays[:,-1]
             transparent_rays = (lidar_depths.view(-1,1) > far)[...,0]
             
             opaque_rays = torch.logical_and((lidar_depths > 0)[..., 0], ~transparent_rays)
-
+            # print("Checkpoint 2")
             # Rendering lidar rays. Results need to be in class for occ update to happen
             self._results_lidar = self._model(lidar_rays, self._ray_sampler, scale_factor, camera=False, return_variance=True)
-
+            # print("Checkpoint 3")
             # (N_rays, N_samples)
             # Depths along ray
             self._lidar_depth_samples_fine = self._results_lidar['samples_fine'] * scale_factor
-
+            # print("Checkpoint 3")
             self._lidar_depths_gt = lidar_depths * scale_factor
             weights_pred_lidar = self._results_lidar['weights_fine']
 
             variance = self._results_lidar["variance"]
-            
+            # print("checkpoint 3")
             # Compute JS divergence (also calculate when using fix depth_eps for visualization)
             mean = torch.sum(self._lidar_depth_samples_fine * weights_pred_lidar, axis=1) / (torch.sum(weights_pred_lidar, axis=1) + 1e-10) # weighted mean # [N_rays]
             var = torch.sum((self._lidar_depth_samples_fine-torch.unsqueeze(mean, dim=-1))**2 * weights_pred_lidar, axis=1) / (torch.sum(weights_pred_lidar, axis=1) + 1e-10) + 1e-10 # [N_rays]
@@ -614,6 +747,7 @@ class Optimizer:
                 self._results_lidar['opacity_fine'][opaque_rays] - 1).mean()
 
             loss += loss_opacity_lidar
+            # print(loss)
             wandb_logs['loss_opacity_lidar'] = loss_opacity_lidar.item()
 
             n_depth = lidar_depths.shape[0]
@@ -635,6 +769,7 @@ class Optimizer:
         if (override_enables or self.should_enable_camera()) and camera_samples is not None:
             # camera_samples is organized as [cam_rays, cam_intensities]
             # cam_rays = [origin, direction, viewdir, ray_i_grid, ray_j_grid, near limit, far limit]
+            # print("Is the loss getting updated ?")
             cam_rays, cam_intensities = camera_samples
 
             cam_intensities = cam_intensities.detach()
@@ -684,7 +819,7 @@ class Optimizer:
 
         if isinstance(loss, int) and loss == 0:
             print("Warning: zero loss")
-            
+        # print(loss)
         assert not torch.isnan(loss), "NaN Loss Encountered"
         
         if self._settings.debug.store_ray:

@@ -57,11 +57,12 @@ class Model(nn.Module):
         else:
             N_samples = self.cfg.render.N_samples_train
             perturb = self.cfg.render.perturb
-
+        
         B = rays.shape[0]
         results = defaultdict(list)
         for i in range(0, B, self.cfg.render.chunk):
             rays_chunk = rays[i:i+self.cfg.render.chunk, :]
+            # print("Run time error here 1 ")
             rendered_ray_chunks = \
                 render_rays(rays_chunk,
                             ray_sampler,
@@ -78,6 +79,7 @@ class Model(nn.Module):
                             sigma_only=(not camera),
                             detach_sigma=detach_sigma,
                             return_variance=return_variance)
+            # print("Run time error here 2")
             for k, v in rendered_ray_chunks.items():
                 results[k] += [v]
 
