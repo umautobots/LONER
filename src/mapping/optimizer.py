@@ -70,9 +70,10 @@ class Optimizer:
         self.static_keyframe = None
         self.static_lidar_rays = torch.randn(512, 13, device = self._device)
         self.static_lidar_depths = torch.randn(512, device = self._device)
+        self._count = 0
+        self._recorded = False
         
         self._use_gt_poses = use_gt_poses
-
         self._optimization_settings = OptimizationSettings()
 
         self._lidar_only = lidar_only
@@ -198,6 +199,7 @@ class Optimizer:
 
         # camera_samples, lidar_samples = None, None
         # for kf_idx, kf in enumerate(active_keyframe_window):
+        print(self._use_gt_poses)
         s = torch.cuda.Stream()
         s.wait_stream(torch.cuda.current_stream())
         with torch.cuda.stream(s):               
@@ -334,7 +336,7 @@ class Optimizer:
         recorded = False
         static_cam = None 
         static_lidar = None
-        dirs = torch.tensor([[-1.], [1.]], device=self._data_prep_device) 
+        dirs = torch.tensor([[-1.], [1.]], device=self._data_prep_device)
         for iteration_config in iteration_schedule:
             losses_log.append([])
             depth_eps_log.append([])
@@ -415,10 +417,14 @@ class Optimizer:
         
                 camera_samples, lidar_samples = None, None
                 # print("New Iteration")
-                for kf_idx, kf in enumerate(active_keyframe_window): 
+                for kf_idx, kf in enumerate(active_keyframe_window):
+                    # print(kf_idx, it_idx)
                     self.static_keyframe.copy_keyframe(kf)              
-                    if it_idx == 0:
+                    if it_idx == 0 and kf_idx == 0 and not self._recorded:
                         self._record_data_processing(dirs)
+                        self._count +=1
+                    if self._count == 2:
+                        self._recorded = True
                     # print('recorded properly time to replay')
                     self._data_graph.replay()
                     # print(static_lidar_rays)
