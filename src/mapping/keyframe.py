@@ -96,6 +96,15 @@ class KeyFrame:
         if use_gt_poses:
             lidar_poses = self._frame._gt_lidar_pose.get_transformation_matrix()
         else:
+            transformation_tensors = self._frame.get_lidar_pose()._pose_tensor
+            self._frame.get_lidar_pose()._pose_tensor.requires_grad = False
+            # print(transformation_tensors.requires_grad)
+            # N = len(transformation_tensors.shape)
+            # if N == 1:
+            #     transformation_tensors = torch.unsqueeze(transformation_tensors, 0)
+            # Ts, rots = transformation_tensors[:, :3], transformation_tensors[:, 3:]
+            # print(rots.device)
+    
             lidar_poses = self._frame.get_lidar_pose().get_transformation_matrix()
 
         if sky_indices is None:

@@ -279,6 +279,7 @@ def tensor_to_transform(transformation_tensors):
     if N == 1:
         transformation_tensors = torch.unsqueeze(transformation_tensors, 0)
     Ts, rots = transformation_tensors[:, :3], transformation_tensors[:, 3:]
+    # print(rots.device)
     rotation_matrices = pytorch3d.transforms.axis_angle_to_matrix(rots)
     RT = torch.cat([rotation_matrices, Ts[:, :, None]], 2)
     if N == 1:

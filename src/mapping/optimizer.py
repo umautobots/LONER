@@ -199,63 +199,65 @@ class Optimizer:
 
         # camera_samples, lidar_samples = None, None
         # for kf_idx, kf in enumerate(active_keyframe_window):
-        print(self._use_gt_poses)
+        # print(self._use_gt_poses)
         s = torch.cuda.Stream()
         s.wait_stream(torch.cuda.current_stream())
-        with torch.cuda.stream(s):               
-            if self.should_enable_lidar():
-                if self._settings.rays_selection.strategy == 'RANDOM':
-                    lidar_indices = torch.randint(len(self.static_keyframe.get_lidar_scan()), (self._num_lidar_samples,), device = self._data_prep_device)
-                elif self._settings.rays_selection.strategy == 'MASK':
-                    mask_index_map = self.static_keyframe.get_lidar_scan().mask.nonzero(as_tuple=True)[0]
-                    mask_indices = torch.randint(len(mask_index_map), (self._num_lidar_samples,), device = self._data_prep_device)
-                    lidar_indices = mask_index_map[mask_indices]
-                elif self._settings.rays_selection.strategy == 'FIXED':
-                    lidar_indices = torch.arange(self._num_lidar_samples, device = self._data_prep_device)
-                else:
-                    raise RuntimeError(
-                        f"Can't find rays_selection strategy: {self._settings.rays_selection.strategy}")
+        with torch.cuda.stream(s):
+            with torch.no_grad():              
+                if self.should_enable_lidar():
+                    if self._settings.rays_selection.strategy == 'RANDOM':
+                        lidar_indices = torch.randint(len(self.static_keyframe.get_lidar_scan()), (self._num_lidar_samples,), device = self._data_prep_device)
+                    elif self._settings.rays_selection.strategy == 'MASK':
+                        mask_index_map = self.static_keyframe.get_lidar_scan().mask.nonzero(as_tuple=True)[0]
+                        mask_indices = torch.randint(len(mask_index_map), (self._num_lidar_samples,), device = self._data_prep_device)
+                        lidar_indices = mask_index_map[mask_indices]
+                    elif self._settings.rays_selection.strategy == 'FIXED':
+                        lidar_indices = torch.arange(self._num_lidar_samples, device = self._data_prep_device)
+                    else:
+                        raise RuntimeError(
+                            f"Can't find rays_selection strategy: {self._settings.rays_selection.strategy}")
 
-                sky_dirs = self.static_keyframe.get_lidar_scan().sky_rays
-                if self._settings.num_samples.sky > 0 and self._enable_sky_segmentation and sky_dirs.nelement() > 0:
-                    sky_indices = torch.randint(0, sky_dirs.shape[1], (self._settings.num_samples.sky,), device =self._data_prep_device)
-                else:
-                    sky_indices = None
+                    sky_dirs = self.static_keyframe.get_lidar_scan().sky_rays
+                    if self._settings.num_samples.sky > 0 and self._enable_sky_segmentation and sky_dirs.nelement() > 0:
+                        sky_indices = torch.randint(0, sky_dirs.shape[1], (self._settings.num_samples.sky,), device =self._data_prep_device)
+                    else:
+                        sky_indices = None
 
-                lidar_rays, lidar_depths = self.static_keyframe.build_lidar_rays(dirs, lidar_indices, self._ray_range, self._world_cube, self._use_gt_poses, sky_indices=sky_indices)
-                # self.static_lidar_rays, self.static_lidar_depths = lidar_rays, lidar_depths
-                self.static_lidar_rays.copy_(lidar_rays)
-                self.static_lidar_depths.copy_(lidar_depths)
+                    lidar_rays, lidar_depths = self.static_keyframe.build_lidar_rays(dirs, lidar_indices, self._ray_range, self._world_cube, self._use_gt_poses, sky_indices=sky_indices)
+                    # self.static_lidar_rays, self.static_lidar_depths = lidar_rays, lidar_depths
+                    self.static_lidar_rays.copy_(lidar_rays)
+                    self.static_lidar_depths.copy_(lidar_depths)
         torch.cuda.current_stream().wait_stream(s)
-        print("Warmed Up")
-        print(lidar_rays.shape, lidar_depths.shape)
+        # print("Warmed Up")
+        # print(lidar_rays.shape, lidar_depths.shape)
         # print(lidar_rays)
         self._data_graph = torch.cuda.CUDAGraph()
         with torch.cuda.graph(self._data_graph):
-            if self.should_enable_lidar():
-                if self._settings.rays_selection.strategy == 'RANDOM':
-                    lidar_indices = torch.randint(len(self.static_keyframe.get_lidar_scan()), (self._num_lidar_samples,), device = self._data_prep_device)
-                elif self._settings.rays_selection.strategy == 'MASK':
-                    mask_index_map = self.static_keyframe.get_lidar_scan().mask.nonzero(as_tuple=True)[0]
-                    mask_indices = torch.randint(len(mask_index_map), (self._num_lidar_samples,), device = self._data_prep_device)
-                    lidar_indices = mask_index_map[mask_indices]
-                elif self._settings.rays_selection.strategy == 'FIXED':
-                    lidar_indices = torch.arange(self._num_lidar_samples, device = self._data_prep_device)
-                else:
-                    raise RuntimeError(
-                        f"Can't find rays_selection strategy: {self._settings.rays_selection.strategy}")
+            with torch.no_grad():
+                if self.should_enable_lidar():
+                    if self._settings.rays_selection.strategy == 'RANDOM':
+                        lidar_indices = torch.randint(len(self.static_keyframe.get_lidar_scan()), (self._num_lidar_samples,), device = self._data_prep_device)
+                    elif self._settings.rays_selection.strategy == 'MASK':
+                        mask_index_map = self.static_keyframe.get_lidar_scan().mask.nonzero(as_tuple=True)[0]
+                        mask_indices = torch.randint(len(mask_index_map), (self._num_lidar_samples,), device = self._data_prep_device)
+                        lidar_indices = mask_index_map[mask_indices]
+                    elif self._settings.rays_selection.strategy == 'FIXED':
+                        lidar_indices = torch.arange(self._num_lidar_samples, device = self._data_prep_device)
+                    else:
+                        raise RuntimeError(
+                            f"Can't find rays_selection strategy: {self._settings.rays_selection.strategy}")
 
-                sky_dirs = self.static_keyframe.get_lidar_scan().sky_rays
-                if self._settings.num_samples.sky > 0 and self._enable_sky_segmentation and sky_dirs.nelement() > 0:
-                    sky_indices = torch.randint(0, sky_dirs.shape[1], (self._settings.num_samples.sky,), device =self._data_prep_device)
-                else:
-                    sky_indices = None
-                lidar_rays, lidar_depths = self.static_keyframe.build_lidar_rays(dirs, lidar_indices, self._ray_range, self._world_cube, self._use_gt_poses, sky_indices=sky_indices)
-                self.static_lidar_rays.copy_(lidar_rays)
-                self.static_lidar_depths.copy_(lidar_depths)
+                    sky_dirs = self.static_keyframe.get_lidar_scan().sky_rays
+                    if self._settings.num_samples.sky > 0 and self._enable_sky_segmentation and sky_dirs.nelement() > 0:
+                        sky_indices = torch.randint(0, sky_dirs.shape[1], (self._settings.num_samples.sky,), device =self._data_prep_device)
+                    else:
+                        sky_indices = None
+                    lidar_rays, lidar_depths = self.static_keyframe.build_lidar_rays(dirs, lidar_indices, self._ray_range, self._world_cube, self._use_gt_poses, sky_indices=sky_indices)
+                    self.static_lidar_rays.copy_(lidar_rays)
+                    self.static_lidar_depths.copy_(lidar_depths)
                 # self.static_lidar_rays, self.static_lidar_depths = lidar_rays, lidar_depths
         # print(lidar_rays)
-        print("Done")
+        # print("Done")
             # if self._settings.debug.write_ray_point_clouds and self._global_step % 100 == 0:
             #     os.makedirs(f"{self._settings['log_directory']}/rays/lidar/kf_{kf_idx}_rays", exist_ok=True)
             #     os.makedirs(f"{self._settings['log_directory']}/rays/lidar/kf_{kf_idx}_origins", exist_ok=True)
@@ -420,11 +422,11 @@ class Optimizer:
                 for kf_idx, kf in enumerate(active_keyframe_window):
                     # print(kf_idx, it_idx)
                     self.static_keyframe.copy_keyframe(kf)              
-                    if it_idx == 0 and kf_idx == 0 and not self._recorded:
+                    if it_idx == 0 and kf_idx == 0:
                         self._record_data_processing(dirs)
                         self._count +=1
-                    if self._count == 2:
-                        self._recorded = True
+                    # if self._count == 2:
+                    #     self._recorded = True
                     # print('recorded properly time to replay')
                     self._data_graph.replay()
                     # print(static_lidar_rays)
