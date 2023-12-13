@@ -203,6 +203,15 @@ class Tracker:
         frame_point_cloud.estimate_normals()
 
         for icp_settings in self._settings.icp.schedule:
+            import pickle
+            logdir = f"{self._settings.log_directory}/icp_debug/frame_{self._frame_count}"
+            os.makedirs(logdir, exist_ok=True)
+            o3d.io.write_point_cloud(f"{logdir}/frame.pcd", frame_point_cloud)
+            o3d.io.write_point_cloud(f"{logdir}/reference.pcd", self._reference_point_cloud)
+            np.save(f"{logdir}/initial", initial_guess)
+            with open(f"{logdir}/settings.pkl", 'wb+') as pkl_file:
+                pickle.dump(icp_settings, pkl_file)
+
             convergence_criteria = (
                 o3d.cuda.pybind.pipelines.registration.ICPConvergenceCriteria(
                     icp_settings.relative_fitness,
