@@ -56,7 +56,7 @@ WARN_MOCOMP_ONCE = True
 WARN_LIDAR_TIMES_ONCE = True
 
 
-def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time, fov: dict = None) -> LidarScan:
+def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time, fov: dict = None, recomute_timestamps = False) -> LidarScan:
 
     lidar_data = ros_numpy.point_cloud2.pointcloud2_to_array(lidar_msg)
 
@@ -99,7 +99,16 @@ def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time, fov: dict
         timestamps = torch.full_like(xyz[0], timestamp.to_sec()).float()
     else:
 
-        timestamps = torch.from_numpy(lidar_data[time_key].astype(np.float32)).reshape(-1,)
+        global WARN_LIDAR_TIMES_ONCE
+        if recomute_timestamps:
+            # This fix provided to me by the authors of Fusion Portable.
+            lidar_indices = torch.arange(len(lidar_data[time_key].flatten()))
+            h_resolution = 2048
+            scan_period = 0.1
+            timestamps = (lidar_indices % h_resolution) * 1.0/h_resolution * scan_period
+        else:
+            timestamps = torch.from_numpy(lidar_data[time_key].astype(np.float32)).reshape(-1,)
+
         if fov is not None and fov.enabled:
             timestamps = timestamps[point_mask]
         timestamps = timestamps[valid_ranges]
@@ -107,10 +116,9 @@ def build_scan_from_msg(lidar_msg: PointCloud2, timestamp: rospy.Time, fov: dict
         # This logic deals with the fact that some lidars report time globally, and others 
         # use the ROS timestamp for the overall time then the timestamps in the message are just
         # offsets. This heuristic has looked legit so far on the tested lidars (ouster and hesai).
-        global WARN_LIDAR_TIMES_ONCE
         if timestamps.abs().max() > 1e7:
             if WARN_LIDAR_TIMES_ONCE:
-                print("Timestamnps look to be in nanoseconds. Scaling")
+                print("Timestamps look to be in nanoseconds. Scaling")
             timestamps *= 1e-9
 
         if timestamps[0] < -0.001:
@@ -264,6 +272,12 @@ def run_trial(config, settings, settings_description = None, config_idx = None, 
     frame_delta_t = 1/settings.tracker.frame_synthesis.frame_decimation_rate_hz - \
                     settings.tracker.frame_synthesis.frame_delta_t_sec_tolerance
     
+    if config["dataset_family"] == "fusion_portable":
+        recompute_lidar_timestamps = True
+        print("Warning: Re-computing the LiDAR timestamps. This should only be done on fusion portable.")
+    else:
+        recompute_lidar_timestamps = False
+
     for topic, msg, timestamp in bag.read_messages(topics=topics): 
         # Wait for lidar to init
         if topic == lidar_topic and (not init) and timestamp.to_sec() and (tf_buffer is None or timestamp >= timestamps[0]):
@@ -306,7 +320,7 @@ def run_trial(config, settings, settings_description = None, config_idx = None, 
             else:
                 gt_lidar_pose = torch.eye(4)
 
-            lidar_scan = build_scan_from_msg(msg, timestamp, settings.system.lidar_fov)
+            lidar_scan = build_scan_from_msg(msg, timestamp, settings.system.lidar_fov, recompute_lidar_timestamps)
 
             loner.process_lidar(lidar_scan, Pose(gt_lidar_pose))
 

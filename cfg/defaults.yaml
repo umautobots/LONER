@@ -42,7 +42,7 @@ mapper:
   # VERBOSE: After every KeyFrame
   # STANDARD: After every 10 KeyFrames
   # DISABLED: Final checkpoint only
-  log_level: STANDARD
+  log_level: DISABLED
   keyframe_manager:
     keyframe_selection:
       # Options: TEMPORAL, MOTION, HYBRID (TEMPORAL & MOTION) [default],
